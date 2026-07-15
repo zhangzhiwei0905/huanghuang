@@ -39,6 +39,18 @@ function actionCategory(action: PlayerActionNotice["action"]): "pong" | "kong" |
 }
 ```
 
+## Deriving per-tile legality client-side
+
+- `RoomProjection.legalActions` is a flat `string[]` of action types for the current player — it carries no per-tile detail. Do not ask for new server fields to highlight "which tile" enables an action; derive it in a pure, unit-tested module (see `apps/web/src/components/actionEligibility.ts`) from data already in the projection (`hand`, `melds`, `discards`, `wildcardKind`, `currentSeat`, `roundPhase`).
+- Known-safe derivation: during `roundPhase === "DISCARD_RESPONSE"`, `currentSeat` still points at the discarder (it only advances once the response resolves) — the tile being responded to is `playerAt(room, room.currentSeat).discards.at(-1)`. Verified against `packages/game-engine/src/round.ts`; re-verify against the engine source (not just this note) if the round state machine changes.
+- Wildcard tiles (`room.wildcardKind`) must be excluded from concealed-kong/added-kong eligibility — the engine forbids using the wildcard's own face for real melds, only for the final win check.
+- Keep detection (what's legal) and eligibility-highlighting (which tile) as separate pure functions; don't let presentation code infer legality itself — legality still comes only from `legalActions`, eligibility only decides *which* already-legal tile to show/use.
+
+## Merging mutually-exclusive actions into one button
+
+- When two action types can never be legal at the same time (e.g. `CLAIM_EXPOSED_KONG` vs `DECLARE_CONCEALED_KONG`, or `CLAIM_PONG` vs `CLAIM_INDICATOR_PONG_KONG`), it's fine to render one button that dispatches whichever is currently in `legalActions`, with a small dynamic sub-label showing the specific action (e.g. "杠" button sub-labels "明杠"/"暗杠"). The `aria-label` must state the specific action, not the generic merged label, so screen readers get the real action name.
+- For actions needing a tileId/meldId payload (`DECLARE_CONCEALED_KONG`, `DECLARE_ADDED_KONG`), prefer the user's manually-selected tile when it's a valid source; otherwise auto-derive from the eligibility module above. Never duplicate payload-shape logic — one function builds the payload, both the manual-select path and the auto-derive path call it.
+
 ## Accessibility
 
 - Touch targets are at least 44 by 44 CSS pixels.

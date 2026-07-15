@@ -1,7 +1,7 @@
 {
-  "id": "huanghuang-web-game-plan",
-  "name": "huanghuang-web-game-plan",
-  "title": "晃晃 Web 游戏完整方案",
+  "id": "mahjong-action-bar",
+  "name": "mahjong-action-bar",
+  "title": "碰杠动作条与手牌高亮",
   "description": "",
   "status": "in_progress",
   "dev_type": null,
@@ -18,11 +18,8 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "07-15-mahjong-ui-polish",
-    "07-15-mahjong-action-bar"
-  ],
-  "parent": null,
+  "children": [],
+  "parent": "07-15-huanghuang-web-game-plan",
   "relatedFiles": [],
   "notes": "",
   "meta": {}

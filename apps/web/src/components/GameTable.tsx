@@ -8,6 +8,11 @@ import type {
   Tile,
 } from "@huanghuang/protocol";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  deriveAddedKongPayload,
+  deriveConcealedKongPayload,
+  handHighlightGroups,
+} from "./actionEligibility.js";
 import { MahjongTile } from "./MahjongTile.js";
 import {
   createPlayerActionSnapshot,
@@ -72,6 +77,17 @@ const ACTION_LABELS: Partial<Record<CommandEnvelope["type"], string>> = {
   PASS_RESPONSE: "过",
 };
 const HAND_ACTIONS = new Set<CommandEnvelope["type"]>(["RELEASE_WILDCARD", "DISCARD_TILE"]);
+// These six action types are surfaced by the larger PrimaryActionBar above the
+// hand, so they're excluded from the small bottom action-dock to avoid a
+// duplicate entry point.
+const PRIMARY_BAR_ACTIONS = new Set<CommandEnvelope["type"]>([
+  "DECLARE_WIN",
+  "CLAIM_PONG",
+  "CLAIM_EXPOSED_KONG",
+  "CLAIM_INDICATOR_PONG_KONG",
+  "DECLARE_CONCEALED_KONG",
+  "DECLARE_ADDED_KONG",
+]);
 
 function relativePosition(seat: Seat, selfSeat: Seat): number {
   return (seat - selfSeat + 4) % 4;
@@ -298,6 +314,124 @@ function RoundSettlementModal({
   );
 }
 
+type PrimaryActionType =
+  | "DECLARE_WIN"
+  | "CLAIM_EXPOSED_KONG"
+  | "DECLARE_CONCEALED_KONG"
+  | "CLAIM_PONG"
+  | "CLAIM_INDICATOR_PONG_KONG"
+  | "DECLARE_ADDED_KONG";
+
+function PrimaryActionBar({
+  room,
+  self,
+  selectedTileId,
+  busy,
+  onSend,
+}: {
+  room: RoomProjection;
+  self: PlayerProjection;
+  selectedTileId: string | null;
+  busy: boolean;
+  onSend: (type: PrimaryActionType, payload?: Record<string, unknown>) => void;
+}) {
+  const legal = room.legalActions;
+  const hand = self.hand ?? [];
+
+  const kongType: "CLAIM_EXPOSED_KONG" | "DECLARE_CONCEALED_KONG" | null = legal.includes(
+    "CLAIM_EXPOSED_KONG",
+  )
+    ? "CLAIM_EXPOSED_KONG"
+    : legal.includes("DECLARE_CONCEALED_KONG")
+      ? "DECLARE_CONCEALED_KONG"
+      : null;
+  const pongType: "CLAIM_PONG" | "CLAIM_INDICATOR_PONG_KONG" | null = legal.includes("CLAIM_PONG")
+    ? "CLAIM_PONG"
+    : legal.includes("CLAIM_INDICATOR_PONG_KONG")
+      ? "CLAIM_INDICATOR_PONG_KONG"
+      : null;
+  const winEnabled = legal.includes("DECLARE_WIN");
+  const addedKongEnabled = legal.includes("DECLARE_ADDED_KONG");
+
+  function clickWin() {
+    if (!winEnabled || busy) return;
+    onSend("DECLARE_WIN");
+  }
+
+  function clickKong() {
+    if (kongType === null || busy) return;
+    if (kongType === "CLAIM_EXPOSED_KONG") {
+      onSend("CLAIM_EXPOSED_KONG");
+      return;
+    }
+    const payload = deriveConcealedKongPayload(hand, room.wildcardKind, selectedTileId);
+    onSend("DECLARE_CONCEALED_KONG", payload ?? undefined);
+  }
+
+  function clickPong() {
+    if (pongType === null || busy) return;
+    onSend(pongType);
+  }
+
+  function clickAddedKong() {
+    if (!addedKongEnabled || busy) return;
+    const payload = deriveAddedKongPayload(hand, self.melds, room.wildcardKind, selectedTileId);
+    onSend("DECLARE_ADDED_KONG", payload ?? undefined);
+  }
+
+  const kongSubLabel =
+    kongType === "CLAIM_EXPOSED_KONG"
+      ? "明杠"
+      : kongType === "DECLARE_CONCEALED_KONG"
+        ? "暗杠"
+        : "杠";
+  const pongSubLabel =
+    pongType === "CLAIM_PONG" ? "碰" : pongType === "CLAIM_INDICATOR_PONG_KONG" ? "亮牌碰" : "碰";
+
+  return (
+    <div className="primary-action-bar" aria-label="碰杠自摸大动作条">
+      <button
+        type="button"
+        className={`primary-action-button ${winEnabled ? "is-armed" : ""}`}
+        disabled={busy || !winEnabled}
+        aria-label="自摸"
+        onClick={clickWin}
+      >
+        <strong>自摸</strong>
+      </button>
+      <button
+        type="button"
+        className={`primary-action-button ${kongType !== null ? "is-armed" : ""}`}
+        disabled={busy || kongType === null}
+        aria-label={kongSubLabel}
+        onClick={clickKong}
+      >
+        <strong>杠</strong>
+        <small>{kongSubLabel}</small>
+      </button>
+      <button
+        type="button"
+        className={`primary-action-button ${pongType !== null ? "is-armed" : ""}`}
+        disabled={busy || pongType === null}
+        aria-label={pongSubLabel}
+        onClick={clickPong}
+      >
+        <strong>碰</strong>
+        <small>{pongSubLabel}</small>
+      </button>
+      <button
+        type="button"
+        className={`primary-action-button ${addedKongEnabled ? "is-armed" : ""}`}
+        disabled={busy || !addedKongEnabled}
+        aria-label="补杠"
+        onClick={clickAddedKong}
+      >
+        <strong>补杠</strong>
+      </button>
+    </div>
+  );
+}
+
 export function GameTable({
   room,
   busy,
@@ -376,6 +510,13 @@ export function GameTable({
         .filter((tile) => tile.id !== room.selfDrawnTileId)
         .sort((a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.rank - b.rank),
     [room.selfDrawnTileId, self?.hand],
+  );
+  const handHighlight = useMemo(
+    () =>
+      self === null
+        ? { pongTileIds: new Set<string>(), kongTileIds: new Set<string>() }
+        : handHighlightGroups(room, self),
+    [room, self],
   );
 
   async function copyInvite() {
@@ -468,7 +609,9 @@ export function GameTable({
 
   const actions = room.legalActions as CommandEnvelope["type"][];
   const handActions = actions.filter((action) => HAND_ACTIONS.has(action));
-  const dockActions = actions.filter((action) => !HAND_ACTIONS.has(action));
+  const dockActions = actions.filter(
+    (action) => !HAND_ACTIONS.has(action) && !PRIMARY_BAR_ACTIONS.has(action),
+  );
   const needsTile = (action: CommandEnvelope["type"]) =>
     ["DISCARD_TILE", "RELEASE_WILDCARD", "DECLARE_CONCEALED_KONG", "DECLARE_ADDED_KONG"].includes(
       action,
@@ -582,6 +725,15 @@ export function GameTable({
         ))}
 
         <section className="self-area">
+          {self === null ? null : (
+            <PrimaryActionBar
+              room={room}
+              self={self}
+              selectedTileId={selectedTileId}
+              busy={busy}
+              onSend={(type, payload) => void onSend(type, payload)}
+            />
+          )}
           {handActions.length === 0 ? null : (
             <div className="hand-action-bar" aria-label="手牌操作">
               {handActions.map((action) => (
@@ -615,6 +767,16 @@ export function GameTable({
                   wildcardKind={room.wildcardKind}
                   selected={tile.id === selectedTileId}
                   disabled={busy}
+                  highlighted={
+                    handHighlight.kongTileIds.has(tile.id) || handHighlight.pongTileIds.has(tile.id)
+                  }
+                  highlightHint={
+                    handHighlight.kongTileIds.has(tile.id)
+                      ? "可杠"
+                      : handHighlight.pongTileIds.has(tile.id)
+                        ? "可碰"
+                        : undefined
+                  }
                   onSelect={(next) =>
                     setSelectedTileId(next.id === selectedTileId ? null : next.id)
                   }
@@ -630,6 +792,17 @@ export function GameTable({
                   wildcardKind={room.wildcardKind}
                   selected={drawnTile.id === selectedTileId}
                   disabled={busy}
+                  highlighted={
+                    handHighlight.kongTileIds.has(drawnTile.id) ||
+                    handHighlight.pongTileIds.has(drawnTile.id)
+                  }
+                  highlightHint={
+                    handHighlight.kongTileIds.has(drawnTile.id)
+                      ? "可杠"
+                      : handHighlight.pongTileIds.has(drawnTile.id)
+                        ? "可碰"
+                        : undefined
+                  }
                   onSelect={(next) =>
                     setSelectedTileId(next.id === selectedTileId ? null : next.id)
                   }
@@ -653,7 +826,6 @@ export function GameTable({
             <button
               key={action}
               type="button"
-              className={action === "DECLARE_WIN" ? "win-action" : ""}
               disabled={busy || (needsTile(action) && selectedTile === null)}
               onClick={() => sendAction(action)}
             >

@@ -580,7 +580,55 @@ h1 {
   bottom: 8px;
   left: 18px;
   display: grid;
+  gap: 8px;
   justify-items: center;
+}
+.primary-action-bar {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+  max-width: calc(100vw - 40px);
+}
+.primary-action-button {
+  position: relative;
+  display: flex;
+  min-width: 78px;
+  min-height: 56px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 6px 16px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 12px;
+  opacity: 0.55;
+}
+.primary-action-button strong {
+  font-size: 19px;
+  font-weight: 720;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+.primary-action-button small {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.85;
+}
+.primary-action-button:disabled {
+  cursor: not-allowed;
+}
+.primary-action-button.is-armed {
+  border-width: 2px;
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent);
+  opacity: 1;
+  cursor: pointer;
 }
 .hand-action-bar {
   position: absolute;
@@ -813,6 +861,16 @@ h1 {
   z-index: 2;
   transform: translateY(-10px);
   border-color: var(--accent);
+}
+/* Static highlight for legal pong/kong source tiles: outline + border-color
+   only (no box-shadow glow — box-shadow is reserved for the pong/kong/
+   wildcard-release action-feedback exception per component-guidelines.md).
+   No animation either, so it stays fully visible under prefers-reduced-motion. */
+.mahjong-tile.is-highlighted {
+  z-index: 1;
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .mahjong-tile.is-compact {
   width: 28px;
@@ -1108,6 +1166,21 @@ h1 {
   .game-meta > span:first-child {
     display: none;
   }
+  .primary-action-bar {
+    gap: 6px;
+    max-width: calc(100vw - 16px);
+  }
+  .primary-action-button {
+    min-width: 60px;
+    min-height: 48px;
+    padding: 4px 8px;
+  }
+  .primary-action-button strong {
+    font-size: 15px;
+  }
+  .primary-action-button small {
+    font-size: 9px;
+  }
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
@@ -1267,6 +1340,23 @@ h1 {
     right: 8px;
     bottom: 4px;
     left: 8px;
+    gap: 4px;
+  }
+  .primary-action-bar {
+    gap: 4px;
+    max-width: calc(100vw - 16px);
+  }
+  .primary-action-button {
+    min-width: 48px;
+    min-height: 44px;
+    padding: 2px 6px;
+    border-radius: 8px;
+  }
+  .primary-action-button strong {
+    font-size: 12px;
+  }
+  .primary-action-button small {
+    font-size: 7px;
   }
   .meld-row {
     bottom: 51px;

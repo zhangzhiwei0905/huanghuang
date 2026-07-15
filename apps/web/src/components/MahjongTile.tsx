@@ -35,6 +35,10 @@ type MahjongTileProps = {
   selected?: boolean;
   compact?: boolean;
   disabled?: boolean;
+  /** Visual + accessible hint that this tile is a legal pong/kong source. */
+  highlighted?: boolean;
+  /** Accessible label suffix describing why the tile is highlighted, e.g. "可碰"/"可杠". */
+  highlightHint?: string | undefined;
   onSelect?: (tile: Tile) => void;
   onDoubleSelect?: (tile: Tile) => void;
 };
@@ -46,11 +50,14 @@ export function MahjongTile({
   selected = false,
   compact = false,
   disabled = false,
+  highlighted = false,
+  highlightHint,
   onSelect,
   onDoubleSelect,
 }: MahjongTileProps) {
   const wildcard = sameKind(tile, wildcardKind);
   const label = `${tile.rank}${SUIT_LABEL[tile.suit]}`;
+  const highlightSuffix = highlighted && highlightHint !== undefined ? `，${highlightHint}` : "";
   const className = [
     "mahjong-tile",
     `tile-${tile.suit.toLowerCase()}`,
@@ -59,6 +66,7 @@ export function MahjongTile({
     indicator ? "is-indicator" : "",
     selected ? "is-selected" : "",
     compact ? "is-compact" : "",
+    highlighted ? "is-highlighted" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -81,7 +89,10 @@ export function MahjongTile({
 
   if (onSelect === undefined) {
     return (
-      <span className={className} aria-label={`${label}${wildcard ? "，赖子" : ""}`}>
+      <span
+        className={className}
+        aria-label={`${label}${wildcard ? "，赖子" : ""}${highlightSuffix}`}
+      >
         {content}
       </span>
     );
@@ -93,7 +104,7 @@ export function MahjongTile({
       className={className}
       disabled={disabled}
       aria-pressed={selected}
-      aria-label={`选择${label}${wildcard ? "，赖子" : ""}${onDoubleSelect === undefined ? "" : "，双击打出"}`}
+      aria-label={`选择${label}${wildcard ? "，赖子" : ""}${onDoubleSelect === undefined ? "" : "，双击打出"}${highlightSuffix}`}
       onClick={() => onSelect(tile)}
       onDoubleClick={() => onDoubleSelect?.(tile)}
     >
