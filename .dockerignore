@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.trellis
+.agents
+.codex
+.pnpm-store
+.DS_Store
+*.log
+

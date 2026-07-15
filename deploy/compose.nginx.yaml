@@ -1,0 +1,6 @@
+services:
+  app:
+    container_name: huanghuang-app
+    ports:
+      - "127.0.0.1:${APP_PORT:-13000}:3000"
+

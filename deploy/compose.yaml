@@ -1,0 +1,32 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/server.Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_PATH: /data/huanghuang.sqlite
+    restart: unless-stopped
+    volumes:
+      - game_data:/data
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - app
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  game_data:
+  caddy_data:
+  caddy_config:

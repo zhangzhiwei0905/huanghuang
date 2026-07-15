@@ -1,0 +1,82 @@
+# 晃晃 Web 游戏
+
+四人邀请制数字麻将 Web 游戏。默认是一位真人与三位机器人，邀请的四位真人全部准备后会终止机器人局、积分归零并随机庄家。项目不包含账号、匹配、历史记录或回放。
+
+## 已实现的 MVP
+
+- 108 张万、条、筒；随机庄家、亮牌和顺位赖子。
+- 仅自摸、禁止吃与点炮；标准四组一对胡牌。
+- 硬胡、软胡、多赖子禁胡及“赖子与任意摸牌成将”禁胡。
+- 普通碰、明杠、暗杠、补杠、亮牌特殊碰杠和独立杠分。
+- 回合内放赖、补牌、个人倍率和逐付款人结算。
+- 六位邀请房、匿名 Cookie、等待区准备、机器人补位。
+- 15 秒出牌、5 秒响应、机器人行动、断线托管与重连取回。
+- 房主转让、本局后解散、自动下一局和 SQLite 恢复。
+- 同一套横屏牌桌支持“低调”和“精美”两套主题，默认低调且静音。
+
+## 本地运行
+
+需要 Node.js 24 和 pnpm 11。
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+浏览器打开 `http://localhost:5173`。开发命令会启动 Vite，并在 3000 端口启动服务端；服务端开发进程在改代码后需要手动重启，避免 macOS 文件监听数量限制。
+
+生产构建与本地启动：
+
+```bash
+pnpm build
+DATABASE_PATH=./data/huanghuang.sqlite PORT=3000 node apps/server/dist/index.js
+```
+
+## 质量检查
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+docker compose -f deploy/compose.yaml config
+```
+
+测试覆盖胡牌、赖子、动作限制、杠与自摸结算、机器人轮转、四真人切换、房主转让、断线托管和解散标记。
+
+## 阿里云部署
+
+现有 2 核 4 GB 服务器足够本项目供个人与少量朋友使用。推荐安装 Docker 与 Docker Compose，并将域名 A 记录指向服务器公网 IP，同时在安全组开放 80、443 端口。
+
+```bash
+cp deploy/.env.example deploy/.env
+# 修改 deploy/.env 中的 DOMAIN
+docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
+docker compose -f deploy/compose.yaml ps
+```
+
+Caddy 自动申请和续期 HTTPS 证书。应用数据位于 Docker 命名卷 `deploy_game_data`；更新应用前应备份此卷。
+
+停止写入后进行一致性备份：
+
+```bash
+docker compose -f deploy/compose.yaml stop app
+docker run --rm -v deploy_game_data:/data -v "$PWD/backups:/backup" alpine \
+  cp /data/huanghuang.sqlite /backup/huanghuang-$(date +%Y%m%d-%H%M%S).sqlite
+docker compose -f deploy/compose.yaml start app
+```
+
+恢复时先停止应用，将备份文件覆盖回卷内的 `/data/huanghuang.sqlite`，删除同目录残留的 `-wal`、`-shm` 文件后再启动应用。上线前可先通过 `/health/live` 和 `/health/ready` 检查进程。
+
+## 项目结构
+
+```text
+apps/web                 React 横屏游戏界面
+apps/server              Fastify、Socket.IO、SQLite 房间服务
+packages/protocol        跨层命令、投影与运行时 schema
+packages/game-engine     无网络依赖的纯规则引擎
+deploy                   Docker Compose、Caddy 与镜像配置
+.trellis/tasks           PRD、设计文档与实施计划
+```
+
+完整产品规则与架构见 `.trellis/tasks/07-15-huanghuang-web-game-plan/`。
