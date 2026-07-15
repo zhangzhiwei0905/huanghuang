@@ -9,6 +9,12 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
 COPY apps ./apps
 COPY packages ./packages
 COPY tsconfig.base.json eslint.config.js vitest.config.ts ./
+# unofficial-builds.nodejs.org and GitHub release downloads are effectively
+# unreachable from this host (observed <10KB/s / connection timeouts); route
+# native-module builds through npmmirror.com and skip the doomed
+# prebuild-install attempt against GitHub.
+ENV npm_config_disturl=https://cdn.npmmirror.com/binaries/node \
+    npm_config_build_from_source=true
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
 
