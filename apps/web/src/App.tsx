@@ -26,6 +26,7 @@ export function App() {
           busy={room.busy}
           error={room.error}
           onReady={room.ready}
+          onContinue={room.continueBot}
           onLeave={room.leaveRoom}
           onDissolve={room.dissolve}
           onSend={room.send}

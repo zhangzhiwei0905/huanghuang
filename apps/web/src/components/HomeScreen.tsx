@@ -11,13 +11,13 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
   const [nickname, setNickname] = useState(localStorage.getItem("huanghuang-nickname") ?? "");
   const [roomCode, setRoomCode] = useState(invitationCode);
   const [baseScore, setBaseScore] = useState<BaseScore>(2);
-  const [mode, setMode] = useState<"HOME" | "CREATE" | "JOIN">(
+  const [mode, setMode] = useState<"HOME" | "CREATE" | "JOIN" | "BOT">(
     invitationCode === "" ? "HOME" : "JOIN",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(kind: "CREATE" | "JOIN") {
+  async function submit(kind: "CREATE" | "JOIN" | "BOT") {
     const normalizedName = nickname.trim();
     if (normalizedName.length === 0) {
       setError("先填一个牌桌昵称");
@@ -31,13 +31,19 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
     setError(null);
     try {
       const room =
-        kind === "CREATE"
-          ? await roomApi.create(normalizedName, baseScore)
+        kind !== "JOIN"
+          ? await roomApi.create(normalizedName, baseScore, kind === "BOT" ? "BOT" : "FRIEND")
           : await roomApi.join(normalizedName, roomCode);
       localStorage.setItem("huanghuang-nickname", normalizedName);
       onOpenRoom(room);
     } catch {
-      setError(kind === "CREATE" ? "创建失败，请稍后重试" : "没有找到这个房间");
+      setError(
+        kind === "CREATE"
+          ? "创建失败，请稍后重试"
+          : kind === "BOT"
+            ? "人机对战启动失败，请稍后重试"
+            : "没有找到这个房间或当前无法加入",
+      );
     } finally {
       setBusy(false);
     }
@@ -49,7 +55,7 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
         <div className="brand-block">
           <p className="eyebrow">PRIVATE TABLE / 04</p>
           <h1 id="home-title">晃晃</h1>
-          <p className="subtitle">四人数字麻将 · 仅限邀请房</p>
+          <p className="subtitle">四人数字麻将 · 好友房 / 人机对战</p>
         </div>
 
         {mode === "HOME" ? (
@@ -59,6 +65,9 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
             </button>
             <button type="button" onClick={() => setMode("JOIN")}>
               加入房间
+            </button>
+            <button type="button" onClick={() => setMode("BOT")}>
+              人机对战
             </button>
             <button type="button" onClick={() => setMode("JOIN")}>
               邀请好友
@@ -120,7 +129,13 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
                 返回
               </button>
               <button type="submit" className="primary-action" disabled={busy}>
-                {busy ? "正在进入…" : mode === "CREATE" ? "创建并开局" : "进入房间"}
+                {busy
+                  ? "正在进入…"
+                  : mode === "CREATE"
+                    ? "创建房间"
+                    : mode === "BOT"
+                      ? "开始对战"
+                      : "进入房间"}
               </button>
             </div>
           </form>

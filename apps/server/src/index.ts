@@ -41,7 +41,7 @@ app.post("/api/rooms", (request, reply) => {
   const parsed = createRoomSchema.safeParse(request.body);
   if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
   const session = sessions.ensure(request, reply, parsed.data.nickname);
-  const room = rooms.createRoom(session, parsed.data.baseScore);
+  const room = rooms.createRoom(session, parsed.data.baseScore, parsed.data.mode);
   return reply.code(201).send(rooms.project(room, session.id));
 });
 
@@ -51,6 +51,10 @@ app.post("/api/rooms/join", (request, reply) => {
   const session = sessions.ensure(request, reply, parsed.data.nickname);
   const room = rooms.joinRoom(session, parsed.data.roomCode);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (room === "ROOM_FULL") return reply.code(409).send({ error: "ROOM_FULL" });
+  if (room === "ROOM_NOT_JOINABLE") {
+    return reply.code(409).send({ error: "ROOM_NOT_JOINABLE" });
+  }
   sockets.to(room.id).emit("room:update", { version: room.version });
   return rooms.project(room, session.id);
 });
@@ -68,6 +72,21 @@ app.post<{ Params: { code: string } }>("/api/rooms/:code/ready", (request, reply
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
   const room = rooms.setReady(session.id, request.params.code);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (room === "ACTION_NOT_AVAILABLE") {
+    return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
+  }
+  sockets.to(room.id).emit("room:update", { version: room.version });
+  return rooms.project(room, session.id);
+});
+
+app.post<{ Params: { code: string } }>("/api/rooms/:code/continue", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const room = rooms.continueBotRound(session.id, request.params.code);
+  if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (room === "ACTION_NOT_AVAILABLE") {
+    return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
+  }
   sockets.to(room.id).emit("room:update", { version: room.version });
   return rooms.project(room, session.id);
 });

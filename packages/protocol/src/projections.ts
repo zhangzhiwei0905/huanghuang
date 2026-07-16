@@ -1,3 +1,4 @@
+import type { RoomMode } from "./commands.js";
 import type { BaseScore, Meld, PersonalMultiplier, Seat, Tile, TileKind, WinType } from "./game.js";
 
 export type PlayerController = "HUMAN" | "BOT" | "TRUSTEE";
@@ -16,10 +17,17 @@ export type PlayerProjection = {
   score: number;
 };
 
-export type WaitingPlayerProjection = {
-  nickname: string;
+export type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
+
+export type LobbySeatProjection = {
+  seat: Seat;
+  nickname: string | null;
+  occupied: boolean;
   ready: boolean;
+  connected: boolean;
+  isOwner: boolean;
   isSelf: boolean;
+  score: number;
 };
 
 export type RoundSettlementProjection = {
@@ -44,11 +52,15 @@ export type RoundSettlementProjection = {
 };
 
 export type RoomProjection = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   roomId: string;
   roomCode: string;
   version: number;
   baseScore: BaseScore;
+  mode: RoomMode;
+  stage: RoomStage;
+  roundId: string | null;
+  roundStartedAt: string | null;
   isOwner: boolean;
   selfReady: boolean;
   selfSeat: Seat | null;
@@ -58,6 +70,7 @@ export type RoomProjection = {
   indicatorTile: Tile | null;
   wildcardKind: TileKind | null;
   wallRemaining: number;
+  actingSeat: Seat | null;
   currentSeat: Seat | null;
   roundPhase: "TURN_DECISION" | "DISCARD_RESPONSE" | "ROUND_OVER" | null;
   actionDeadlineAt: string | null;
@@ -68,7 +81,7 @@ export type RoomProjection = {
   roundSettlement: RoundSettlementProjection | null;
   legalActions: string[];
   players: PlayerProjection[];
-  waitingPlayers: WaitingPlayerProjection[];
+  lobbySeats: LobbySeatProjection[];
 };
 
 export type RoomUpdate = {

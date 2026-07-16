@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { baseScoreSchema } from "./game.js";
 
+export const roomModeSchema = z.enum(["FRIEND", "BOT"]);
+
 export const commandTypeSchema = z.enum([
   "SET_READY",
   "LEAVE_ROOM",
@@ -29,6 +31,7 @@ export const commandEnvelopeSchema = z.object({
 export const createRoomSchema = z.object({
   nickname: z.string().trim().min(1).max(12),
   baseScore: baseScoreSchema.default(2),
+  mode: roomModeSchema,
 });
 
 export const joinRoomSchema = z.object({
@@ -40,6 +43,7 @@ export type CommandType = z.infer<typeof commandTypeSchema>;
 export type CommandEnvelope = z.infer<typeof commandEnvelopeSchema>;
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
+export type RoomMode = z.infer<typeof roomModeSchema>;
 
 export type CommandResult = {
   accepted: boolean;

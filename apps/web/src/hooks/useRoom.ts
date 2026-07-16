@@ -11,6 +11,7 @@ type RoomController = {
   leaveRoom: () => Promise<void>;
   dissolve: () => Promise<void>;
   ready: () => Promise<void>;
+  continueBot: () => Promise<void>;
   send: (type: CommandEnvelope["type"], payload?: Record<string, unknown>) => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -22,6 +23,8 @@ const ERROR_LABELS: Record<string, string> = {
   NOT_A_MEMBER: "你不在这个牌局中",
   NOT_CURRENT_PLAYER: "还没轮到你",
   ROOM_NOT_FOUND: "房间不存在或已经解散",
+  ROOM_FULL: "房间已经坐满了",
+  ROOM_NOT_JOINABLE: "当前房间不能加入，请等待本局结束",
   UNAUTHENTICATED: "匿名会话已失效，请重新进入",
   VERSION_CONFLICT: "牌局刚刚发生变化，已为你同步",
   WALL_EMPTY: "牌墙已空",
@@ -141,6 +144,19 @@ export function useRoom(): RoomController {
     }
   }, [replaceProjection]);
 
+  const continueBot = useCallback(async () => {
+    const current = roomRef.current;
+    if (current === null) return;
+    setBusy(true);
+    try {
+      replaceProjection(await roomApi.continueBot(current.roomCode));
+    } catch {
+      setError("继续游戏失败，请稍后再试");
+    } finally {
+      setBusy(false);
+    }
+  }, [replaceProjection]);
+
   const send = useCallback(
     async (type: CommandEnvelope["type"], payload: Record<string, unknown> = {}) => {
       const current = roomRef.current;
@@ -166,5 +182,5 @@ export function useRoom(): RoomController {
     [refresh],
   );
 
-  return { room, busy, error, openRoom, leaveRoom, dissolve, ready, send, refresh };
+  return { room, busy, error, openRoom, leaveRoom, dissolve, ready, continueBot, send, refresh };
 }

@@ -27,6 +27,7 @@ type GameTableProps = {
   busy: boolean;
   error: string | null;
   onReady: () => Promise<void>;
+  onContinue: () => Promise<void>;
   onLeave: () => Promise<void>;
   onDissolve: () => Promise<void>;
   onSend: (type: CommandEnvelope["type"], payload?: Record<string, unknown>) => Promise<void>;
@@ -159,7 +160,13 @@ function PlayerStation({
   return (
     <section
       className={`player-station ${POSITION_CLASS[position] ?? ""} ${active ? "is-active" : ""}`}
+      aria-label={active ? `${player.nickname}，当前行动玩家` : player.nickname}
     >
+      {active ? (
+        <span className="turn-arrow" aria-hidden="true">
+          ➜
+        </span>
+      ) : null}
       <div className="player-identity">
         <span className="status-dot" />
         <strong>{player.nickname}</strong>
@@ -251,9 +258,17 @@ function signedScore(value: number): string {
 function RoundSettlementModal({
   settlement,
   players,
+  mode,
+  busy,
+  onContinue,
+  onLeave,
 }: {
   settlement: RoundSettlementProjection;
   players: PlayerProjection[];
+  mode: RoomProjection["mode"];
+  busy: boolean;
+  onContinue: () => Promise<void>;
+  onLeave: () => Promise<void>;
 }) {
   const playerName = (seat: Seat) => players[seat]?.nickname ?? `玩家 ${seat + 1}`;
   const outcomeLabel =
@@ -274,7 +289,7 @@ function RoundSettlementModal({
             <span>ROUND RESULT</span>
             <h2 id="round-settlement-title">{outcomeLabel}</h2>
           </div>
-          <small>下一局即将开始</small>
+          <small>{mode === "BOT" ? "等待你的选择" : "即将返回房间准备"}</small>
         </header>
 
         {settlement.kind === "WIN" ? (
@@ -308,7 +323,24 @@ function RoundSettlementModal({
             </div>
           ))}
         </div>
-        <footer>本局净变化已包含碰杠相关得分</footer>
+        <footer className={mode === "BOT" ? "has-actions" : ""}>
+          <span>本局净变化已包含碰杠相关得分</span>
+          {mode === "BOT" ? (
+            <div className="settlement-actions">
+              <button type="button" disabled={busy} onClick={() => void onLeave()}>
+                退出到主页
+              </button>
+              <button
+                type="button"
+                className="primary-action"
+                disabled={busy}
+                onClick={() => void onContinue()}
+              >
+                继续游戏
+              </button>
+            </div>
+          ) : null}
+        </footer>
       </section>
     </div>
   );
@@ -437,6 +469,7 @@ export function GameTable({
   busy,
   error,
   onReady,
+  onContinue,
   onLeave,
   onDissolve,
   onSend,
@@ -446,9 +479,11 @@ export function GameTable({
   const [now, setNow] = useState(Date.now());
   const [actionNotice, setActionNotice] = useState<PlayerActionNotice | null>(null);
   const [landedHighlight, setLandedHighlight] = useState<LandedHighlight | null>(null);
+  const [showRoundStart, setShowRoundStart] = useState(false);
   const actionSnapshotRef = useRef<PlayerActionSnapshot | null>(null);
+  const displayedRoundIdRef = useRef<string | null>(null);
   const selfSeat = room.selfSeat;
-  const self = selfSeat === null ? null : playerAt(room, selfSeat);
+  const self = selfSeat === null || room.stage === "WAITING" ? null : playerAt(room, selfSeat);
   const selectedTile = self?.hand?.find((tile) => tile.id === selectedTileId) ?? null;
 
   useEffect(() => {
@@ -466,6 +501,10 @@ export function GameTable({
   }, []);
 
   useEffect(() => {
+    if (room.players.length !== 4) {
+      actionSnapshotRef.current = null;
+      return;
+    }
     const nextSnapshot = createPlayerActionSnapshot(room.players);
     const previousSnapshot = actionSnapshotRef.current;
     actionSnapshotRef.current = nextSnapshot;
@@ -498,11 +537,23 @@ export function GameTable({
     return () => window.clearTimeout(timer);
   }, [landedHighlight]);
 
+  useEffect(() => {
+    if (room.stage !== "PLAYING" || room.roundId === null) {
+      setShowRoundStart(false);
+      if (room.stage === "WAITING") displayedRoundIdRef.current = null;
+      return;
+    }
+    if (displayedRoundIdRef.current === room.roundId) return;
+    displayedRoundIdRef.current = room.roundId;
+    setShowRoundStart(true);
+    const timer = window.setTimeout(() => setShowRoundStart(false), 2400);
+    return () => window.clearTimeout(timer);
+  }, [room.roundId, room.stage]);
+
   const secondsRemaining =
     room.actionDeadlineAt === null
       ? null
       : Math.max(0, Math.ceil((Date.parse(room.actionDeadlineAt) - now) / 1000));
-
   const drawnTile = self?.hand?.find((tile) => tile.id === room.selfDrawnTileId) ?? null;
   const sortedHand = useMemo(
     () =>
@@ -558,8 +609,7 @@ export function GameTable({
     void onSend("DISCARD_TILE", { tileId: tile.id });
   }
 
-  if (selfSeat === null) {
-    const selfWaiting = room.waitingPlayers.find((player) => player.isSelf);
+  if (room.stage === "WAITING") {
     return (
       <main className="waiting-shell">
         <header className="room-header">
@@ -574,33 +624,60 @@ export function GameTable({
         <section className="waiting-panel">
           <p className="eyebrow">WAITING ROOM</p>
           <h2>等待四位真人准备</h2>
-          <p>当前机器人牌局不会影响真人局积分。四人全部准备后，会终止机器人局并随机庄家。</p>
+          <p>进入房间后会固定占据一个座位。四位玩家全部入座并准备后，本局自动开始。</p>
           <div className="waiting-list">
-            {room.players
-              .filter((player) => player.controller === "HUMAN")
-              .map((player) => (
-                <span key={player.seat}>
-                  {player.nickname}
-                  <b>已入座</b>
-                </span>
-              ))}
-            {room.waitingPlayers.map((player, index) => (
-              <span key={`${player.nickname}-${index}`}>
-                {player.nickname}
-                <b>{player.ready ? "已准备" : "未准备"}</b>
-              </span>
+            {room.lobbySeats.map((seat) => (
+              <article
+                key={seat.seat}
+                className={`${seat.occupied ? "is-occupied" : "is-empty"} ${seat.ready ? "is-ready" : ""}`}
+              >
+                <span>座位 {seat.seat + 1}</span>
+                <strong>
+                  {seat.nickname ?? "等待加入"}
+                  {seat.isSelf ? " · 你" : ""}
+                </strong>
+                <small>
+                  {!seat.occupied
+                    ? "空位"
+                    : seat.ready
+                      ? "已准备"
+                      : seat.connected
+                        ? "未准备"
+                        : "离线"}
+                  {seat.isOwner ? " · 房主" : ""}
+                </small>
+                <b>{seat.score} 分</b>
+              </article>
             ))}
           </div>
           <button
             type="button"
             className="primary-action"
-            disabled={busy || selfWaiting?.ready === true}
+            disabled={busy || room.selfReady || room.selfSeat === null}
             onClick={() => void onReady()}
           >
-            {selfWaiting?.ready === true ? "已准备，等待其他人" : "准备"}
+            {room.selfReady ? "已准备，等待其他玩家" : "准备"}
           </button>
+          {room.isOwner ? (
+            <button type="button" className="text-action" onClick={() => void onDissolve()}>
+              解散房间
+            </button>
+          ) : null}
           <button type="button" className="text-action" onClick={() => void onLeave()}>
             离开房间
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (selfSeat === null) {
+    return (
+      <main className="waiting-shell">
+        <section className="waiting-panel">
+          <h2>你不在当前牌局中</h2>
+          <button type="button" className="primary-action" onClick={() => void onLeave()}>
+            返回主页
           </button>
         </section>
       </main>
@@ -624,18 +701,13 @@ export function GameTable({
           离开房间
         </button>
         <div className="room-code">
-          <span>ROOM</span>
-          <strong>{room.roomCode}</strong>
+          <span>{room.mode === "BOT" ? "MODE" : "ROOM"}</span>
+          <strong>{room.mode === "BOT" ? "人机对战" : room.roomCode}</strong>
         </div>
         <div className="game-meta">
           <span>底分 {room.baseScore}</span>
           <span>余牌 {room.wallRemaining}</span>
-          {room.waitingPlayers.length > 0 ? (
-            <button type="button" disabled={busy || room.selfReady} onClick={() => void onReady()}>
-              {room.selfReady ? "已准备" : `准备真人局 · ${room.waitingPlayers.length}`}
-            </button>
-          ) : null}
-          {room.isOwner ? (
+          {room.mode === "FRIEND" && room.isOwner ? (
             <button
               type="button"
               disabled={busy || room.dissolveAfterRound}
@@ -644,9 +716,11 @@ export function GameTable({
               {room.dissolveAfterRound ? "本局后解散" : "结束房间"}
             </button>
           ) : null}
-          <button type="button" onClick={() => void copyInvite()}>
-            {inviteStatus}
-          </button>
+          {room.mode === "FRIEND" ? (
+            <button type="button" onClick={() => void copyInvite()}>
+              {inviteStatus}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -655,7 +729,7 @@ export function GameTable({
           <PlayerStation
             key={seat}
             player={playerAt(room, seat)}
-            active={room.currentSeat === seat}
+            active={room.actingSeat === seat}
             position={relativePosition(seat, selfSeat)}
             landedMeldId={landedHighlight?.seat === seat ? landedHighlight.meldId : null}
             landedCategory={landedHighlight?.seat === seat ? landedHighlight.category : null}
@@ -686,9 +760,9 @@ export function GameTable({
                 ? `${playerAt(room, room.roundOutcome.winnerSeat).nickname} · ${room.roundOutcome.winType === "HARD" ? "硬胡" : "软胡"}`
                 : room.roundOutcome?.kind === "DRAW"
                   ? "流局"
-                  : room.currentSeat === null
+                  : room.actingSeat === null
                     ? "等待"
-                    : playerAt(room, room.currentSeat).nickname}
+                    : playerAt(room, room.actingSeat).nickname}
             </b>
           </div>
           <div className="wildcard-block">
@@ -696,6 +770,13 @@ export function GameTable({
             <strong>{room.wildcardKind === null ? "无" : tileKindLabel(room.wildcardKind)}</strong>
           </div>
         </div>
+
+        {showRoundStart ? (
+          <div className="round-start-notice" role="status" aria-live="polite">
+            <span>ROUND START</span>
+            <strong>本局开始</strong>
+          </div>
+        ) : null}
 
         {actionNotice === null ? null : (
           <div
@@ -817,7 +898,7 @@ export function GameTable({
       <div className="action-dock" aria-live="polite">
         <div className="action-status">
           {error ??
-            (room.currentSeat === selfSeat || actions.length > 0
+            (room.actingSeat === selfSeat || actions.length > 0
               ? "请选择牌或操作"
               : "等待其他玩家")}
         </div>
@@ -835,7 +916,14 @@ export function GameTable({
         </div>
       </div>
       {room.roundSettlement === null ? null : (
-        <RoundSettlementModal settlement={room.roundSettlement} players={room.players} />
+        <RoundSettlementModal
+          settlement={room.roundSettlement}
+          players={room.players}
+          mode={room.mode}
+          busy={busy}
+          onContinue={onContinue}
+          onLeave={onLeave}
+        />
       )}
       <div className="portrait-notice">请将设备横过来继续牌局</div>
     </main>

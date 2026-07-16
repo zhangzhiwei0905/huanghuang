@@ -2,6 +2,7 @@ import type {
   BaseScore,
   CommandEnvelope,
   CommandResult,
+  RoomMode,
   RoomProjection,
 } from "@huanghuang/protocol";
 
@@ -31,10 +32,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const roomApi = {
-  create(nickname: string, baseScore: BaseScore): Promise<RoomProjection> {
+  create(nickname: string, baseScore: BaseScore, mode: RoomMode): Promise<RoomProjection> {
     return request("/api/rooms", {
       method: "POST",
-      body: JSON.stringify({ nickname, baseScore }),
+      body: JSON.stringify({ nickname, baseScore, mode }),
     });
   },
   join(nickname: string, roomCode: string): Promise<RoomProjection> {
@@ -48,6 +49,9 @@ export const roomApi = {
   },
   ready(roomCode: string): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/ready`, { method: "POST", body: "{}" });
+  },
+  continueBot(roomCode: string): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/continue`, { method: "POST", body: "{}" });
   },
   dissolve(roomCode: string): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/dissolve`, { method: "POST", body: "{}" });
