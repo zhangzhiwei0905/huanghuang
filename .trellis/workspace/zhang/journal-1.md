@@ -40,3 +40,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 晃晃 Web 游戏 MVP 与主任务收尾
+
+**Date**: 2026-07-16
+**Task**: 晃晃 Web 游戏 MVP 与主任务收尾
+**Branch**: `main`
+
+### Summary
+
+完成邀请制四人数字麻将 MVP、赖子与碰杠规则、房间生命周期、双主题横屏牌桌、动作提示与结算展示；完成顶部自摸/碰杠动作条和手牌高亮，修复阿里云生产镜像构建并部署 HTTPS；最终通过 lint、类型检查、生产构建与 52 项测试，归档主任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4b4efb2` | (see git log) |
+| `fabe7c1` | (see git log) |
+| `4677dfd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
