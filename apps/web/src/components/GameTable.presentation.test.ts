@@ -1,0 +1,184 @@
+import type {
+  ChatMessageProjection,
+  PlayerProjection,
+  RoomProjection,
+  Seat,
+  Tile,
+} from "@huanghuang/protocol";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import { GameTable } from "./GameTable.js";
+
+function tile(id: string, rank: Tile["rank"], suit: Tile["suit"] = "WAN"): Tile {
+  return { id, rank, suit };
+}
+
+function finalHand(seat: Seat): Tile[] {
+  return [
+    tile(`${seat}-wan-1-a`, 1),
+    tile(`${seat}-wan-1-b`, 1),
+    tile(`${seat}-wan-1-c`, 1),
+    tile(`${seat}-tiao-2-a`, 2, "TIAO"),
+    tile(`${seat}-tiao-3-a`, 3, "TIAO"),
+  ];
+}
+
+function player(seat: Seat): PlayerProjection {
+  const releasedWildcards =
+    seat === 1 ? [tile("released-1", 3, "TIAO"), tile("released-2", 3, "TIAO")] : [];
+  return {
+    seat,
+    nickname: `玩家${seat + 1}`,
+    controller: seat === 0 ? "HUMAN" : "BOT",
+    connected: true,
+    handCount: finalHand(seat).length,
+    hand: seat === 0 ? finalHand(seat) : null,
+    melds: [],
+    discards: [],
+    releasedWildcards,
+    personalMultiplier: seat === 1 ? 4 : 1,
+    score: seat === 0 ? 12 : -4,
+  };
+}
+
+function resultRoom(): RoomProjection {
+  const players = ([0, 1, 2, 3] as const).map(player);
+  return {
+    schemaVersion: 4,
+    roomId: "room-1",
+    roomCode: "123456",
+    version: 12,
+    baseScore: 2,
+    mode: "FRIEND",
+    stage: "ROUND_RESULT",
+    roundId: "round-1",
+    roundStartedAt: "2026-07-17T00:00:00.000Z",
+    waitingExpiresAt: null,
+    isOwner: true,
+    selfReady: false,
+    selfSeat: 0,
+    selfDrawnTileId: null,
+    status: "ACTIVE",
+    closeReason: null,
+    dissolveAfterRound: false,
+    indicatorTile: tile("indicator", 2, "TIAO"),
+    wildcardKind: { rank: 3, suit: "TIAO" },
+    wallRemaining: 18,
+    actingSeat: null,
+    currentSeat: null,
+    roundPhase: "ROUND_OVER",
+    actionDeadlineAt: null,
+    roundOutcome: { kind: "WIN", winnerSeat: 0, winType: "HARD", nextDealerSeat: 2 },
+    roundSettlement: {
+      roundId: "round-1",
+      kind: "WIN",
+      winnerSeat: 0,
+      winType: "HARD",
+      baseScore: 2,
+      winBaseMultiplier: 2,
+      winnerMultiplier: 1,
+      nextDealerSeat: 2,
+      payments: [
+        { payerSeat: 1, payerMultiplier: 4, amount: 16 },
+        { payerSeat: 2, payerMultiplier: 1, amount: 4 },
+        { payerSeat: 3, payerMultiplier: 1, amount: 4 },
+      ],
+      finalHands: ([0, 1, 2, 3] as const).map((seat) => ({
+        seat,
+        tiles: finalHand(seat),
+        personalMultiplier: seat === 1 ? 4 : 1,
+      })),
+      scoreChanges: [
+        { seat: 0, roundDelta: 24, totalScore: 12 },
+        { seat: 1, roundDelta: -16, totalScore: -4 },
+        { seat: 2, roundDelta: -4, totalScore: -4 },
+        { seat: 3, roundDelta: -4, totalScore: -4 },
+      ],
+    },
+    legalActions: [],
+    players,
+    lobbySeats: ([0, 1, 2, 3] as const).map((seat) => ({
+      seat,
+      nickname: `玩家${seat + 1}`,
+      occupied: true,
+      ready: false,
+      connected: true,
+      isOwner: seat === 0,
+      isSelf: seat === 0,
+      score: seat === 0 ? 12 : -4,
+    })),
+  };
+}
+
+const chatMessages: ChatMessageProjection[] = [
+  {
+    id: "chat-1",
+    roomId: "room-1",
+    senderSeat: 2,
+    nickname: "玩家3",
+    message: "等我一下",
+    sentAt: "2026-07-17T00:01:00.000Z",
+  },
+];
+
+const resolveVoid = () => Promise.resolve();
+const resolveChat = () => Promise.resolve(true);
+
+describe("game table presentation", () => {
+  it("renders compact player state, avatar chat bubbles and the central wall count", () => {
+    const markup = renderToStaticMarkup(
+      createElement(GameTable, {
+        room: resultRoom(),
+        busy: false,
+        connectionStatus: "connected",
+        pendingAction: null,
+        error: null,
+        chatMessages,
+        onReady: resolveVoid,
+        onBaseScoreChange: resolveVoid,
+        onContinue: resolveVoid,
+        onChat: resolveChat,
+        onLeave: resolveVoid,
+        onDissolve: resolveVoid,
+        onSend: resolveVoid,
+      }),
+    );
+
+    expect(markup.match(/class="player-avatar"/g)).toHaveLength(4);
+    expect(markup.match(/class="player-hand-count"/g)).toHaveLength(4);
+    expect(markup).toContain("余牌 18");
+    expect(markup).toContain("等我一下");
+    expect(markup).toContain('class="chat-form"');
+    expect(markup).toContain("×2");
+    expect(markup).not.toContain("hidden-hand");
+  });
+
+  it("renders every final hand as SVG tiles with multipliers and signed score changes", () => {
+    const markup = renderToStaticMarkup(
+      createElement(GameTable, {
+        room: resultRoom(),
+        busy: false,
+        connectionStatus: "connected",
+        pendingAction: null,
+        error: null,
+        chatMessages: [],
+        onReady: resolveVoid,
+        onBaseScoreChange: resolveVoid,
+        onContinue: resolveVoid,
+        onChat: resolveChat,
+        onLeave: resolveVoid,
+        onDissolve: resolveVoid,
+        onSend: resolveVoid,
+      }),
+    );
+
+    expect(markup.match(/class="settlement-avatar"/g)).toHaveLength(4);
+    expect(markup.match(/class="settlement-hand"/g)).toHaveLength(4);
+    expect(markup.match(/class="tile-face-artwork"/g)?.length).toBeGreaterThanOrEqual(20);
+    expect(markup).toContain("硬胡 · 2×");
+    expect(markup).toContain("+24");
+    expect(markup).toContain("-16");
+    expect(markup).toContain("累计 12");
+  });
+});

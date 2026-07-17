@@ -806,6 +806,11 @@ export class RoomService {
                       : [],
                   )
                 : [],
+            finalHands: SEATS.map((seat) => ({
+              seat,
+              tiles: round.players[seat].hand,
+              personalMultiplier: round.players[seat].personalMultiplier,
+            })),
             scoreChanges: SEATS.map((seat) => ({
               seat,
               roundDelta: round.players[seat].score - round.startingScores[seat],

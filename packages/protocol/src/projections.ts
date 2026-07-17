@@ -54,6 +54,11 @@ export type RoundSettlementProjection = {
     payerMultiplier: PersonalMultiplier;
     amount: number;
   }[];
+  finalHands: {
+    seat: Seat;
+    tiles: Tile[];
+    personalMultiplier: PersonalMultiplier;
+  }[];
   scoreChanges: {
     seat: Seat;
     roundDelta: number;

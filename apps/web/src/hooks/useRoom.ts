@@ -232,7 +232,7 @@ export function useRoom(): RoomController {
       const timer = window.setTimeout(() => {
         setChatMessages((current) => current.filter((item) => item.id !== message.id));
         chatTimersRef.current.delete(message.id);
-      }, 5000);
+      }, 3000);
       chatTimersRef.current.set(message.id, timer);
     };
     socket.on("connect", subscribe);

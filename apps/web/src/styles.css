@@ -515,12 +515,12 @@ h1 {
 .player-station {
   position: absolute;
   z-index: 4;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 36px minmax(68px, 1fr) auto;
   align-items: center;
-  gap: 14px;
-  max-width: 240px;
-  min-width: 170px;
+  gap: 4px 9px;
+  max-width: 292px;
+  min-width: 224px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 8px 10px;
@@ -582,9 +582,54 @@ h1 {
   left: -27px;
   transform: translateY(-50%);
 }
+.player-avatar,
+.settlement-avatar {
+  display: block;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+}
+.player-avatar {
+  grid-row: 1;
+  grid-column: 1;
+  width: 36px;
+  height: 36px;
+}
+.player-chat-bubble {
+  position: absolute;
+  z-index: 12;
+  width: max-content;
+  max-width: 180px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: var(--panel);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+.position-bottom .player-chat-bubble,
+.position-left .player-chat-bubble,
+.position-right .player-chat-bubble {
+  bottom: calc(100% + 9px);
+}
+.position-bottom .player-chat-bubble,
+.position-left .player-chat-bubble {
+  left: 0;
+}
+.position-right .player-chat-bubble {
+  right: 0;
+}
+.position-top .player-chat-bubble {
+  top: calc(100% + 9px);
+  left: 50%;
+  transform: translateX(-50%);
+}
 .player-melds {
+  grid-column: 1 / -1;
   display: flex;
-  flex: 1 1 100%;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
@@ -593,30 +638,17 @@ h1 {
   margin-left: 1px;
 }
 .released-wildcard-zone {
-  min-width: 132px;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  border: 1px solid var(--tile-gold);
-  border-radius: 5px;
-  padding: 2px 5px;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
   color: var(--tile-gold);
-  background: color-mix(in srgb, var(--panel) 90%, var(--tile-gold));
-}
-.released-wildcard-zone > span {
-  font-size: 7px;
-  letter-spacing: 0.04em;
-}
-.released-wildcard-zone > div {
-  display: flex;
 }
 .released-wildcard-zone .mahjong-tile.is-compact {
-  width: 20px;
-  height: 27px;
+  width: 28px;
+  height: 39px;
 }
 .released-wildcard-zone > b {
+  padding-bottom: 2px;
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -642,6 +674,7 @@ h1 {
   transform: translateY(-50%);
 }
 .player-identity {
+  grid-column: 2;
   display: grid;
   grid-template-columns: 8px auto;
   column-gap: 7px;
@@ -671,30 +704,26 @@ h1 {
   background: var(--accent);
 }
 .player-score {
+  grid-column: 3;
   display: grid;
+  justify-items: end;
   border-left: 1px solid var(--line);
-  padding-left: 12px;
+  padding-left: 9px;
 }
 .player-score b {
-  font-size: 17px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .player-score span {
   color: var(--muted);
   font-size: 9px;
 }
-.hidden-hand {
-  display: flex;
-  align-items: flex-end;
-  height: 27px;
-}
-.hidden-hand i {
-  width: 6px;
-  height: 23px;
-  margin-left: -1px;
-  border: 1px solid var(--tile-edge);
-  border-radius: 2px;
-  background: var(--tile);
+.player-hand-count {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .table-center {
@@ -770,6 +799,18 @@ h1 {
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+.turn-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.wall-remaining {
+  color: var(--muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .turn-countdown i {
   font-size: 7px;
@@ -893,20 +934,9 @@ h1 {
   gap: 8px;
   justify-items: center;
 }
-.self-area.is-self-turn::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  right: 10%;
-  bottom: -3px;
-  left: 10%;
-  height: 84px;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
-  border-radius: 12px 12px 0 0;
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
-  pointer-events: none;
-}
 .primary-action-bar {
+  position: relative;
+  top: -10px;
   display: flex;
   align-items: stretch;
   gap: 10px;
@@ -1050,9 +1080,7 @@ h1 {
   padding: 0;
   color: var(--tile-blue);
   background: var(--tile);
-  box-shadow:
-    inset 0 -3px 0 color-mix(in srgb, var(--tile-edge) 45%, transparent),
-    inset 0 1px 0 rgb(255 255 255 / 45%);
+  overflow: hidden;
   user-select: none;
   touch-action: manipulation;
   transition:
@@ -1091,13 +1119,6 @@ h1 {
 }
 .mahjong-tile.is-wildcard {
   border-color: var(--accent);
-  box-shadow:
-    inset 0 -4px 0 var(--accent),
-    inset 0 1px 0 rgb(255 255 255 / 45%);
-}
-.mahjong-tile.is-indicator {
-  outline: 1px dashed var(--tile-gold);
-  outline-offset: 2px;
 }
 .mahjong-tile.is-selected {
   z-index: 2;
@@ -1159,41 +1180,15 @@ h1 {
   background: var(--panel);
   gap: 12px;
 }
-.chat-console {
-  min-width: 0;
-  flex: 1;
-  display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(170px, 240px);
-  align-items: center;
-  gap: 8px;
-}
-.chat-feed {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-}
-.chat-message {
-  min-width: 0;
-  overflow: hidden;
-  border-left: 2px solid var(--line-strong);
-  padding-left: 7px;
-  color: var(--muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chat-message b {
-  margin-right: 5px;
-  color: var(--ink);
-  font-weight: 650;
-}
 .chat-form {
-  min-width: 0;
+  position: absolute;
+  left: 50%;
+  bottom: calc(7px + var(--safe-bottom));
+  width: min(300px, 38vw);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 5px;
+  transform: translateX(-50%);
 }
 .chat-form input {
   min-width: 0;
@@ -1219,11 +1214,6 @@ h1 {
 .player-action-tiles {
   display: flex;
   align-items: flex-end;
-  border: 1px solid var(--line-strong);
-  border-radius: 5px;
-  padding: 3px;
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
-  box-shadow: var(--shadow);
 }
 .action-position-bottom {
   bottom: 116px;
@@ -1255,7 +1245,7 @@ h1 {
   background: color-mix(in srgb, var(--page) 68%, transparent);
 }
 .round-settlement-modal {
-  width: min(600px, calc(100vw - 40px));
+  width: min(760px, calc(100vw - 40px));
   max-height: calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 40px);
   overflow: auto;
   border: 1px solid var(--line-strong);
@@ -1356,41 +1346,76 @@ h1 {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.settlement-score-list {
+.settlement-player-list {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
 }
-.settlement-score-list > div {
+.settlement-player-list > article {
+  min-width: 0;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px 12px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 9px 10px;
+  grid-template-columns: 30px minmax(76px, 100px) minmax(0, 1fr) 44px 62px;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 7px 4px;
 }
-.settlement-score-list strong {
+.settlement-player-list > article:first-child {
+  border-top: 0;
+}
+.settlement-player-list > article.is-winner {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.settlement-avatar {
+  width: 30px;
+  height: 30px;
+}
+.settlement-player-identity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.settlement-player-identity strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 560;
+  font-size: 11px;
+  font-weight: 600;
 }
-.settlement-score-list span {
-  grid-row: 2;
+.settlement-player-identity small,
+.settlement-player-multiplier small,
+.settlement-player-score small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 8px;
+  white-space: nowrap;
 }
-.settlement-score-list b {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  align-self: center;
-  font-size: 13px;
+.settlement-hand {
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+.settlement-hand .mahjong-tile.is-compact {
+  width: 25px;
+  height: 35px;
+  flex: 0 0 25px;
+  margin-left: -4px;
+}
+.settlement-hand .mahjong-tile.is-compact:first-child {
+  margin-left: 0;
+}
+.settlement-player-multiplier,
+.settlement-player-score {
+  display: grid;
+  justify-items: end;
   font-variant-numeric: tabular-nums;
 }
-.settlement-score-list .is-gain span,
-.settlement-score-list .is-gain b {
-  color: var(--accent-ink);
+.settlement-player-multiplier b {
+  font-size: 12px;
+}
+.settlement-player-score strong {
+  font-size: 15px;
+}
+.settlement-player-list > article.is-gain .settlement-player-score strong {
+  color: var(--accent);
 }
 .round-settlement-modal > footer {
   display: flex;
@@ -1416,8 +1441,12 @@ h1 {
 }
 
 .action-status {
+  max-width: calc(50% - 170px);
+  overflow: hidden;
   color: var(--muted);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .action-buttons {
   display: flex;
@@ -1449,13 +1478,15 @@ h1 {
 
 @media (max-width: 860px) {
   .player-station {
-    min-width: 136px;
-    max-width: 176px;
-    gap: 7px;
+    grid-template-columns: 28px minmax(56px, 1fr) auto;
+    min-width: 174px;
+    max-width: 212px;
+    gap: 3px 6px;
     padding: 6px 8px;
   }
-  .hidden-hand {
-    display: none;
+  .player-avatar {
+    width: 28px;
+    height: 28px;
   }
   .player-melds {
     gap: 3px;
@@ -1465,10 +1496,7 @@ h1 {
     height: 28px;
   }
   .released-wildcard-zone {
-    min-width: 108px;
-    min-height: 26px;
     gap: 3px;
-    padding: 1px 3px;
   }
   .released-wildcard-zone .mahjong-tile.is-compact {
     width: 17px;
@@ -1509,8 +1537,8 @@ h1 {
   .game-meta > span:first-child {
     display: none;
   }
-  .chat-console {
-    grid-template-columns: minmax(80px, 1fr) minmax(150px, 190px);
+  .chat-form {
+    width: min(250px, 36vw);
   }
   .primary-action-bar {
     gap: 6px;
@@ -1578,11 +1606,22 @@ h1 {
     min-height: 0;
   }
   .player-station {
-    min-width: 106px;
-    max-width: 140px;
-    gap: 5px;
+    grid-template-columns: 24px minmax(46px, 1fr) auto;
+    min-width: 140px;
+    max-width: 168px;
+    gap: 2px 4px;
     border-radius: 6px;
     padding: 4px 5px;
+  }
+  .player-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+  }
+  .player-chat-bubble {
+    max-width: 140px;
+    padding: 5px 7px;
+    font-size: 9px;
   }
   .player-melds {
     gap: 2px;
@@ -1592,17 +1631,14 @@ h1 {
     height: 22px;
   }
   .released-wildcard-zone {
-    min-width: 86px;
-    min-height: 22px;
+    gap: 2px;
   }
   .released-wildcard-zone .mahjong-tile.is-compact {
     width: 14px;
     height: 19px;
   }
-  .released-wildcard-zone > span {
-    font-size: 6px;
-  }
   .released-wildcard-zone > b {
+    padding-bottom: 1px;
     font-size: 9px;
   }
   .player-identity {
@@ -1618,10 +1654,13 @@ h1 {
     display: none;
   }
   .player-score {
-    padding-left: 6px;
+    padding-left: 4px;
   }
   .player-score b {
-    font-size: 12px;
+    font-size: 10px;
+  }
+  .player-hand-count {
+    font-size: 7px;
   }
   .position-top {
     top: 4px;
@@ -1656,6 +1695,17 @@ h1 {
   .turn-marker b {
     max-width: 86px;
     font-size: 10px;
+  }
+  .turn-stats {
+    gap: 3px;
+  }
+  .wall-remaining {
+    font-size: 7px;
+  }
+  .turn-countdown {
+    min-width: 28px;
+    height: 15px;
+    font-size: 9px;
   }
   .discard-zone {
     width: 132px;
@@ -1712,6 +1762,7 @@ h1 {
     gap: 4px;
   }
   .primary-action-bar {
+    top: -8px;
     gap: 4px;
     justify-content: flex-end;
     max-width: calc(100vw - 16px);
@@ -1764,9 +1815,6 @@ h1 {
     padding: 4px calc(58px + var(--safe-right)) calc(4px + var(--safe-bottom))
       calc(8px + var(--safe-left));
   }
-  .player-action-tiles {
-    padding: 2px;
-  }
   .action-position-bottom {
     bottom: 62px;
     left: 116px;
@@ -1788,7 +1836,7 @@ h1 {
       calc(8px + var(--safe-bottom)) calc(8px + var(--safe-left));
   }
   .round-settlement-modal {
-    width: min(620px, calc(100vw - var(--safe-left) - var(--safe-right) - 16px));
+    width: min(760px, calc(100vw - var(--safe-left) - var(--safe-right) - 16px));
     max-height: calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 16px);
     padding: 11px 13px;
   }
@@ -1812,8 +1860,23 @@ h1 {
     padding: 5px 7px;
     font-size: 8px;
   }
-  .settlement-score-list > div {
-    padding: 6px 8px;
+  .settlement-player-list > article {
+    grid-template-columns: 26px 82px minmax(0, 1fr) 38px 54px;
+    gap: 5px;
+    padding: 4px 2px;
+  }
+  .settlement-avatar {
+    width: 26px;
+    height: 26px;
+  }
+  .settlement-hand .mahjong-tile.is-compact {
+    width: 21px;
+    height: 29px;
+    flex-basis: 21px;
+    margin-left: -3px;
+  }
+  .settlement-player-score strong {
+    font-size: 13px;
   }
   .round-settlement-modal > footer {
     margin-top: 5px;
@@ -1821,19 +1884,12 @@ h1 {
   .action-status {
     display: none;
   }
-  .chat-feed .action-status {
-    display: inline;
-  }
   .action-buttons {
     width: auto;
     justify-content: flex-end;
   }
-  .chat-console {
-    grid-template-columns: minmax(64px, 1fr) minmax(130px, 170px);
-    gap: 5px;
-  }
-  .chat-feed .chat-message:not(:last-child) {
-    display: none;
+  .chat-form {
+    width: min(260px, 42vw);
   }
   .chat-form input {
     height: 44px;
@@ -1928,8 +1984,8 @@ h1 {
       player-action-fade 3s ease forwards,
       action-wildcard-enter 0.85s ease-out both;
   }
-  .chat-message {
-    animation: chat-message-fade 5s ease-in forwards;
+  .player-chat-bubble {
+    animation: chat-message-fade 3s var(--ease-out) forwards;
   }
   .meld-group.is-landed.action-pong {
     animation: landed-pong-pop 0.7s ease-out;
@@ -2003,10 +2059,11 @@ h1 {
 
 @keyframes chat-message-fade {
   0% {
-    opacity: 1;
+    opacity: 0;
   }
-  55% {
-    opacity: 0.82;
+  8%,
+  68% {
+    opacity: 1;
   }
   100% {
     opacity: 0;

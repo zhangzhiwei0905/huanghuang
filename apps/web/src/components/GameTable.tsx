@@ -162,6 +162,7 @@ function PlayerStation({
   self,
   position,
   wildcardKind,
+  chatMessage,
   landedMeldId,
   landedCategory,
 }: {
@@ -170,9 +171,11 @@ function PlayerStation({
   self: boolean;
   position: number;
   wildcardKind: RoomProjection["wildcardKind"];
+  chatMessage: ChatMessageProjection | null;
   landedMeldId: string | null;
   landedCategory: ActionCategory | null;
 }) {
+  const latestReleasedWildcard = player.releasedWildcards.at(-1) ?? null;
   return (
     <section
       className={`player-station ${POSITION_CLASS[position] ?? ""} ${self ? "is-self" : ""} ${active ? "is-active" : ""}`}
@@ -184,6 +187,12 @@ function PlayerStation({
         </span>
       ) : null}
       {active && self ? <span className="self-turn-label">你的回合</span> : null}
+      {chatMessage === null ? null : (
+        <div className="player-chat-bubble" role="status">
+          {chatMessage.message}
+        </div>
+      )}
+      <span className="player-avatar" aria-label={`${player.nickname}的头像，暂未设置`} />
       <div className="player-identity">
         <span className="status-dot" />
         <strong>{player.nickname}</strong>
@@ -196,16 +205,10 @@ function PlayerStation({
         </small>
       </div>
       <div className="player-score">
-        <b>{player.score}</b>
-        <span>分 · {player.personalMultiplier}×</span>
+        <b>{player.score} 分</b>
+        <span>{player.personalMultiplier}×</span>
+        <small className="player-hand-count">手牌 {player.handCount} 张</small>
       </div>
-      {position === 0 ? null : (
-        <div className="hidden-hand" aria-label={`${player.handCount} 张手牌`}>
-          {Array.from({ length: Math.min(player.handCount, 14) }, (_, index) => (
-            <i key={`${player.seat}-${index}`} />
-          ))}
-        </div>
-      )}
       {/* Self already renders their own melds in the .self-area meld-row, so skip the
           duplicate meld tiles here for position 0 and only surface the wildcard count
           (which has no other on-screen representation for self). */}
@@ -221,20 +224,19 @@ function PlayerStation({
                   category={landedCategory}
                 />
               ))}
-          {player.releasedWildcards.length > 0 ? (
+          {latestReleasedWildcard === null ? null : (
             <div
               className={`released-wildcard-zone ${landedCategory === "wildcard" ? "is-landed" : ""}`}
               aria-label={`已放赖 ${player.releasedWildcards.length} 次，当前倍率 ${player.personalMultiplier} 倍`}
             >
-              <span>放赖</span>
-              <div aria-hidden="true">
-                {player.releasedWildcards.slice(-4).map((tile) => (
-                  <MahjongTile key={tile.id} tile={tile} wildcardKind={wildcardKind} compact />
-                ))}
-              </div>
-              <b>{player.personalMultiplier}×</b>
+              <MahjongTile
+                tile={latestReleasedWildcard}
+                wildcardKind={wildcardKind}
+                compact
+              />
+              <b aria-hidden="true">×{player.releasedWildcards.length}</b>
             </div>
-          ) : null}
+          )}
         </div>
       ) : null}
     </section>
@@ -368,15 +370,20 @@ function TurnMarker({
     >
       <small>{stateLabel}</small>
       <b>{actorLabel}</b>
-      {secondsRemaining === null ||
-      room.roundPhase === "ROUND_OVER" ||
-      connectionStatus !== "connected" ||
-      pendingAction !== null ? null : (
-        <span className="turn-countdown" aria-label={`剩余 ${secondsRemaining} 秒`}>
-          {secondsRemaining}
-          <i>秒</i>
+      <div className="turn-stats">
+        <span className="wall-remaining" aria-label={`牌墙剩余 ${room.wallRemaining} 张`}>
+          余牌 {room.wallRemaining}
         </span>
-      )}
+        {secondsRemaining === null ||
+        room.roundPhase === "ROUND_OVER" ||
+        connectionStatus !== "connected" ||
+        pendingAction !== null ? null : (
+          <span className="turn-countdown" aria-label={`剩余 ${secondsRemaining} 秒`}>
+            {secondsRemaining}
+            <i>秒</i>
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -451,9 +458,16 @@ function signedScore(value: number): string {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
+function sortedTiles(tiles: readonly Tile[]): Tile[] {
+  return [...tiles].sort(
+    (a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.rank - b.rank,
+  );
+}
+
 function RoundSettlementModal({
   settlement,
   players,
+  wildcardKind,
   mode,
   busy,
   onContinue,
@@ -461,6 +475,7 @@ function RoundSettlementModal({
 }: {
   settlement: RoundSettlementProjection;
   players: PlayerProjection[];
+  wildcardKind: RoomProjection["wildcardKind"];
   mode: RoomProjection["mode"];
   busy: boolean;
   onContinue: () => Promise<void>;
@@ -525,14 +540,44 @@ function RoundSettlementModal({
           </div>
         ) : null}
 
-        <div className="settlement-score-list" aria-label="本局积分结算">
-          {settlement.scoreChanges.map((change) => (
-            <div key={change.seat} className={change.roundDelta > 0 ? "is-gain" : ""}>
-              <strong>{playerName(change.seat)}</strong>
-              <span>本局 {signedScore(change.roundDelta)}</span>
-              <b>累计 {change.totalScore}</b>
-            </div>
-          ))}
+        <div className="settlement-player-list" aria-label="本局终局手牌与积分">
+          {settlement.finalHands.map((finalHand) => {
+            const change = settlement.scoreChanges.find((item) => item.seat === finalHand.seat);
+            const winner = settlement.winnerSeat === finalHand.seat;
+            return (
+              <article
+                key={finalHand.seat}
+                className={`${winner ? "is-winner" : ""} ${change !== undefined && change.roundDelta > 0 ? "is-gain" : ""}`}
+              >
+                <span
+                  className="settlement-avatar"
+                  aria-label={`${playerName(finalHand.seat)}的头像，暂未设置`}
+                />
+                <div className="settlement-player-identity">
+                  <strong>{playerName(finalHand.seat)}</strong>
+                  <small>{winner ? "本局赢家" : `座位 ${finalHand.seat + 1}`}</small>
+                </div>
+                <div className="settlement-hand" aria-label={`${playerName(finalHand.seat)}的终局手牌`}>
+                  {sortedTiles(finalHand.tiles).map((tile) => (
+                    <MahjongTile
+                      key={tile.id}
+                      tile={tile}
+                      wildcardKind={wildcardKind}
+                      compact
+                    />
+                  ))}
+                </div>
+                <div className="settlement-player-multiplier">
+                  <small>倍率</small>
+                  <b>{finalHand.personalMultiplier}×</b>
+                </div>
+                <div className="settlement-player-score">
+                  <strong>{change === undefined ? "0" : signedScore(change.roundDelta)}</strong>
+                  <small>累计 {change?.totalScore ?? 0}</small>
+                </div>
+              </article>
+            );
+          })}
         </div>
         <footer className={mode === "BOT" ? "has-actions" : ""}>
           <span>本局净变化已包含碰杠相关得分</span>
@@ -760,11 +805,14 @@ export function GameTable({
   }, [connectionStatus, room.players, room.selfDrawnTileId]);
   const sortedHand = useMemo(
     () =>
-      [...(self?.hand ?? [])]
-        .filter((tile) => tile.id !== room.selfDrawnTileId)
-        .sort((a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.rank - b.rank),
+      sortedTiles((self?.hand ?? []).filter((tile) => tile.id !== room.selfDrawnTileId)),
     [room.selfDrawnTileId, self?.hand],
   );
+  const latestChatBySeat = useMemo(() => {
+    const latest = new Map<Seat, ChatMessageProjection>();
+    for (const message of chatMessages) latest.set(message.senderSeat, message);
+    return latest;
+  }, [chatMessages]);
   const handHighlight = useMemo(
     () =>
       self === null
@@ -968,7 +1016,6 @@ export function GameTable({
         </div>
         <div className="game-meta">
           <span>底分 {room.baseScore}</span>
-          <span>余牌 {room.wallRemaining}</span>
           {room.mode === "FRIEND" && room.isOwner ? (
             <button
               type="button"
@@ -996,6 +1043,7 @@ export function GameTable({
             self={seat === selfSeat}
             position={relativePosition(seat, selfSeat)}
             wildcardKind={room.wildcardKind}
+            chatMessage={latestChatBySeat.get(seat) ?? null}
             landedMeldId={landedHighlight?.seat === seat ? landedHighlight.meldId : null}
             landedCategory={landedHighlight?.seat === seat ? landedHighlight.category : null}
           />
@@ -1140,25 +1188,12 @@ export function GameTable({
 
       <div className="action-dock" aria-live="polite">
         {room.mode === "FRIEND" ? (
-          <div className="chat-console">
-            <div className="chat-feed" aria-live="polite" aria-label="房间消息">
-              {statusMessage === null ? null : (
-                <span className="action-status">{statusMessage}</span>
-              )}
-              {chatMessages.length === 0 && statusMessage === null ? (
-                <span className="action-status">
-                  {room.actingSeat === selfSeat || actions.length > 0
-                    ? "请选择牌或操作"
-                    : "等待其他玩家"}
-                </span>
-              ) : (
-                chatMessages.map((message) => (
-                  <span className="chat-message" key={message.id}>
-                    <b>{message.nickname}</b>
-                    {message.message}
-                  </span>
-                ))
-              )}
+          <>
+            <div className="action-status">
+              {statusMessage ??
+                (room.actingSeat === selfSeat || actions.length > 0
+                  ? "请选择牌或操作"
+                  : "等待其他玩家")}
             </div>
             <form
               className="chat-form"
@@ -1178,7 +1213,7 @@ export function GameTable({
                 发送
               </button>
             </form>
-          </div>
+          </>
         ) : (
           <div className="action-status">
             {statusMessage ??
@@ -1205,6 +1240,7 @@ export function GameTable({
         <RoundSettlementModal
           settlement={room.roundSettlement}
           players={room.players}
+          wildcardKind={room.wildcardKind}
           mode={room.mode}
           busy={busy}
           onContinue={onContinue}

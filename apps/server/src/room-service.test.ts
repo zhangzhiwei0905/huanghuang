@@ -463,12 +463,22 @@ describe("RoomService", () => {
       { payerSeat: 2, payerMultiplier: 1, amount: 4 },
       { payerSeat: 3, payerMultiplier: 1, amount: 4 },
     ]);
+    expect(settlement?.finalHands).toEqual(
+      ([0, 1, 2, 3] as const).map((seat) => ({
+        seat,
+        tiles: round.players[seat].hand,
+        personalMultiplier: round.players[seat].personalMultiplier,
+      })),
+    );
     expect(settlement?.scoreChanges).toEqual([
       { seat: 0, roundDelta: 12, totalScore: 22 },
       { seat: 1, roundDelta: -4, totalScore: -6 },
       { seat: 2, roundDelta: -4, totalScore: -7 },
       { seat: 3, roundDelta: -4, totalScore: -9 },
     ]);
+    expect(service.project(room, owner.id).players.slice(1).every((player) => player.hand === null)).toBe(
+      true,
+    );
   });
 
   it("deduplicates a repeated command and rejects a stale new request", () => {

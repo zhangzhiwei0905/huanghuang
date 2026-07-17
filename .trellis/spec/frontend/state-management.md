@@ -92,7 +92,7 @@ type ChatMessageProjection = {
 - Owner dissolution sets `status = "CLOSED"` immediately in every stage. Waiting timeout uses `WAITING_TIMEOUT`; an owner leaving an otherwise empty room uses `EMPTY_ROOM`. The client clears room state, chat and the invite query parameter, then maps the authoritative reason to its notice.
 - A closed room remains readable for 30 seconds so Socket version notifications can lead to the close projection. After physical eviction, `ROOM_NOT_FOUND` and `NOT_A_MEMBER` also clear stale local room state with a generic closed-room notice.
 - Chat is an ephemeral Socket event for `FRIEND + PLAYING`: the server derives sender identity and timestamp, broadcasts to room members, and never increments the room version or writes chat into SQLite.
-- The client keeps at most four chat messages, renders them in the action dock outside the table, and removes each one after 5 seconds. CSS may animate only the fade; JavaScript remains responsible for removal under reduced motion.
+- The client keeps at most four chat messages, derives the latest active message per `senderSeat`, renders it as a bubble beside that player's avatar, and removes each message after about 3 seconds. CSS owns only the fade; JavaScript remains responsible for removal under reduced motion. The chat input remains centered in the bottom action dock and must not overlap the hand or auxiliary actions.
 
 ### 4. Validation & Error Matrix
 
@@ -135,7 +135,7 @@ type ChatMessageProjection = {
 - Service tests assert bot rooms reject joins, do not auto-continue, and preserve scores after explicit continuation.
 - Projection tests assert `currentSeat` remains the discarder while `actingSeat` identifies the pending responder.
 - Frontend/API tests assert create requests include `mode`, readiness sends the desired boolean, settings use `PATCH`, and bot continuation uses the explicit endpoint.
-- Browser checks cover desktop and phone landscape geometry, dissolve notice, owner settings, ready cancellation, and chat fade/removal after 5 seconds.
+- Browser checks cover desktop and phone landscape geometry, dissolve notice, owner settings, ready cancellation, and avatar-adjacent chat fade/removal after about 3 seconds.
 
 ### 7. Wrong vs Correct
 
@@ -163,7 +163,7 @@ room.messages.push(message);
 save(room);
 ```
 
-This trusts spoofable identity and turns a five-second UI event into durable room state.
+This trusts spoofable identity and turns a three-second UI event into durable room state.
 
 Correct:
 
@@ -177,7 +177,7 @@ if (typeof message === "string" || message === null) {
 io.to(message.roomId).emit("room:chat", message);
 ```
 
-The service resolves the current member seat and nickname. The frontend owns the five-second queue and never writes chat back into the authoritative projection.
+The service resolves the current member seat and nickname. The frontend owns the three-second queue and never writes chat back into the authoritative projection.
 
 Wrong:
 
@@ -198,3 +198,86 @@ function enterWaiting(room: RoomState, now: number): void {
 ```
 
 Only lifecycle entry creates the deadline; UI timers merely display it.
+
+## Scenario: End-of-round final hand projection
+
+### 1. Scope / Trigger
+
+Any settlement UI that shows all players' concealed tiles must use an authoritative, end-of-round-only projection. It must not weaken the normal per-player hand privacy contract.
+
+### 2. Signatures
+
+```ts
+type RoundSettlementProjection = {
+  // existing settlement fields
+  finalHands: {
+    seat: Seat;
+    tiles: Tile[];
+    personalMultiplier: PersonalMultiplier;
+  }[];
+};
+```
+
+### 3. Contracts
+
+- `RoomService.project` populates `finalHands` only when the round has an outcome and `roundSettlement` is non-null.
+- The array contains exactly one entry for every seat in canonical seat order.
+- Tiles and personal multipliers come from the authoritative round state; the browser never reconstructs a final hand from counts, discards, or melds.
+- `players[selfSeat].hand` still contains the current member's hand, while every opponent `players[*].hand` remains `null`, including in `ROUND_RESULT`.
+- The settlement modal reuses `MahjongTile` so final hands have the same SVG artwork and wildcard identity as the table.
+- This is an additive projection field; commands, chat events, persistence and scoring formulas are unchanged.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| `roundSettlement === null` | No final hands are exposed through a settlement object |
+| Active or waiting projection | Opponent `PlayerProjection.hand` remains `null` |
+| Round reaches win or draw | Emit four authoritative `finalHands` entries |
+| A settlement entry has no matching score change | UI displays a zero fallback and does not calculate a score |
+| Wildcard appears in a final hand | Render the normal SVG tile with the existing wildcard badge |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a self-draw settlement shows four SVG hands, each player's personal multiplier, signed round delta and cumulative score.
+- Base: a draw still shows all final hands and preserves any already-produced kong score changes.
+- Bad: filling opponent `players[*].hand` to make the modal easier to render; this leaks concealed state outside the dedicated settlement contract.
+
+### 6. Tests Required
+
+- Service tests assert `finalHands` equals every authoritative round hand and multiplier after settlement.
+- The same service test asserts the requesting player's hand is present and all opponent `players[*].hand` values remain `null`.
+- A component rendering test asserts four settlement hand rows reuse SVG tile artwork and display positive/negative deltas.
+- Full lint, type-check, tests and production build must pass after producer or consumer changes.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+return {
+  players: round.players.map((player) => ({ ...player, hand: player.hand })),
+};
+```
+
+This publishes every concealed hand as general room state.
+
+Correct:
+
+```ts
+return {
+  players: projectPlayersForMember(round, sessionId),
+  roundSettlement: round.outcome === null
+    ? null
+    : {
+        ...projectSettlement(round),
+        finalHands: SEATS.map((seat) => ({
+          seat,
+          tiles: round.players[seat].hand,
+          personalMultiplier: round.players[seat].personalMultiplier,
+        })),
+      },
+};
+```
+
+The dedicated settlement field is available only after the authoritative round outcome exists, while general player projection privacy stays intact.
