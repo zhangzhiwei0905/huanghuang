@@ -139,3 +139,37 @@ Imported and adapted 27 wan, tiao, and tong SVG tiles from lietxia/mahjong_graph
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 房间生命周期与 iOS PWA 上线
+
+**Date**: 2026-07-17
+**Task**: 房间生命周期与 iOS PWA 上线
+**Branch**: `main`
+
+### Summary
+
+完成多人牌桌交互成熟化、好友房三分钟回收、房主即时解散与转让、关闭通知后内存和 SQLite 物理删除，以及 iOS 动态视口和 PWA；完整质量门禁通过，生产备份、部署与线上房间回收验证完成。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e51e8c3` | (see git log) |
+| `1b26e80` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

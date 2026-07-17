@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-07-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~141 | Active |
+| `journal-1.md` | ~175 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-07-17 | 房间生命周期与 iOS PWA 上线 | `e51e8c3`, `1b26e80` | `main` |
 | 4 | 2026-07-17 | Integrate mahjong SVG tile artwork | `0c7d304` | `main` |
 | 3 | 2026-07-17 | 麻将牌面素材咨询 | - | `main` |
 | 2 | 2026-07-16 | 晃晃 Web 游戏 MVP 与主任务收尾 | `4b4efb2`, `fabe7c1`, `4677dfd` | `main` |
