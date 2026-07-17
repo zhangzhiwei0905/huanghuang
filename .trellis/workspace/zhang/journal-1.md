@@ -207,3 +207,36 @@ Imported and adapted 27 wan, tiao, and tong SVG tiles from lietxia/mahjong_graph
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 优化牌桌人机与结算
+
+**Date**: 2026-07-17
+**Task**: 优化牌桌人机与结算
+**Branch**: `feat/table-ai-settlement-optimization`
+
+### Summary
+
+统一本人碰杠组合展示，精简终局信息，新增受限公开视图的均衡机器人策略并分离断线托管，补齐杠分与倍率回归，保留 SQLite。全量 100 个测试、lint、typecheck、build、Compose 与浏览器几何检查通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9d75067` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

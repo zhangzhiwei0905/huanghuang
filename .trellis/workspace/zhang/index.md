@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-07-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~209 | Active |
+| `journal-1.md` | ~242 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-07-17 | 优化牌桌人机与结算 | `9d75067` | `feat/table-ai-settlement-optimization` |
 | 6 | 2026-07-17 | 牌桌视觉完善与生产部署加速 | `0888402`, `cbb97b2` | `main` |
 | 5 | 2026-07-17 | 房间生命周期与 iOS PWA 上线 | `e51e8c3`, `1b26e80` | `main` |
 | 4 | 2026-07-17 | Integrate mahjong SVG tile artwork | `0c7d304` | `main` |
