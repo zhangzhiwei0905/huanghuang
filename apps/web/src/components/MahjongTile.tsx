@@ -1,30 +1,37 @@
 import type { Tile, TileKind } from "@huanghuang/protocol";
 
 const SUIT_LABEL = { WAN: "万", TIAO: "条", TONG: "筒" } as const;
-const WAN_RANKS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"] as const;
+const TILE_ARTWORK_PREFIX = { WAN: "wan", TIAO: "tiao", TONG: "tong" } as const;
+const TILE_ARTWORK = import.meta.glob<string>("../assets/tiles/*.svg", {
+  eager: true,
+  import: "default",
+  query: "?url",
+});
+
+export function tileArtworkFilename(tile: TileKind): string {
+  return `${TILE_ARTWORK_PREFIX[tile.suit]}-${tile.rank}.svg`;
+}
+
+export function tileArtworkUrl(tile: TileKind): string {
+  const assetPath = `../assets/tiles/${tileArtworkFilename(tile)}`;
+  const artworkUrl = TILE_ARTWORK[assetPath];
+  if (artworkUrl === undefined) throw new Error(`Missing tile artwork: ${assetPath}`);
+  return artworkUrl;
+}
 
 function sameKind(tile: Tile, kind: TileKind | null): boolean {
   return kind !== null && tile.suit === kind.suit && tile.rank === kind.rank;
 }
 
 function TileFace({ tile }: { tile: Tile }) {
-  if (tile.suit === "WAN") {
-    return (
-      <span className="tile-face tile-face-wan" aria-hidden="true">
-        <strong>{WAN_RANKS[tile.rank]}</strong>
-        <em>萬</em>
-      </span>
-    );
-  }
-
   return (
-    <span className={`tile-face tile-face-${tile.suit.toLowerCase()}`} aria-hidden="true">
-      <span className="tile-motif-grid">
-        {Array.from({ length: tile.rank }, (_, position) => (
-          <i key={`${tile.id}-mark-${position}`} />
-        ))}
-      </span>
-    </span>
+    <img
+      className="tile-face-artwork"
+      src={tileArtworkUrl(tile)}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+    />
   );
 }
 
@@ -72,13 +79,7 @@ export function MahjongTile({
     .join(" ");
   const content = (
     <>
-      <span className="tile-corner-rank" aria-hidden="true">
-        {tile.rank}
-      </span>
       <TileFace tile={tile} />
-      <span className="tile-corner-suit" aria-hidden="true">
-        {SUIT_LABEL[tile.suit]}
-      </span>
       {wildcard ? (
         <span className="tile-badge" aria-hidden="true">
           赖

@@ -738,7 +738,7 @@ export function GameTable({
 
         <div className="table-center">
           <div className="indicator-block">
-            <span>亮牌</span>
+            <span className="special-tile-label">亮牌</span>
             {room.indicatorTile === null ? (
               <i>无</i>
             ) : (
@@ -766,8 +766,16 @@ export function GameTable({
             </b>
           </div>
           <div className="wildcard-block">
-            <span>赖子</span>
-            <strong>{room.wildcardKind === null ? "无" : tileKindLabel(room.wildcardKind)}</strong>
+            <span className="special-tile-label">赖子</span>
+            {room.wildcardKind === null ? (
+              <i>无</i>
+            ) : (
+              <MahjongTile
+                tile={{ id: "wildcard-kind-preview", ...room.wildcardKind }}
+                wildcardKind={room.wildcardKind}
+                compact
+              />
+            )}
           </div>
         </div>
 
