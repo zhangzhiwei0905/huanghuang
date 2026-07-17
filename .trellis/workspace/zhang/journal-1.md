@@ -106,3 +106,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Integrate mahjong SVG tile artwork
+
+**Date**: 2026-07-17
+**Task**: Integrate mahjong SVG tile artwork
+**Branch**: `main`
+
+### Summary
+
+Imported and adapted 27 wan, tiao, and tong SVG tiles from lietxia/mahjong_graphic; unified MahjongTile rendering and the table-center wildcard display; added mapping and accessibility regression tests; validated SVG structure, tests, lint, typecheck, build, and responsive browser rendering.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0c7d304` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

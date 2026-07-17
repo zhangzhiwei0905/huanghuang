@@ -158,3 +158,93 @@ SQLite 表结构不变，继续保存 JSON 房间快照。构造 `RoomService` �
 - 第二风险是局终计分复制时机错误。新增跨局累计测试，分别覆盖自摸、流局、杠分、人机继续和好友回房。
 - 第三风险是重复准备或继续导致双开局。服务端阶段检查和幂等测试作为合并门槛。
 - 部署仍使用现有 JSON/SQLite；若线上异常，可回滚应用镜像。旧版无法理解新快照，因此部署前保留数据库卷备份，回滚时同步恢复备份。
+
+## 8. 第二轮房间交互增量
+
+### 8.1 准备与底分
+
+- 保留 `POST /api/rooms/:code/ready` 路径，但语义改为切换当前成员的准备状态。
+- 新增 `PATCH /api/rooms/:code/settings`，使用协议层 `updateRoomSettingsSchema` 校验 `baseScore`。
+- 仅 `FRIEND + WAITING` 的当前房主可以修改底分；变更成功后清空 `readySessionIds` 并广播新投影。
+
+### 8.2 关闭原因
+
+- `RoomState` 与 `RoomProjection` 增加 `closeReason`，当前定义 `OWNER_DISSOLVED | null`。
+- 等待房立即解散和对局后延迟解散都在状态转为 `CLOSED` 时写入 `OWNER_DISSOLVED`。
+- 前端收到关闭投影时清理房间 URL 和本地房间状态，并在主页展示一次退出提示。
+
+### 8.3 临时聊天事件
+
+```text
+ChatForm
+  → room:chat { roomCode, message }
+  → protocol schema validation
+  → RoomService member/stage validation
+  → room:chat ChatMessageProjection
+  → useRoom ephemeral queue
+  → footer chat feed → 5 秒移除
+```
+
+- 消息只允许好友房 `PLAYING` 阶段的实际成员发送；服务器从座位控制器生成昵称和座位，客户端不能伪造身份。
+- 消息不修改房间版本、不保存 SQLite，刷新或重连不补发历史消息。
+- `room:subscribe` 同时补上成员校验，主动离房后的会话不能继续订阅或聊天。
+- 底部 `action-dock` 作为消息与输入的唯一展示区域，避免在牌桌层增加覆盖元素。
+
+## 9. 第三轮按需动作栏设计
+
+### 9.1 单一动作映射
+
+新增纯前端动作映射函数，以 `RoomProjection.legalActions` 为唯一输入，将协议动作折叠为六种用户可见按钮：
+
+```text
+DISCARD_TILE                                      → 出牌
+RELEASE_WILDCARD                                  → 放赖
+CLAIM_PONG / CLAIM_INDICATOR_PONG_KONG            → 碰
+CLAIM_EXPOSED_KONG / DECLARE_CONCEALED_KONG       → 杠
+DECLARE_ADDED_KONG                                → 补杠
+DECLARE_WIN                                       → 自摸
+```
+
+- 映射函数固定按钮顺序并返回动作类型、视觉种类、主标签和副标签，组件不再分别维护常驻按钮与过滤集合。
+- `PASS_RESPONSE` 与 `CONTINUE_TURN` 不属于六种主要动作，继续留在底部辅助操作区。
+- 映射结果为空时不渲染动作栏，避免无动作时给手牌上方预留空白。
+
+### 9.2 选择与派发
+
+- 出牌仅在选中非赖子实体时启用；放赖仅在选中赖子实体时启用。
+- 暗杠和补杠继续复用 `deriveConcealedKongPayload` / `deriveAddedKongPayload`，支持优先使用当前选牌并在未选择时安全推导。
+- 碰、明杠、亮牌特殊碰和自摸不要求选牌，直接派发服务端已经授权的动作。
+- 双击牌直接出牌的既有路径保留，并继续检查 `DISCARD_TILE` 是否合法。
+
+### 9.3 视觉层级
+
+- 出牌：最大宽度、深色实底，表达高频主操作。
+- 放赖：使用同一强调色的描边和轻纹理，副标签显示“倍率翻倍”，表达本游戏的特殊机制。
+- 碰/杠/补杠：中性面板、清晰边框和相同尺寸，副标签说明具体类型。
+- 自摸：强调色实底和“本局获胜”副标签，只有获胜机会出现时才形成视觉焦点。
+- 所有状态仅使用既有语义色和 `transform`/`opacity` 入场反馈，不增加霓虹、外发光或持续动画。
+
+## 10. 第四轮牌桌体验成熟化
+
+### 10.1 交互与网络锁
+
+- 将手牌点击决策提取为纯函数：未选中或点击其他牌时选择；再次点击同一张普通牌且服务端允许弃牌时提交；同一张赖子保持选择并交给“放赖”按钮。
+- `GameTable` 在事件处理器内使用同步 ref 锁，`useRoom` 再使用全局 mutation ref 作为第二道防线。服务端投影仍是唯一牌面结果，不乐观删除手牌。
+- 游戏命令确认加入客户端超时；Socket 每次 `connect` 都重新发送 `room:subscribe`。恢复投影到达前保持 `connecting/reconnecting`，牌桌禁用输入并显示恢复状态。
+
+### 10.2 非阻塞动效
+
+- 手牌外层包装元素执行 FLIP：布局提交后测量位置差，以 Web Animations API 播放 transform/opacity，不改变 React 数据顺序。
+- 新摸牌和最新弃牌仅在连续在线投影中播放一次入场动画。首次挂载、重连恢复或减少动态效果时清空旧坐标并直接展示最终状态。
+- 开局亮牌/赖子揭示绑定有效的近期 `roundStartedAt`，避免刷新旧牌局时误播“本局开始”。
+
+### 10.3 回合、特殊牌与结算
+
+- 倒计时封装到独立 `TurnMarker`，只让中央状态区域更新；本人行动时给牌桌、本人信息和手牌区增加同一语义状态。
+- 放赖展示实际赖子缩略牌、次数和当前个人倍率；落地反馈继续复用既有动作检测，不增加协议字段。
+- 结算弹框用 `HARD/SOFT` 类名、明确徽标和说明区分硬胡/软胡；付款与积分数据保持原投影。
+
+### 10.4 兼容边界
+
+- 不新增吃牌命令：本项目规则与协议没有吃牌，动作 UI 继续只消费 `legalActions`。
+- 不引入动画依赖，不变更 Socket 事件或命令 payload。所有动画仅为客户端表现，可随时移除而不影响状态同步。
