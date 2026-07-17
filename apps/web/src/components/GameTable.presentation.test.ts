@@ -34,7 +34,20 @@ function player(seat: Seat): PlayerProjection {
     connected: true,
     handCount: finalHand(seat).length,
     hand: seat === 0 ? finalHand(seat) : null,
-    melds: [],
+    melds:
+      seat === 0
+        ? [
+            {
+              id: "self-pong",
+              kind: "PONG",
+              tileIds: ["self-pong-1", "self-pong-2", "self-pong-3"],
+              tileKind: { suit: "TONG", rank: 6 },
+              sourcePlayerId: "seat-1",
+              sourceDiscardId: "discard-1",
+              createdAtVersion: 8,
+            },
+          ]
+        : [],
     discards: [],
     releasedWildcards,
     personalMultiplier: seat === 1 ? 4 : 1,
@@ -151,6 +164,9 @@ describe("game table presentation", () => {
     expect(markup).toContain("等我一下");
     expect(markup).toContain('class="chat-form"');
     expect(markup).toContain("×2");
+    expect(markup.match(/aria-label="玩家1的公开组合"/g)).toHaveLength(1);
+    expect(markup).toContain('title="PONG"');
+    expect(markup).not.toContain('class="meld-row"');
     expect(markup).not.toContain("hidden-hand");
   });
 
@@ -176,9 +192,14 @@ describe("game table presentation", () => {
     expect(markup.match(/class="settlement-avatar"/g)).toHaveLength(4);
     expect(markup.match(/class="settlement-hand"/g)).toHaveLength(4);
     expect(markup.match(/class="tile-face-artwork"/g)?.length).toBeGreaterThanOrEqual(20);
-    expect(markup).toContain("硬胡 · 2×");
+    expect(markup).toContain("玩家1 硬胡");
+    expect(markup).not.toContain("settlement-win-badge");
+    expect(markup).not.toContain("settlement-formula");
+    expect(markup).not.toContain("settlement-payments");
+    expect(markup.match(/<small>倍率<\/small>/g)).toHaveLength(4);
+    expect(markup.match(/<small>本局<\/small>/g)).toHaveLength(4);
+    expect(markup.match(/<small>累计<\/small>/g)).toHaveLength(4);
     expect(markup).toContain("+24");
     expect(markup).toContain("-16");
-    expect(markup).toContain("累计 12");
   });
 });

@@ -2,8 +2,12 @@ import type { Seat, Tile, TileKind } from "@huanghuang/protocol";
 import { describe, expect, it } from "vitest";
 import {
   availableTurnActions,
+  claimExposedKong,
+  claimIndicatorPongKong,
   claimPong,
   createRound,
+  declareAddedKong,
+  declareConcealedKong,
   declareWin,
   discardTile,
   passResponse,
@@ -194,6 +198,96 @@ describe("round state machine", () => {
     expect(win.ok).toBe(true);
     if (!win.ok) return;
     expect(win.state.outcome).toMatchObject({ kind: "WIN", winnerSeat: 1, winType: "HARD" });
+  });
+
+  it("keeps personal multipliers unchanged across pong and every kong action", () => {
+    const baseState = createRound({
+      id: "round-multiplier-invariants",
+      dealerSeat: 0,
+      baseScore: 2,
+      randomInt: deterministicRandom,
+    });
+    const kind: TileKind = { suit: "TONG", rank: 6 };
+
+    function responseState(matchCount: number, indicator = false): RoundState {
+      const state = structuredClone(baseState);
+      state.indicatorTile = indicator ? makeTile("matching-indicator", kind) : state.indicatorTile;
+      state.players[0].hand[0] = makeTile(`response-discard-${matchCount}`, kind);
+      for (let index = 0; index < matchCount; index += 1) {
+        state.players[1].hand[index] = makeTile(`response-match-${matchCount}-${index}`, kind);
+      }
+      const discarded = discardTile(state, 0, `response-discard-${matchCount}`);
+      if (!discarded.ok) throw new Error("Expected response setup discard to succeed");
+      return discarded.state;
+    }
+
+    const pong = claimPong(responseState(2), 1);
+    expect(pong.ok).toBe(true);
+    if (!pong.ok) return;
+    expect(pong.state.players[1].personalMultiplier).toBe(1);
+
+    const exposed = claimExposedKong(responseState(3), 1);
+    expect(exposed.ok).toBe(true);
+    if (!exposed.ok) return;
+    expect(exposed.state.players[1].personalMultiplier).toBe(1);
+
+    const indicator = claimIndicatorPongKong(responseState(2, true), 1);
+    expect(indicator.ok).toBe(true);
+    if (!indicator.ok) return;
+    expect(indicator.state.players[1].personalMultiplier).toBe(1);
+
+    const concealedState = structuredClone(baseState);
+    concealedState.players[0].hand.splice(
+      0,
+      4,
+      makeTile("concealed-a", kind),
+      makeTile("concealed-b", kind),
+      makeTile("concealed-c", kind),
+      makeTile("concealed-d", kind),
+    );
+    concealedState.lastDrawSeat = 0;
+    concealedState.lastDrawnTileId = "concealed-d";
+    const concealed = declareConcealedKong(concealedState, 0, kind);
+    expect(concealed.ok).toBe(true);
+    if (!concealed.ok) return;
+    expect(concealed.state.players[0].personalMultiplier).toBe(1);
+
+    const addedState = structuredClone(baseState);
+    addedState.players[0].melds = [
+      {
+        id: "existing-pong",
+        kind: "PONG",
+        tileIds: ["pong-a", "pong-b", "pong-c"],
+        tileKind: kind,
+        sourcePlayerId: "seat-1",
+        sourceDiscardId: "source-discard",
+        createdAtVersion: 1,
+      },
+    ];
+    addedState.players[0].hand[0] = makeTile("added-tile", kind);
+    addedState.lastDrawSeat = 0;
+    addedState.lastDrawnTileId = "added-tile";
+    const added = declareAddedKong(addedState, 0, "existing-pong", "added-tile");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(added.state.players[0].personalMultiplier).toBe(1);
+  });
+
+  it("resets every personal multiplier when a new round is created", () => {
+    const nextRound = createRound({
+      id: "round-reset-multipliers",
+      dealerSeat: 2,
+      baseScore: 5,
+      startingScores: { 0: 20, 1: -10, 2: 5, 3: -15 },
+      randomInt: deterministicRandom,
+    });
+
+    expect(([0, 1, 2, 3] as const).map((seat) => nextRound.players[seat].personalMultiplier)).toEqual([
+      1, 1, 1, 1,
+    ]);
+    expect(([0, 1, 2, 3] as const).map((seat) => nextRound.players[seat].score)).toEqual([
+      20, -10, 5, -15,
+    ]);
   });
 
   it("starts the next player turn when the only response passes", () => {

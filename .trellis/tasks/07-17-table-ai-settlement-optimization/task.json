@@ -1,0 +1,30 @@
+{
+  "id": "table-ai-settlement-optimization",
+  "name": "table-ai-settlement-optimization",
+  "title": "优化牌桌人机与结算",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "zhang",
+  "assignee": "zhang",
+  "createdAt": "2026-07-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-17-table-meld-result-presentation",
+    "07-17-balanced-bot-strategy",
+    "07-17-kong-multiplier-regression"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

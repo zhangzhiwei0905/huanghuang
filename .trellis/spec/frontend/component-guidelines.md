@@ -27,7 +27,7 @@ export function ActionButton({ label, disabled, onPress }: ActionButtonProps) {
 
 - Both themes use one shared animation intensity for these three action categories; do not fork per-theme strength. This is a deliberate exception to the low-key theme's general "no glow/no game-y animation" rule (see parent task `07-15-huanghuang-web-game-plan/prd.md` R6) — the exception is scoped to these three actions only.
 - Classify `PlayerActionNotice["action"]` (from `playerActionNotice.ts`) into exactly one of three CSS category classes before rendering: `action-pong`, `action-kong` (covers all four kong-family meld kinds: `EXPOSED_KONG`/`CONCEALED_KONG`/`ADDED_KONG`/`INDICATOR_PONG_KONG`), `action-wildcard`. Do not change `playerActionNotice.ts`'s detection logic itself to add per-action styling — keep detection and presentation separate.
-- Apply the same category class in two places so the effect reads consistently: the transient floating notice (`.player-action-tiles`) and a short-lived `is-landed` highlight (~600–900ms, auto-cleared via `setTimeout`, same pattern as the notice's own dismiss timer) on the tile/meld that just became persistent (public meld row, wildcard tag, or the acting player's own hand meld row).
+- Apply the same category class in two places so the effect reads consistently: the transient floating notice (`.player-action-tiles`) and a short-lived `is-landed` highlight (~600–900ms, auto-cleared via `setTimeout`, same pattern as the notice's own dismiss timer) on the tile/meld that just became persistent inside the acting player's `PlayerStation` (public meld row or wildcard tag).
 - All three category keyframes must resolve instantly to their end state under `@media (prefers-reduced-motion: reduce)` — verify the reduced-motion block actually overrides `animation-duration`/`animation-iteration-count` for the new keyframes, not just `transition`.
 
 **Example** (`apps/web/src/components/GameTable.tsx`):
@@ -106,6 +106,69 @@ Tests must cover empty actions, turn-action ordering, discard-response pong/kong
 - Put high-frequency timers in the smallest owning component. `TurnMarker` may update twice per second; it must not force the entire `GameTable` to re-render.
 
 Required tests cover first/select, switch/select, second-press discard, wildcard protection, illegal phase, and synchronous lock behavior.
+
+## Scenario: Persistent meld and compact settlement ownership
+
+### 1. Scope / Trigger
+
+Any change to player-station melds or the round-result modal must preserve one rendering owner and the authoritative settlement projection.
+
+### 2. Signatures
+
+```tsx
+<PlayerStation player={player} landedMeldId={meldId} landedCategory={category} />
+
+<RoundSettlementModal
+  settlement={room.roundSettlement}
+  players={room.players}
+  wildcardKind={room.wildcardKind}
+/>
+```
+
+### 3. Contracts
+
+- `PlayerStation` owns persistent meld rendering for every seat, including the local player. `.self-area` owns only the local concealed hand and action controls.
+- `.player-melds` is a constrained, wrapping full-width station row. A local meld must not be duplicated in a separate absolute row.
+- Landed pong/kong feedback continues to target the persistent `MeldGroup` inside the station and respects reduced motion.
+- The result header identifies winner plus hard/soft win, or draw. It does not repeat multiplier formula/payment cards above the player list.
+- Each final-hand row renders authoritative concealed tiles, personal multiplier, explicitly labelled round delta and cumulative score. Bot-mode continue/leave actions remain available.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Player has no melds or released wildcards | Omit `.player-melds` |
+| Local player gains a meld | Render it once inside their station |
+| Four meld groups wrap | Keep groups inside the station and table viewport |
+| Score change is absent | Display zero instead of calculating a score |
+| Round is a draw | Keep four final-hand rows and any kong-derived round deltas |
+
+### 5. Good/Base/Bad Cases
+
+- Good: the local player's pong appears below their identity inside the same framed station.
+- Base: a player without public state keeps the compact one-row station.
+- Bad: rendering the local meld in both `PlayerStation` and `.self-area`, or rebuilding opponent final hands from counts.
+
+### 6. Tests Required
+
+- SSR presentation tests assert the local public-combination label occurs exactly once and no `.meld-row` exists.
+- Settlement presentation tests assert four hands, four multiplier labels, four round labels and four cumulative labels, and absence of the removed upper formula/payment classes.
+- Browser checks cover desktop and 844×390 landscape in both themes, station containment and reduced motion.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```tsx
+{position !== 0 && <PlayerMelds />}
+{self && <div className="meld-row"><PlayerMelds /></div>}
+```
+
+Correct:
+
+```tsx
+{player.melds.length > 0 && <div className="player-melds">{player.melds.map(renderMeld)}</div>}
+```
 
 ## Common mistakes
 

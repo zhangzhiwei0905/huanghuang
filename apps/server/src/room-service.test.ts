@@ -1,4 +1,10 @@
-import type { RoundState } from "@huanghuang/game-engine";
+import {
+  declareAddedKong,
+  declareWin,
+  discardTile,
+  sameTileKind,
+  type RoundState,
+} from "@huanghuang/game-engine";
 import { afterEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { GameDatabase, type AnonymousSession } from "./database.js";
@@ -203,8 +209,15 @@ describe("RoomService", () => {
 
     const projection = service.project(room, owner.id);
     expect(projection.actingSeat).toBe(0);
-    expect(projection.legalActions).toContain("DISCARD_TILE");
-    expect(projection.selfDrawnTileId).toBe(activeRound(room).lastDrawnTileId);
+    expect(projection.legalActions.length).toBeGreaterThan(0);
+    if (projection.roundPhase === "TURN_DECISION") {
+      expect(projection.legalActions).toContain("DISCARD_TILE");
+      expect(projection.selfDrawnTileId).toBe(activeRound(room).lastDrawnTileId);
+    } else {
+      expect(projection.roundPhase).toBe("DISCARD_RESPONSE");
+      expect(projection.legalActions).toContain("PASS_RESPONSE");
+      expect(projection.selfDrawnTileId).toBeNull();
+    }
   });
 
   it("exposes the separated drawn tile only to its owning player", () => {
@@ -386,13 +399,31 @@ describe("RoomService", () => {
     expect(room.version).toBe(versionBeforeChat);
   });
 
-  it("uses trustee control while disconnected and restores human control on reconnect", () => {
+  it("uses conservative trustee control while disconnected and restores human control", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "BOT");
 
     service.setConnected(owner.id, false);
     expect(room.seats[0].controller).toBe("TRUSTEE");
     expect(room.seats[0].connected).toBe(false);
+
+    const round = activeRound(room);
+    const meldCount = round.players[0].melds.length;
+    round.phase = "DISCARD_RESPONSE";
+    round.currentSeat = 3;
+    round.lastDiscard = {
+      id: "trustee-response-discard",
+      tile: { id: "trustee-response-tile", suit: "WAN", rank: 3 },
+      sourceSeat: 3,
+    };
+    round.pendingResponse = { seat: 0, actions: ["CLAIM_PONG"] };
+    room.actionDeadlineAt = new Date(0).toISOString();
+
+    service.tick(Date.now());
+
+    expect(activeRound(room).players[0].melds).toHaveLength(meldCount);
+    expect(activeRound(room).phase).toBe("TURN_DECISION");
+    expect(activeRound(room).currentSeat).toBe(0);
 
     service.setConnected(owner.id, true);
     expect(room.seats[0].controller).toBe("HUMAN");
@@ -421,15 +452,115 @@ describe("RoomService", () => {
     expect(room.closeReason).toBe("EMPTY_ROOM");
   });
 
-  it("projects an authoritative round settlement including payments and net score changes", () => {
+  it("routes a bot response through the balanced claim strategy", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    const kind = { suit: "TONG" as const, rank: 6 as const };
+    round.phase = "DISCARD_RESPONSE";
+    round.currentSeat = 0;
+    round.lastDiscard = {
+      id: "bot-kong-discard",
+      tile: { id: "bot-kong-tile", ...kind },
+      sourceSeat: 0,
+    };
+    round.pendingResponse = { seat: 1, actions: ["CLAIM_EXPOSED_KONG", "CLAIM_PONG"] };
+    round.players[1].hand.splice(
+      0,
+      3,
+      { id: "bot-kong-a", ...kind },
+      { id: "bot-kong-b", ...kind },
+      { id: "bot-kong-c", ...kind },
+    );
+    room.actionDeadlineAt = new Date(0).toISOString();
+    const versionBefore = room.version;
+
+    service.tick(Date.now());
+
+    expect(activeRound(room).players[1].melds.at(-1)?.kind).toBe("EXPOSED_KONG");
+    expect(activeRound(room).players[1].score).toBe(6);
+    expect(activeRound(room).players[0].score).toBe(-6);
+    expect(room.version).toBe(versionBefore + 1);
+  });
+
+  it("projects reducer-driven kong and self-draw transfers as one round delta", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    const kongKind = { suit: "TONG" as const, rank: 9 as const };
+    round.startingScores = { 0: 0, 1: 0, 2: 0, 3: 0 };
+    round.players[0].score = 0;
+    round.players[1].score = 0;
+    round.players[2].score = 0;
+    round.players[3].score = 0;
+    round.players[0].personalMultiplier = 2;
+    round.players[1].personalMultiplier = 2;
+    round.wildcardKind = { suit: "TIAO", rank: 9 };
+    round.players[0].melds = [
+      {
+        id: "win-pong",
+        kind: "PONG",
+        tileIds: ["win-pong-a", "win-pong-b", "win-pong-c"],
+        tileKind: kongKind,
+        sourcePlayerId: "seat-1",
+        sourceDiscardId: "win-pong-discard",
+        createdAtVersion: 1,
+      },
+    ];
+    round.players[0].hand = [
+      { id: "wan-1", suit: "WAN", rank: 1 },
+      { id: "wan-2", suit: "WAN", rank: 2 },
+      { id: "wan-3", suit: "WAN", rank: 3 },
+      { id: "wan-4", suit: "WAN", rank: 4 },
+      { id: "wan-5", suit: "WAN", rank: 5 },
+      { id: "wan-6", suit: "WAN", rank: 6 },
+      { id: "tiao-2", suit: "TIAO", rank: 2 },
+      { id: "tiao-3", suit: "TIAO", rank: 3 },
+      { id: "tiao-4", suit: "TIAO", rank: 4 },
+      { id: "tong-7-a", suit: "TONG", rank: 7 },
+      { id: "added-kong", ...kongKind },
+    ];
+    round.wall = [{ id: "winning-tong-7", suit: "TONG", rank: 7 }];
+    round.currentSeat = 0;
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = "added-kong";
+
+    const kong = declareAddedKong(round, 0, "win-pong", "added-kong");
+    expect(kong.ok).toBe(true);
+    if (!kong.ok) return;
+    expect(kong.state.players[0].score).toBe(6);
+    expect(kong.state.players[1].score).toBe(-2);
+
+    const win = declareWin(kong.state, 0);
+    expect(win.ok).toBe(true);
+    if (!win.ok) return;
+    room.round = win.state;
+    room.stage = "ROUND_RESULT";
+
+    const settlement = service.project(room, owner.id).roundSettlement;
+
+    expect(settlement?.payments).toEqual([
+      { payerSeat: 1, payerMultiplier: 2, amount: 16 },
+      { payerSeat: 2, payerMultiplier: 1, amount: 8 },
+      { payerSeat: 3, payerMultiplier: 1, amount: 8 },
+    ]);
+    expect(settlement?.scoreChanges).toEqual([
+      { seat: 0, roundDelta: 38, totalScore: 38 },
+      { seat: 1, roundDelta: -18, totalScore: -18 },
+      { seat: 2, roundDelta: -10, totalScore: -10 },
+      { seat: 3, roundDelta: -10, totalScore: -10 },
+    ]);
+  });
+
+  it("projects self-draw payments separately from earlier kong score changes", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "BOT");
     const round = activeRound(room);
     round.startingScores = { 0: 10, 1: -2, 2: -3, 3: -5 };
-    round.players[0].score = 22;
-    round.players[1].score = -6;
-    round.players[2].score = -7;
-    round.players[3].score = -9;
+    round.players[0].score = 32;
+    round.players[1].score = -12;
+    round.players[2].score = -9;
+    round.players[3].score = -11;
     round.players[0].personalMultiplier = 2;
     round.players[1].personalMultiplier = 2;
     round.phase = "ROUND_OVER";
@@ -439,8 +570,8 @@ describe("RoomService", () => {
       winType: "SOFT",
       nextDealerSeat: 2,
       scoreDeltas: [
-        { seat: 0, delta: 12, reason: "SELF_DRAW" },
-        { seat: 1, delta: -4, reason: "SELF_DRAW" },
+        { seat: 0, delta: 16, reason: "SELF_DRAW" },
+        { seat: 1, delta: -8, reason: "SELF_DRAW" },
         { seat: 2, delta: -4, reason: "SELF_DRAW" },
         { seat: 3, delta: -4, reason: "SELF_DRAW" },
       ],
@@ -459,7 +590,7 @@ describe("RoomService", () => {
       nextDealerSeat: 2,
     });
     expect(settlement?.payments).toEqual([
-      { payerSeat: 1, payerMultiplier: 2, amount: 4 },
+      { payerSeat: 1, payerMultiplier: 2, amount: 8 },
       { payerSeat: 2, payerMultiplier: 1, amount: 4 },
       { payerSeat: 3, payerMultiplier: 1, amount: 4 },
     ]);
@@ -471,14 +602,76 @@ describe("RoomService", () => {
       })),
     );
     expect(settlement?.scoreChanges).toEqual([
-      { seat: 0, roundDelta: 12, totalScore: 22 },
-      { seat: 1, roundDelta: -4, totalScore: -6 },
-      { seat: 2, roundDelta: -4, totalScore: -7 },
-      { seat: 3, roundDelta: -4, totalScore: -9 },
+      { seat: 0, roundDelta: 22, totalScore: 32 },
+      { seat: 1, roundDelta: -10, totalScore: -12 },
+      { seat: 2, roundDelta: -6, totalScore: -9 },
+      { seat: 3, roundDelta: -6, totalScore: -11 },
     ]);
     expect(service.project(room, owner.id).players.slice(1).every((player) => player.hand === null)).toBe(
       true,
     );
+  });
+
+  it("preserves reducer-driven kong transfers when the round ends in a draw", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    const kongKind = { suit: "TONG" as const, rank: 9 as const };
+    const finalDraw = { id: "wall-final-draw", suit: "TIAO" as const, rank: 9 as const };
+    round.startingScores = { 0: 0, 1: 0, 2: 0, 3: 0 };
+    for (const seat of [0, 1, 2, 3] as const) round.players[seat].score = 0;
+    round.wildcardKind = { suit: "WAN", rank: 8 };
+    round.players[0].melds = [
+      {
+        id: "draw-pong",
+        kind: "PONG",
+        tileIds: ["draw-pong-a", "draw-pong-b", "draw-pong-c"],
+        tileKind: kongKind,
+        sourcePlayerId: "seat-1",
+        sourceDiscardId: "draw-pong-discard",
+        createdAtVersion: 1,
+      },
+    ];
+    round.players[0].hand[0] = { id: "draw-added-kong", ...kongKind };
+    for (const seat of [1, 2, 3] as const) {
+      round.players[seat].hand = round.players[seat].hand.map((tile, index) =>
+        sameTileKind(tile, finalDraw) ? { id: `safe-${seat}-${index}`, suit: "WAN", rank: 1 } : tile,
+      );
+    }
+    round.wall = [finalDraw];
+    round.currentSeat = 0;
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = "draw-added-kong";
+
+    const kong = declareAddedKong(round, 0, "draw-pong", "draw-added-kong");
+    expect(kong.ok).toBe(true);
+    if (!kong.ok) return;
+    expect(kong.state.players[0].score).toBe(6);
+    expect(kong.state.players[1].score).toBe(-2);
+
+    const discarded = discardTile(kong.state, 0, finalDraw.id);
+    expect(discarded.ok).toBe(true);
+    if (!discarded.ok) return;
+    expect(discarded.state.outcome).toEqual({ kind: "DRAW", nextDealerSeat: 0 });
+    room.round = discarded.state;
+    room.stage = "ROUND_RESULT";
+
+    const settlement = service.project(room, owner.id).roundSettlement;
+
+    expect(settlement).toMatchObject({
+      kind: "DRAW",
+      winnerSeat: null,
+      winType: null,
+      winnerMultiplier: null,
+      payments: [],
+    });
+    expect(settlement?.scoreChanges).toEqual([
+      { seat: 0, roundDelta: 6, totalScore: 6 },
+      { seat: 1, roundDelta: -2, totalScore: -2 },
+      { seat: 2, roundDelta: -2, totalScore: -2 },
+      { seat: 3, roundDelta: -2, totalScore: -2 },
+    ]);
+    expect(settlement?.finalHands.map((hand) => hand.personalMultiplier)).toEqual([1, 1, 1, 1]);
   });
 
   it("deduplicates a repeated command and rejects a stale new request", () => {

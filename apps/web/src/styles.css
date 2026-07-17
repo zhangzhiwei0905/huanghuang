@@ -629,13 +629,17 @@ h1 {
 }
 .player-melds {
   grid-column: 1 / -1;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  padding: 10px;
 }
 .player-melds .meld-group {
-  margin-left: 1px;
+  flex: 0 0 auto;
+  margin: 1px;
 }
 .released-wildcard-zone {
   display: inline-flex;
@@ -1019,13 +1023,6 @@ h1 {
 .primary-action-button.action-wildcard:disabled {
   opacity: 0.38;
 }
-.meld-row {
-  position: absolute;
-  left: 0;
-  bottom: 59px;
-  display: flex;
-  gap: 8px;
-}
 .meld-group {
   display: flex;
 }
@@ -1281,70 +1278,6 @@ h1 {
 .settlement-result-meta {
   display: grid;
   justify-items: end;
-  gap: 6px;
-}
-.settlement-win-badge {
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  padding: 4px 7px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-.round-settlement-modal.is-hard-win .settlement-win-badge,
-.round-settlement-modal.is-hard-win .settlement-win-factor {
-  color: var(--accent-ink);
-  background: var(--accent);
-}
-.round-settlement-modal.is-soft-win .settlement-win-badge,
-.round-settlement-modal.is-soft-win .settlement-win-factor {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--panel) 90%, var(--accent));
-}
-.settlement-formula {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 15px 0;
-}
-.settlement-formula span {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 7px 10px;
-  font-size: 11px;
-}
-.settlement-formula i {
-  color: var(--muted);
-  font-size: 10px;
-  font-style: normal;
-}
-.settlement-draw-note {
-  margin: 0;
-  padding: 14px 0;
-  color: var(--muted);
-  font-size: 11px;
-  text-align: center;
-}
-.settlement-payments {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.settlement-payments span {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 7px 9px;
-  color: var(--muted);
-  font-size: 10px;
-}
-.settlement-payments b {
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
 }
 .settlement-player-list {
   display: grid;
@@ -1411,8 +1344,22 @@ h1 {
 .settlement-player-multiplier b {
   font-size: 12px;
 }
+.settlement-player-score {
+  gap: 2px;
+}
+.settlement-player-score > span {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+}
 .settlement-player-score strong {
-  font-size: 15px;
+  font-size: 14px;
+}
+.settlement-player-score b {
+  font-size: 10px;
+  font-weight: 600;
 }
 .settlement-player-list > article.is-gain .settlement-player-score strong {
   color: var(--accent);
@@ -1428,7 +1375,6 @@ h1 {
   text-align: right;
 }
 .round-settlement-modal > footer.has-actions {
-  justify-content: space-between;
   border-top: 1px solid var(--line);
   padding-top: 12px;
 }
@@ -1789,10 +1735,6 @@ h1 {
   .primary-action-button small {
     font-size: 7px;
   }
-  .meld-row {
-    bottom: 51px;
-    gap: 4px;
-  }
   .hand-composition {
     min-height: 56px;
     max-width: calc(100vw - 16px);
@@ -1845,20 +1787,6 @@ h1 {
   }
   .round-settlement-modal h2 {
     font-size: 18px;
-  }
-  .settlement-formula {
-    padding: 8px 0;
-  }
-  .settlement-formula span {
-    padding: 5px 8px;
-    font-size: 9px;
-  }
-  .settlement-payments {
-    margin-bottom: 6px;
-  }
-  .settlement-payments span {
-    padding: 5px 7px;
-    font-size: 8px;
   }
   .settlement-player-list > article {
     grid-template-columns: 26px 82px minmax(0, 1fr) 38px 54px;

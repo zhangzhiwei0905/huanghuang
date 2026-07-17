@@ -1,9 +1,9 @@
 import {
   availableTurnActions,
+  chooseBotAction,
   claimExposedKong,
   claimIndicatorPongKong,
   claimPong,
-  concealedKongKinds,
   continueTurn,
   createRound,
   declareAddedKong,
@@ -14,7 +14,8 @@ import {
   passResponse,
   releasableWildcardIds,
   releaseWildcard,
-  sameTileKind,
+  type BotAction,
+  type BotDecisionView,
   type RoundState,
   type RuleResult,
 } from "@huanghuang/game-engine";
@@ -433,20 +434,57 @@ export class RoomService {
     return true;
   }
 
-  private automaticAction(room: RoomState, seat: Seat, isBot: boolean): RuleResult {
-    const round = room.round;
-    if (round === null) return { ok: false, code: "WRONG_PHASE" };
-    if (round.phase === "DISCARD_RESPONSE") {
-      const actions = round.pendingResponse?.actions ?? [];
-      if (isBot) {
-        if (actions.includes("CLAIM_INDICATOR_PONG_KONG"))
-          return claimIndicatorPongKong(round, seat);
-        if (actions.includes("CLAIM_EXPOSED_KONG")) return claimExposedKong(round, seat);
-        if (actions.includes("CLAIM_PONG")) return claimPong(round, seat);
-      }
-      return passResponse(round, seat);
-    }
+  private botDecisionView(round: RoundState, seat: Seat): BotDecisionView {
+    const player = round.players[seat];
+    const legalActions =
+      round.phase === "DISCARD_RESPONSE"
+        ? [...(round.pendingResponse?.actions ?? []), "PASS_RESPONSE"]
+        : availableTurnActions(round, seat);
+    return {
+      seat,
+      phase: round.phase === "DISCARD_RESPONSE" ? "DISCARD_RESPONSE" : "TURN_DECISION",
+      legalActions,
+      hand: player.hand,
+      melds: player.melds,
+      releasedWildcards: player.releasedWildcards,
+      wildcardKind: round.wildcardKind,
+      indicatorTile: round.indicatorTile,
+      wallRemaining: round.wall.length,
+      pendingDiscard: round.lastDiscard?.tile ?? null,
+      publicPlayers: SEATS.map((publicSeat) => ({
+        seat: publicSeat,
+        melds: round.players[publicSeat].melds,
+        discards: round.players[publicSeat].discards,
+        releasedWildcards: round.players[publicSeat].releasedWildcards,
+      })),
+    };
+  }
 
+  private executeBotAction(round: RoundState, seat: Seat, action: BotAction): RuleResult {
+    switch (action.type) {
+      case "DECLARE_WIN":
+        return declareWin(round, seat);
+      case "RELEASE_WILDCARD":
+        return releaseWildcard(round, seat, action.tileId);
+      case "DECLARE_CONCEALED_KONG":
+        return declareConcealedKong(round, seat, action.tileKind);
+      case "DECLARE_ADDED_KONG":
+        return declareAddedKong(round, seat, action.meldId, action.tileId);
+      case "DISCARD_TILE":
+        return discardTile(round, seat, action.tileId);
+      case "CLAIM_PONG":
+        return claimPong(round, seat);
+      case "CLAIM_EXPOSED_KONG":
+        return claimExposedKong(round, seat);
+      case "CLAIM_INDICATOR_PONG_KONG":
+        return claimIndicatorPongKong(round, seat);
+      case "PASS_RESPONSE":
+        return passResponse(round, seat);
+    }
+  }
+
+  private trusteeAction(round: RoundState, seat: Seat): RuleResult {
+    if (round.phase === "DISCARD_RESPONSE") return passResponse(round, seat);
     const actions = availableTurnActions(round, seat);
     if (actions.includes("DECLARE_WIN")) return declareWin(round, seat);
     const player = round.players[seat];
@@ -459,23 +497,6 @@ export class RoomService {
       const tileId = wildcardIds[0];
       if (tileId !== undefined) return releaseWildcard(round, seat, tileId);
     }
-    if (isBot && actions.includes("DECLARE_CONCEALED_KONG")) {
-      const kind = concealedKongKinds({
-        hand: player.hand,
-        wildcardKind: round.wildcardKind,
-        wallRemaining: round.wall.length,
-      })[0];
-      if (kind !== undefined) return declareConcealedKong(round, seat, kind);
-    }
-    if (isBot && actions.includes("DECLARE_ADDED_KONG")) {
-      const meld = player.melds.find((candidate) => candidate.kind === "PONG");
-      const tile =
-        meld === undefined
-          ? undefined
-          : player.hand.find((candidate) => sameTileKind(candidate, meld.tileKind));
-      if (meld !== undefined && tile !== undefined)
-        return declareAddedKong(round, seat, meld.id, tile.id);
-    }
     const legalDiscards = discardableTileIds(player.hand, round.wildcardKind);
     const tileId = legalDiscards.includes(round.lastDrawnTileId)
       ? round.lastDrawnTileId
@@ -483,6 +504,16 @@ export class RoomService {
     return tileId === undefined
       ? { ok: false, code: "ACTION_NOT_AVAILABLE" }
       : discardTile(round, seat, tileId);
+  }
+
+  private automaticAction(room: RoomState, seat: Seat): RuleResult {
+    const round = room.round;
+    if (round === null) return { ok: false, code: "WRONG_PHASE" };
+    if (room.seats[seat].controller !== "BOT") return this.trusteeAction(round, seat);
+    const action = chooseBotAction(this.botDecisionView(round, seat), randomIntFromCrypto);
+    return action === null
+      ? { ok: false, code: "ACTION_NOT_AVAILABLE" }
+      : this.executeBotAction(round, seat, action);
   }
 
   tick(now = Date.now()): { roomId: string; version: number }[] {
@@ -528,7 +559,7 @@ export class RoomService {
       if (seat === null) continue;
       const changed = this.acceptRule(
         room,
-        this.automaticAction(room, seat, room.seats[seat].controller !== "HUMAN"),
+        this.automaticAction(room, seat),
       );
       if (!changed) this.refreshDeadline(room, now);
       this.save(room);

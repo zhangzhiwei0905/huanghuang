@@ -209,21 +209,16 @@ function PlayerStation({
         <span>{player.personalMultiplier}×</span>
         <small className="player-hand-count">手牌 {player.handCount} 张</small>
       </div>
-      {/* Self already renders their own melds in the .self-area meld-row, so skip the
-          duplicate meld tiles here for position 0 and only surface the wildcard count
-          (which has no other on-screen representation for self). */}
-      {(position !== 0 && player.melds.length > 0) || player.releasedWildcards.length > 0 ? (
+      {player.melds.length > 0 || player.releasedWildcards.length > 0 ? (
         <div className="player-melds" aria-label={`${player.nickname}的公开组合`}>
-          {position === 0
-            ? null
-            : player.melds.map((meld) => (
-                <MeldGroup
-                  key={meld.id}
-                  meld={meld}
-                  landed={meld.id === landedMeldId}
-                  category={landedCategory}
-                />
-              ))}
+          {player.melds.map((meld) => (
+            <MeldGroup
+              key={meld.id}
+              meld={meld}
+              landed={meld.id === landedMeldId}
+              category={landedCategory}
+            />
+          ))}
           {latestReleasedWildcard === null ? null : (
             <div
               className={`released-wildcard-zone ${landedCategory === "wildcard" ? "is-landed" : ""}`}
@@ -507,38 +502,9 @@ function RoundSettlementModal({
             <h2 id="round-settlement-title">{outcomeLabel}</h2>
           </div>
           <div className="settlement-result-meta">
-            {settlement.kind === "WIN" ? (
-              <b className="settlement-win-badge">
-                {settlement.winType === "HARD" ? "硬胡 · 2×" : "软胡 · 1×"}
-              </b>
-            ) : null}
             <small>{mode === "BOT" ? "等待你的选择" : "即将返回房间准备"}</small>
           </div>
         </header>
-
-        {settlement.kind === "WIN" ? (
-          <div className="settlement-formula" aria-label="胡牌倍率">
-            <span>底分 {settlement.baseScore}</span>
-            <i>×</i>
-            <span className="settlement-win-factor">
-              {settlement.winType === "HARD" ? "硬胡 2×" : "软胡 1×"}
-            </span>
-            <i>×</i>
-            <span>赢家 {settlement.winnerMultiplier}×</span>
-          </div>
-        ) : (
-          <p className="settlement-draw-note">无人自摸，本局仅保留已产生的杠分变化。</p>
-        )}
-
-        {settlement.payments.length > 0 ? (
-          <div className="settlement-payments" aria-label="胡牌付款明细">
-            {settlement.payments.map((payment) => (
-              <span key={payment.payerSeat}>
-                {playerName(payment.payerSeat)} · {payment.payerMultiplier}×<b>-{payment.amount}</b>
-              </span>
-            ))}
-          </div>
-        ) : null}
 
         <div className="settlement-player-list" aria-label="本局终局手牌与积分">
           {settlement.finalHands.map((finalHand) => {
@@ -572,16 +538,21 @@ function RoundSettlementModal({
                   <b>{finalHand.personalMultiplier}×</b>
                 </div>
                 <div className="settlement-player-score">
-                  <strong>{change === undefined ? "0" : signedScore(change.roundDelta)}</strong>
-                  <small>累计 {change?.totalScore ?? 0}</small>
+                  <span>
+                    <small>本局</small>
+                    <strong>{change === undefined ? "0" : signedScore(change.roundDelta)}</strong>
+                  </span>
+                  <span>
+                    <small>累计</small>
+                    <b>{change?.totalScore ?? 0}</b>
+                  </span>
                 </div>
               </article>
             );
           })}
         </div>
-        <footer className={mode === "BOT" ? "has-actions" : ""}>
-          <span>本局净变化已包含碰杠相关得分</span>
-          {mode === "BOT" ? (
+        {mode === "BOT" ? (
+          <footer className="has-actions">
             <div className="settlement-actions">
               <button type="button" disabled={busy} onClick={() => void onLeave()}>
                 退出到主页
@@ -595,8 +566,8 @@ function RoundSettlementModal({
                 继续游戏
               </button>
             </div>
-          ) : null}
-        </footer>
+          </footer>
+        ) : null}
       </section>
     </div>
   );
@@ -1123,16 +1094,6 @@ export function GameTable({
               onSend={(type, payload) => void onSend(type, payload)}
             />
           )}
-          <div className="meld-row">
-            {self?.melds.map((meld) => (
-              <MeldGroup
-                key={meld.id}
-                meld={meld}
-                landed={landedHighlight?.seat === selfSeat && meld.id === landedHighlight.meldId}
-                category={landedHighlight?.seat === selfSeat ? landedHighlight.category : null}
-              />
-            ))}
-          </div>
           <div className="hand-composition">
             <AnimatedHandRow
               tiles={sortedHand}
