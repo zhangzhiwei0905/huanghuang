@@ -110,6 +110,14 @@ export class GameDatabase {
     return rows.map((row) => row.state_json);
   }
 
+  deleteRoom(roomId: string): void {
+    this.connection.prepare("DELETE FROM rooms WHERE id = ?").run(roomId);
+  }
+
+  deleteClosedRooms(): number {
+    return this.connection.prepare("DELETE FROM rooms WHERE status = 'CLOSED'").run().changes;
+  }
+
   getProcessedRequest(sessionId: string, requestId: string): string | null {
     const row = this.connection
       .prepare("SELECT result_json FROM processed_requests WHERE session_id = ? AND request_id = ?")

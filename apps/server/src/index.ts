@@ -1,6 +1,13 @@
 import cookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
-import { commandEnvelopeSchema, createRoomSchema, joinRoomSchema } from "@huanghuang/protocol";
+import {
+  chatMessageInputSchema,
+  commandEnvelopeSchema,
+  createRoomSchema,
+  joinRoomSchema,
+  readyRoomSchema,
+  updateRoomSettingsSchema,
+} from "@huanghuang/protocol";
 import Fastify from "fastify";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -64,14 +71,34 @@ app.get<{ Params: { code: string } }>("/api/rooms/:code", (request, reply) => {
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
   const room = rooms.getRoom(request.params.code);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (!rooms.hasMember(session.id, room.code)) {
+    return reply.code(403).send({ error: "NOT_A_MEMBER" });
+  }
   return rooms.project(room, session.id);
 });
 
 app.post<{ Params: { code: string } }>("/api/rooms/:code/ready", (request, reply) => {
   const session = sessions.resolve(request);
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
-  const room = rooms.setReady(session.id, request.params.code);
+  const parsed = readyRoomSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
+  const room = rooms.setReady(session.id, request.params.code, parsed.data.ready);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (room === "ACTION_NOT_AVAILABLE") {
+    return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
+  }
+  sockets.to(room.id).emit("room:update", { version: room.version });
+  return rooms.project(room, session.id);
+});
+
+app.patch<{ Params: { code: string } }>("/api/rooms/:code/settings", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const parsed = updateRoomSettingsSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
+  const room = rooms.updateBaseScore(session.id, request.params.code, parsed.data.baseScore);
+  if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (room === "FORBIDDEN") return reply.code(403).send({ error: "OWNER_ONLY" });
   if (room === "ACTION_NOT_AVAILABLE") {
     return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
   }
@@ -130,9 +157,23 @@ sockets.on("connection", (socket) => {
   }
   socket.on("room:subscribe", (roomCode: string, acknowledge: (value: unknown) => void) => {
     const room = rooms.getRoom(roomCode);
-    if (room === null) return acknowledge({ error: "ROOM_NOT_FOUND" });
+    if (room?.status !== "ACTIVE") return acknowledge({ error: "ROOM_NOT_FOUND" });
+    if (!rooms.hasMember(sessionId, roomCode)) return acknowledge({ error: "NOT_A_MEMBER" });
     void socket.join(room.id);
     acknowledge(rooms.project(room, sessionId));
+  });
+
+  socket.on("room:chat", (unknownInput: unknown, acknowledge: (value: unknown) => void) => {
+    const parsed = chatMessageInputSchema.safeParse(unknownInput);
+    if (!parsed.success) return acknowledge({ accepted: false, errorCode: "INVALID_INPUT" });
+    const result = rooms.createChatMessage(sessionId, parsed.data.roomCode, parsed.data.message);
+    if (result === null) return acknowledge({ accepted: false, errorCode: "ROOM_NOT_FOUND" });
+    if (result === "NOT_A_MEMBER" || result === "ACTION_NOT_AVAILABLE") {
+      return acknowledge({ accepted: false, errorCode: result });
+    }
+    void socket.join(result.roomId);
+    sockets.to(result.roomId).emit("room:chat", result);
+    acknowledge({ accepted: true });
   });
 
   socket.on("game:command", (unknownCommand: unknown, acknowledge: (value: unknown) => void) => {

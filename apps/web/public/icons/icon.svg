@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#eef6f0"/>
+  <rect x="92" y="72" width="328" height="368" rx="52" fill="#f8fbf6" stroke="#9cbfa9" stroke-width="12"/>
+  <text x="256" y="317" fill="#2f6a4c" font-family="PingFang SC, sans-serif" font-size="204" font-weight="600" text-anchor="middle">晃</text>
+  <path d="M154 383h204" stroke="#cde0d3" stroke-width="12" stroke-linecap="round"/>
+</svg>

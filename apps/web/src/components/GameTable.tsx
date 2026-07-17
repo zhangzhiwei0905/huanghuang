@@ -1,4 +1,6 @@
 import type {
+  BaseScore,
+  ChatMessageProjection,
   CommandEnvelope,
   Meld,
   PlayerProjection,
@@ -7,13 +9,23 @@ import type {
   Seat,
   Tile,
 } from "@huanghuang/protocol";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { ConnectionStatus } from "../hooks/useRoom.js";
 import {
   deriveAddedKongPayload,
   deriveConcealedKongPayload,
   handHighlightGroups,
 } from "./actionEligibility.js";
+import {
+  hasValidTileSelection,
+  isPrimaryGameAction,
+  isWildcardTile,
+  primaryActionButtons,
+  type ActionButtonModel,
+  type PrimaryGameAction,
+} from "./actionButtons.js";
 import { MahjongTile } from "./MahjongTile.js";
+import { decideTilePress } from "./handInteraction.js";
 import {
   createPlayerActionSnapshot,
   detectPlayerActionNotice,
@@ -25,15 +37,21 @@ import {
 type GameTableProps = {
   room: RoomProjection;
   busy: boolean;
+  connectionStatus: ConnectionStatus;
+  pendingAction: CommandEnvelope["type"] | null;
   error: string | null;
+  chatMessages: ChatMessageProjection[];
   onReady: () => Promise<void>;
+  onBaseScoreChange: (baseScore: BaseScore) => Promise<void>;
   onContinue: () => Promise<void>;
+  onChat: (message: string) => Promise<boolean>;
   onLeave: () => Promise<void>;
   onDissolve: () => Promise<void>;
   onSend: (type: CommandEnvelope["type"], payload?: Record<string, unknown>) => Promise<void>;
 };
 
 const SEATS: readonly Seat[] = [0, 1, 2, 3];
+const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
 const POSITION_CLASS = [
   "position-bottom",
   "position-right",
@@ -53,6 +71,12 @@ const ACTION_NOTICE_POSITION_CLASS = [
   "action-position-left",
 ] as const;
 const SUIT_ORDER = { WAN: 0, TIAO: 1, TONG: 2 } as const;
+const TILE_ACTIONS: readonly CommandEnvelope["type"][] = [
+  "DISCARD_TILE",
+  "RELEASE_WILDCARD",
+  "DECLARE_CONCEALED_KONG",
+  "DECLARE_ADDED_KONG",
+];
 type ActionCategory = "pong" | "kong" | "wildcard";
 const KONG_ACTIONS = new Set<PlayerActionNotice["action"]>([
   "EXPOSED_KONG",
@@ -69,7 +93,7 @@ const ACTION_LABELS: Partial<Record<CommandEnvelope["type"], string>> = {
   DECLARE_WIN: "自摸",
   CONTINUE_TURN: "继续打牌",
   RELEASE_WILDCARD: "放赖",
-  DISCARD_TILE: "打出",
+  DISCARD_TILE: "出牌",
   CLAIM_PONG: "碰",
   CLAIM_EXPOSED_KONG: "明杠",
   CLAIM_INDICATOR_PONG_KONG: "亮牌碰杠",
@@ -77,18 +101,6 @@ const ACTION_LABELS: Partial<Record<CommandEnvelope["type"], string>> = {
   DECLARE_ADDED_KONG: "补杠",
   PASS_RESPONSE: "过",
 };
-const HAND_ACTIONS = new Set<CommandEnvelope["type"]>(["RELEASE_WILDCARD", "DISCARD_TILE"]);
-// These six action types are surfaced by the larger PrimaryActionBar above the
-// hand, so they're excluded from the small bottom action-dock to avoid a
-// duplicate entry point.
-const PRIMARY_BAR_ACTIONS = new Set<CommandEnvelope["type"]>([
-  "DECLARE_WIN",
-  "CLAIM_PONG",
-  "CLAIM_EXPOSED_KONG",
-  "CLAIM_INDICATOR_PONG_KONG",
-  "DECLARE_CONCEALED_KONG",
-  "DECLARE_ADDED_KONG",
-]);
 
 function relativePosition(seat: Seat, selfSeat: Seat): number {
   return (seat - selfSeat + 4) % 4;
@@ -147,19 +159,23 @@ function MeldGroup({
 function PlayerStation({
   player,
   active,
+  self,
   position,
+  wildcardKind,
   landedMeldId,
   landedCategory,
 }: {
   player: PlayerProjection;
   active: boolean;
+  self: boolean;
   position: number;
+  wildcardKind: RoomProjection["wildcardKind"];
   landedMeldId: string | null;
   landedCategory: ActionCategory | null;
 }) {
   return (
     <section
-      className={`player-station ${POSITION_CLASS[position] ?? ""} ${active ? "is-active" : ""}`}
+      className={`player-station ${POSITION_CLASS[position] ?? ""} ${self ? "is-self" : ""} ${active ? "is-active" : ""}`}
       aria-label={active ? `${player.nickname}，当前行动玩家` : player.nickname}
     >
       {active ? (
@@ -167,6 +183,7 @@ function PlayerStation({
           ➜
         </span>
       ) : null}
+      {active && self ? <span className="self-turn-label">你的回合</span> : null}
       <div className="player-identity">
         <span className="status-dot" />
         <strong>{player.nickname}</strong>
@@ -205,12 +222,18 @@ function PlayerStation({
                 />
               ))}
           {player.releasedWildcards.length > 0 ? (
-            <span
-              className={`wildcard-tag ${landedCategory === "wildcard" ? "is-landed" : ""}`}
-              aria-label={`已放赖 ${player.releasedWildcards.length} 次`}
+            <div
+              className={`released-wildcard-zone ${landedCategory === "wildcard" ? "is-landed" : ""}`}
+              aria-label={`已放赖 ${player.releasedWildcards.length} 次，当前倍率 ${player.personalMultiplier} 倍`}
             >
-              赖 ×{player.releasedWildcards.length}
-            </span>
+              <span>放赖</span>
+              <div aria-hidden="true">
+                {player.releasedWildcards.slice(-4).map((tile) => (
+                  <MahjongTile key={tile.id} tile={tile} wildcardKind={wildcardKind} compact />
+                ))}
+              </div>
+              <b>{player.personalMultiplier}×</b>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -222,10 +245,12 @@ function DiscardZone({
   player,
   position,
   wildcardKind,
+  recentDiscardId,
 }: {
   player: PlayerProjection;
   position: number;
   wildcardKind: RoomProjection["wildcardKind"];
+  recentDiscardId: string | null;
 }) {
   const visibleLimit = position === 1 || position === 3 ? 12 : 18;
   const visibleDiscards = player.discards.slice(-visibleLimit);
@@ -243,11 +268,182 @@ function DiscardZone({
           <i className="discard-empty">暂无弃牌</i>
         ) : (
           visibleDiscards.map((tile) => (
-            <MahjongTile key={tile.id} tile={tile} wildcardKind={wildcardKind} compact />
+            <MahjongTile
+              key={tile.id}
+              tile={tile}
+              wildcardKind={wildcardKind}
+              compact
+              motion={tile.id === recentDiscardId ? "discarded" : undefined}
+            />
           ))
         )}
       </div>
     </section>
+  );
+}
+
+function deadlineSeconds(deadline: string | null): number | null {
+  return deadline === null
+    ? null
+    : Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000));
+}
+
+function WaitingRoomExpiry({ expiresAt }: { expiresAt: string | null }) {
+  const [secondsRemaining, setSecondsRemaining] = useState(() => deadlineSeconds(expiresAt));
+
+  useEffect(() => {
+    const update = () => setSecondsRemaining(deadlineSeconds(expiresAt));
+    update();
+    if (expiresAt === null) return;
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+
+  if (secondsRemaining === null) return null;
+  const minutes = Math.floor(secondsRemaining / 60);
+  const seconds = String(secondsRemaining % 60).padStart(2, "0");
+  return (
+    <p className={`waiting-expiry ${secondsRemaining <= 30 ? "is-urgent" : ""}`} role="timer">
+      {secondsRemaining === 0
+        ? "等待时间已结束，正在关闭房间…"
+        : `未开局将在 ${minutes}:${seconds} 后自动解散`}
+    </p>
+  );
+}
+
+function TurnMarker({
+  room,
+  selfSeat,
+  connectionStatus,
+  pendingAction,
+}: {
+  room: RoomProjection;
+  selfSeat: Seat;
+  connectionStatus: ConnectionStatus;
+  pendingAction: CommandEnvelope["type"] | null;
+}) {
+  const [secondsRemaining, setSecondsRemaining] = useState(() =>
+    deadlineSeconds(room.actionDeadlineAt),
+  );
+
+  useEffect(() => {
+    const update = () => setSecondsRemaining(deadlineSeconds(room.actionDeadlineAt));
+    update();
+    if (room.actionDeadlineAt === null) return;
+    const timer = window.setInterval(update, 500);
+    return () => window.clearInterval(timer);
+  }, [room.actionDeadlineAt]);
+
+  const selfTurn = room.actingSeat === selfSeat;
+  const urgent = secondsRemaining !== null && secondsRemaining <= 5;
+  const stateLabel =
+    connectionStatus === "connecting"
+      ? "正在连接"
+      : connectionStatus === "reconnecting"
+        ? "正在恢复"
+        : pendingAction !== null
+          ? "服务器确认中"
+          : room.roundPhase === "DISCARD_RESPONSE"
+            ? "等待响应"
+            : room.roundPhase === "ROUND_OVER"
+              ? "本局结束"
+              : selfTurn
+                ? "轮到你"
+                : "当前回合";
+  const actorLabel =
+    room.roundOutcome?.kind === "WIN"
+      ? `${playerAt(room, room.roundOutcome.winnerSeat).nickname} · ${room.roundOutcome.winType === "HARD" ? "硬胡" : "软胡"}`
+      : room.roundOutcome?.kind === "DRAW"
+        ? "流局"
+        : pendingAction !== null
+          ? (ACTION_LABELS[pendingAction] ?? pendingAction)
+          : room.actingSeat === null
+            ? "等待"
+            : playerAt(room, room.actingSeat).nickname;
+
+  return (
+    <div
+      className={`turn-marker ${selfTurn ? "is-self-turn" : ""} ${urgent ? "is-urgent" : ""} ${connectionStatus !== "connected" || pendingAction !== null ? "is-network-wait" : ""}`}
+      role="status"
+    >
+      <small>{stateLabel}</small>
+      <b>{actorLabel}</b>
+      {secondsRemaining === null ||
+      room.roundPhase === "ROUND_OVER" ||
+      connectionStatus !== "connected" ||
+      pendingAction !== null ? null : (
+        <span className="turn-countdown" aria-label={`剩余 ${secondsRemaining} 秒`}>
+          {secondsRemaining}
+          <i>秒</i>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function AnimatedHandRow({
+  tiles,
+  motionEnabled,
+  renderTile,
+}: {
+  tiles: Tile[];
+  motionEnabled: boolean;
+  renderTile: (tile: Tile) => ReactNode;
+}) {
+  const nodesRef = useRef(new Map<string, HTMLSpanElement>());
+  const positionsRef = useRef(new Map<string, DOMRect>());
+
+  useLayoutEffect(() => {
+    const nextPositions = new Map<string, DOMRect>();
+    for (const tile of tiles) {
+      const node = nodesRef.current.get(tile.id);
+      if (node !== undefined) nextPositions.set(tile.id, node.getBoundingClientRect());
+    }
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (motionEnabled && !reduceMotion && positionsRef.current.size > 0) {
+      for (const tile of tiles) {
+        const node = nodesRef.current.get(tile.id);
+        const next = nextPositions.get(tile.id);
+        if (node === undefined || next === undefined) continue;
+        node.getAnimations().forEach((animation) => animation.cancel());
+        const previous = positionsRef.current.get(tile.id);
+        if (previous === undefined) {
+          node.animate(
+            [
+              { opacity: 0.55, transform: "translate3d(18px, 0, 0)" },
+              { opacity: 1, transform: "translate3d(0, 0, 0)" },
+            ],
+            { duration: 220, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+          );
+          continue;
+        }
+        const deltaX = previous.left - next.left;
+        if (Math.abs(deltaX) < 0.5) continue;
+        node.animate(
+          [{ transform: `translate3d(${deltaX}px, 0, 0)` }, { transform: "translate3d(0, 0, 0)" }],
+          { duration: 240, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+        );
+      }
+    }
+    positionsRef.current = nextPositions;
+  }, [motionEnabled, tiles]);
+
+  return (
+    <div className="hand-row">
+      {tiles.map((tile) => (
+        <span
+          key={tile.id}
+          className="hand-tile-shell"
+          ref={(node) => {
+            if (node === null) nodesRef.current.delete(tile.id);
+            else nodesRef.current.set(tile.id, node);
+          }}
+        >
+          {renderTile(tile)}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -275,11 +471,17 @@ function RoundSettlementModal({
     settlement.kind === "DRAW"
       ? "本局流局"
       : `${playerName(settlement.winnerSeat ?? 0)} ${settlement.winType === "HARD" ? "硬胡" : "软胡"}`;
+  const outcomeClass =
+    settlement.kind === "DRAW"
+      ? "is-draw"
+      : settlement.winType === "HARD"
+        ? "is-hard-win"
+        : "is-soft-win";
 
   return (
     <div className="round-settlement-backdrop">
       <section
-        className="round-settlement-modal"
+        className={`round-settlement-modal ${outcomeClass}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="round-settlement-title"
@@ -289,14 +491,23 @@ function RoundSettlementModal({
             <span>ROUND RESULT</span>
             <h2 id="round-settlement-title">{outcomeLabel}</h2>
           </div>
-          <small>{mode === "BOT" ? "等待你的选择" : "即将返回房间准备"}</small>
+          <div className="settlement-result-meta">
+            {settlement.kind === "WIN" ? (
+              <b className="settlement-win-badge">
+                {settlement.winType === "HARD" ? "硬胡 · 2×" : "软胡 · 1×"}
+              </b>
+            ) : null}
+            <small>{mode === "BOT" ? "等待你的选择" : "即将返回房间准备"}</small>
+          </div>
         </header>
 
         {settlement.kind === "WIN" ? (
           <div className="settlement-formula" aria-label="胡牌倍率">
             <span>底分 {settlement.baseScore}</span>
             <i>×</i>
-            <span>{settlement.winType === "HARD" ? "硬胡 2×" : "软胡 1×"}</span>
+            <span className="settlement-win-factor">
+              {settlement.winType === "HARD" ? "硬胡 2×" : "软胡 1×"}
+            </span>
             <i>×</i>
             <span>赢家 {settlement.winnerMultiplier}×</span>
           </div>
@@ -346,120 +557,86 @@ function RoundSettlementModal({
   );
 }
 
-type PrimaryActionType =
-  | "DECLARE_WIN"
-  | "CLAIM_EXPOSED_KONG"
-  | "DECLARE_CONCEALED_KONG"
-  | "CLAIM_PONG"
-  | "CLAIM_INDICATOR_PONG_KONG"
-  | "DECLARE_ADDED_KONG";
-
 function PrimaryActionBar({
   room,
   self,
-  selectedTileId,
+  selectedTile,
   busy,
   onSend,
 }: {
   room: RoomProjection;
   self: PlayerProjection;
-  selectedTileId: string | null;
+  selectedTile: Tile | null;
   busy: boolean;
-  onSend: (type: PrimaryActionType, payload?: Record<string, unknown>) => void;
+  onSend: (type: PrimaryGameAction, payload?: Record<string, unknown>) => void;
 }) {
-  const legal = room.legalActions;
   const hand = self.hand ?? [];
+  const buttons = primaryActionButtons(room.legalActions);
+  if (buttons.length === 0) return null;
 
-  const kongType: "CLAIM_EXPOSED_KONG" | "DECLARE_CONCEALED_KONG" | null = legal.includes(
-    "CLAIM_EXPOSED_KONG",
-  )
-    ? "CLAIM_EXPOSED_KONG"
-    : legal.includes("DECLARE_CONCEALED_KONG")
-      ? "DECLARE_CONCEALED_KONG"
-      : null;
-  const pongType: "CLAIM_PONG" | "CLAIM_INDICATOR_PONG_KONG" | null = legal.includes("CLAIM_PONG")
-    ? "CLAIM_PONG"
-    : legal.includes("CLAIM_INDICATOR_PONG_KONG")
-      ? "CLAIM_INDICATOR_PONG_KONG"
-      : null;
-  const winEnabled = legal.includes("DECLARE_WIN");
-  const addedKongEnabled = legal.includes("DECLARE_ADDED_KONG");
+  const selectedIsWildcard = isWildcardTile(selectedTile, room.wildcardKind);
 
-  function clickWin() {
-    if (!winEnabled || busy) return;
-    onSend("DECLARE_WIN");
+  function detailFor(button: ActionButtonModel): string {
+    if (button.kind === "discard") {
+      return selectedTile !== null && !selectedIsWildcard
+        ? `打出 ${tileKindLabel(selectedTile)}`
+        : "选择手牌";
+    }
+    if (button.kind === "wildcard") {
+      return selectedIsWildcard && selectedTile !== null
+        ? `放出 ${tileKindLabel(selectedTile)}`
+        : button.detail;
+    }
+    return button.detail;
   }
 
-  function clickKong() {
-    if (kongType === null || busy) return;
-    if (kongType === "CLAIM_EXPOSED_KONG") {
-      onSend("CLAIM_EXPOSED_KONG");
+  function isDisabled(button: ActionButtonModel): boolean {
+    if (busy) return true;
+    return !hasValidTileSelection(button.action, selectedTile, room.wildcardKind);
+  }
+
+  function clickAction(button: ActionButtonModel) {
+    if (isDisabled(button)) return;
+    if (button.action === "DISCARD_TILE" || button.action === "RELEASE_WILDCARD") {
+      if (selectedTile !== null) onSend(button.action, { tileId: selectedTile.id });
       return;
     }
-    const payload = deriveConcealedKongPayload(hand, room.wildcardKind, selectedTileId);
-    onSend("DECLARE_CONCEALED_KONG", payload ?? undefined);
+    if (button.action === "DECLARE_CONCEALED_KONG") {
+      const payload = deriveConcealedKongPayload(hand, room.wildcardKind, selectedTile?.id ?? null);
+      onSend(button.action, payload ?? undefined);
+      return;
+    }
+    if (button.action === "DECLARE_ADDED_KONG") {
+      const payload = deriveAddedKongPayload(
+        hand,
+        self.melds,
+        room.wildcardKind,
+        selectedTile?.id ?? null,
+      );
+      onSend(button.action, payload ?? undefined);
+      return;
+    }
+    onSend(button.action);
   }
-
-  function clickPong() {
-    if (pongType === null || busy) return;
-    onSend(pongType);
-  }
-
-  function clickAddedKong() {
-    if (!addedKongEnabled || busy) return;
-    const payload = deriveAddedKongPayload(hand, self.melds, room.wildcardKind, selectedTileId);
-    onSend("DECLARE_ADDED_KONG", payload ?? undefined);
-  }
-
-  const kongSubLabel =
-    kongType === "CLAIM_EXPOSED_KONG"
-      ? "明杠"
-      : kongType === "DECLARE_CONCEALED_KONG"
-        ? "暗杠"
-        : "杠";
-  const pongSubLabel =
-    pongType === "CLAIM_PONG" ? "碰" : pongType === "CLAIM_INDICATOR_PONG_KONG" ? "亮牌碰" : "碰";
 
   return (
-    <div className="primary-action-bar" aria-label="碰杠自摸大动作条">
-      <button
-        type="button"
-        className={`primary-action-button ${winEnabled ? "is-armed" : ""}`}
-        disabled={busy || !winEnabled}
-        aria-label="自摸"
-        onClick={clickWin}
-      >
-        <strong>自摸</strong>
-      </button>
-      <button
-        type="button"
-        className={`primary-action-button ${kongType !== null ? "is-armed" : ""}`}
-        disabled={busy || kongType === null}
-        aria-label={kongSubLabel}
-        onClick={clickKong}
-      >
-        <strong>杠</strong>
-        <small>{kongSubLabel}</small>
-      </button>
-      <button
-        type="button"
-        className={`primary-action-button ${pongType !== null ? "is-armed" : ""}`}
-        disabled={busy || pongType === null}
-        aria-label={pongSubLabel}
-        onClick={clickPong}
-      >
-        <strong>碰</strong>
-        <small>{pongSubLabel}</small>
-      </button>
-      <button
-        type="button"
-        className={`primary-action-button ${addedKongEnabled ? "is-armed" : ""}`}
-        disabled={busy || !addedKongEnabled}
-        aria-label="补杠"
-        onClick={clickAddedKong}
-      >
-        <strong>补杠</strong>
-      </button>
+    <div className="primary-action-bar" aria-label="当前可用操作" aria-busy={busy}>
+      {buttons.map((button) => {
+        const detail = detailFor(button);
+        return (
+          <button
+            key={button.kind}
+            type="button"
+            className={`primary-action-button action-${button.kind}`}
+            disabled={isDisabled(button)}
+            aria-label={`${button.label}，${detail}`}
+            onClick={() => clickAction(button)}
+          >
+            <strong>{button.label}</strong>
+            <small>{detail}</small>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -467,24 +644,35 @@ function PrimaryActionBar({
 export function GameTable({
   room,
   busy,
+  connectionStatus,
+  pendingAction,
   error,
+  chatMessages,
   onReady,
+  onBaseScoreChange,
   onContinue,
+  onChat,
   onLeave,
   onDissolve,
   onSend,
 }: GameTableProps) {
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [inviteStatus, setInviteStatus] = useState("复制邀请");
-  const [now, setNow] = useState(Date.now());
   const [actionNotice, setActionNotice] = useState<PlayerActionNotice | null>(null);
   const [landedHighlight, setLandedHighlight] = useState<LandedHighlight | null>(null);
   const [showRoundStart, setShowRoundStart] = useState(false);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatSending, setChatSending] = useState(false);
   const actionSnapshotRef = useRef<PlayerActionSnapshot | null>(null);
   const displayedRoundIdRef = useRef<string | null>(null);
+  const discardTailRef = useRef(
+    new Map(room.players.map((player) => [player.seat, player.discards.at(-1)?.id ?? null])),
+  );
+  const previousDrawnTileIdRef = useRef(room.selfDrawnTileId);
   const selfSeat = room.selfSeat;
   const self = selfSeat === null || room.stage === "WAITING" ? null : playerAt(room, selfSeat);
   const selectedTile = self?.hand?.find((tile) => tile.id === selectedTileId) ?? null;
+  const interactionLocked = busy || connectionStatus !== "connected";
 
   useEffect(() => {
     if (
@@ -494,11 +682,6 @@ export function GameTable({
       setSelectedTileId(null);
     }
   }, [selectedTileId, self?.hand]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (room.players.length !== 4) {
@@ -545,16 +728,36 @@ export function GameTable({
     }
     if (displayedRoundIdRef.current === room.roundId) return;
     displayedRoundIdRef.current = room.roundId;
+    const startedAt = room.roundStartedAt === null ? Number.NaN : Date.parse(room.roundStartedAt);
+    const roundAge = Date.now() - startedAt;
+    if (!Number.isFinite(startedAt) || roundAge < -1000 || roundAge > 5000) return;
     setShowRoundStart(true);
     const timer = window.setTimeout(() => setShowRoundStart(false), 2400);
     return () => window.clearTimeout(timer);
-  }, [room.roundId, room.stage]);
+  }, [room.roundId, room.roundStartedAt, room.stage]);
 
-  const secondsRemaining =
-    room.actionDeadlineAt === null
-      ? null
-      : Math.max(0, Math.ceil((Date.parse(room.actionDeadlineAt) - now) / 1000));
   const drawnTile = self?.hand?.find((tile) => tile.id === room.selfDrawnTileId) ?? null;
+  const animateDrawnTile =
+    connectionStatus === "connected" &&
+    drawnTile !== null &&
+    previousDrawnTileIdRef.current !== drawnTile.id;
+  const recentDiscardIds = new Map<Seat, string>();
+  if (connectionStatus === "connected") {
+    for (const player of room.players) {
+      const currentTail = player.discards.at(-1)?.id ?? null;
+      const previousTail = discardTailRef.current.get(player.seat);
+      if (previousTail !== undefined && currentTail !== null && currentTail !== previousTail) {
+        recentDiscardIds.set(player.seat, currentTail);
+      }
+    }
+  }
+
+  useLayoutEffect(() => {
+    discardTailRef.current = new Map(
+      room.players.map((player) => [player.seat, player.discards.at(-1)?.id ?? null]),
+    );
+    previousDrawnTileIdRef.current = room.selfDrawnTileId;
+  }, [connectionStatus, room.players, room.selfDrawnTileId]);
   const sortedHand = useMemo(
     () =>
       [...(self?.hand ?? [])]
@@ -576,6 +779,34 @@ export function GameTable({
     await navigator.clipboard.writeText(url.toString());
     setInviteStatus("已复制");
     window.setTimeout(() => setInviteStatus("复制邀请"), 1600);
+  }
+
+  async function submitChat() {
+    const message = chatDraft.trim();
+    if (message.length === 0 || chatSending) return;
+    setChatSending(true);
+    try {
+      if (await onChat(message)) setChatDraft("");
+    } finally {
+      setChatSending(false);
+    }
+  }
+
+  function pressHandTile(tile: Tile) {
+    const decision = decideTilePress({
+      tile,
+      selectedTileId,
+      wildcardKind: room.wildcardKind,
+      canDiscard: room.legalActions.includes("DISCARD_TILE"),
+      locked: interactionLocked,
+    });
+    if (decision.kind === "select") {
+      setSelectedTileId(decision.tileId);
+      return;
+    }
+    if (decision.kind === "discard") {
+      void onSend("DISCARD_TILE", { tileId: decision.tileId });
+    }
   }
 
   function sendAction(type: CommandEnvelope["type"]) {
@@ -604,11 +835,6 @@ export function GameTable({
     void onSend(type);
   }
 
-  function doubleClickDiscard(tile: Tile) {
-    if (busy || !room.legalActions.includes("DISCARD_TILE")) return;
-    void onSend("DISCARD_TILE", { tileId: tile.id });
-  }
-
   if (room.stage === "WAITING") {
     return (
       <main className="waiting-shell">
@@ -625,6 +851,12 @@ export function GameTable({
           <p className="eyebrow">WAITING ROOM</p>
           <h2>等待四位真人准备</h2>
           <p>进入房间后会固定占据一个座位。四位玩家全部入座并准备后，本局自动开始。</p>
+          <WaitingRoomExpiry expiresAt={room.waitingExpiresAt} />
+          {connectionStatus === "connected" ? null : (
+            <p className="network-inline-status" role="status">
+              {connectionStatus === "connecting" ? "正在连接房间…" : "网络已中断，正在恢复房间…"}
+            </p>
+          )}
           <div className="waiting-list">
             {room.lobbySeats.map((seat) => (
               <article
@@ -650,20 +882,47 @@ export function GameTable({
               </article>
             ))}
           </div>
+          <fieldset className="room-score-settings">
+            <legend>本房间底分</legend>
+            <div className="score-options">
+              {BASE_SCORES.map((score) => (
+                <button
+                  type="button"
+                  key={score}
+                  className={score === room.baseScore ? "is-active" : ""}
+                  disabled={interactionLocked || !room.isOwner}
+                  onClick={() => void onBaseScoreChange(score)}
+                >
+                  {score} 分
+                </button>
+              ))}
+            </div>
+            <small>{room.isOwner ? "修改底分后全员需要重新准备" : "仅房主可修改底分"}</small>
+          </fieldset>
           <button
             type="button"
-            className="primary-action"
-            disabled={busy || room.selfReady || room.selfSeat === null}
+            className={room.selfReady ? "ready-toggle is-ready" : "primary-action ready-toggle"}
+            disabled={interactionLocked || room.selfSeat === null}
             onClick={() => void onReady()}
           >
-            {room.selfReady ? "已准备，等待其他玩家" : "准备"}
+            {room.selfReady ? "取消准备" : "准备"}
           </button>
           {room.isOwner ? (
-            <button type="button" className="text-action" onClick={() => void onDissolve()}>
+            <button
+              type="button"
+              className="text-action danger-action"
+              disabled={interactionLocked}
+              onClick={() => void onDissolve()}
+            >
               解散房间
             </button>
           ) : null}
-          <button type="button" className="text-action" onClick={() => void onLeave()}>
+          <button
+            type="button"
+            className="text-action"
+            disabled={interactionLocked}
+            onClick={() => void onLeave()}
+          >
             离开房间
           </button>
         </section>
@@ -685,17 +944,20 @@ export function GameTable({
   }
 
   const actions = room.legalActions as CommandEnvelope["type"][];
-  const handActions = actions.filter((action) => HAND_ACTIONS.has(action));
-  const dockActions = actions.filter(
-    (action) => !HAND_ACTIONS.has(action) && !PRIMARY_BAR_ACTIONS.has(action),
-  );
-  const needsTile = (action: CommandEnvelope["type"]) =>
-    ["DISCARD_TILE", "RELEASE_WILDCARD", "DECLARE_CONCEALED_KONG", "DECLARE_ADDED_KONG"].includes(
-      action,
-    );
+  const dockActions = actions.filter((action) => !isPrimaryGameAction(action));
+  const canSelectHand = actions.some((action) => TILE_ACTIONS.includes(action));
+  const selfTurn = room.actingSeat === selfSeat;
+  const statusMessage =
+    connectionStatus === "connecting"
+      ? "正在连接牌局…"
+      : connectionStatus === "reconnecting"
+        ? "网络已中断，正在恢复牌局…"
+        : pendingAction === null
+          ? error
+          : `正在提交“${ACTION_LABELS[pendingAction] ?? pendingAction}”，等待服务器确认…`;
 
   return (
-    <main className="game-shell">
+    <main className={`game-shell ${selfTurn ? "is-self-turn" : ""}`} aria-busy={interactionLocked}>
       <header className="room-header game-header">
         <button type="button" className="quiet-action" onClick={() => void onLeave()}>
           离开房间
@@ -710,10 +972,11 @@ export function GameTable({
           {room.mode === "FRIEND" && room.isOwner ? (
             <button
               type="button"
-              disabled={busy || room.dissolveAfterRound}
+              className="danger-action"
+              disabled={interactionLocked}
               onClick={() => void onDissolve()}
             >
-              {room.dissolveAfterRound ? "本局后解散" : "结束房间"}
+              解散房间
             </button>
           ) : null}
           {room.mode === "FRIEND" ? (
@@ -724,20 +987,22 @@ export function GameTable({
         </div>
       </header>
 
-      <section className="table-surface" aria-label="晃晃牌桌">
+      <section className={`table-surface ${selfTurn ? "is-self-turn" : ""}`} aria-label="晃晃牌桌">
         {SEATS.map((seat) => (
           <PlayerStation
             key={seat}
             player={playerAt(room, seat)}
             active={room.actingSeat === seat}
+            self={seat === selfSeat}
             position={relativePosition(seat, selfSeat)}
+            wildcardKind={room.wildcardKind}
             landedMeldId={landedHighlight?.seat === seat ? landedHighlight.meldId : null}
             landedCategory={landedHighlight?.seat === seat ? landedHighlight.category : null}
           />
         ))}
 
         <div className="table-center">
-          <div className="indicator-block">
+          <div className={`indicator-block ${showRoundStart ? "is-revealing" : ""}`}>
             <span className="special-tile-label">亮牌</span>
             {room.indicatorTile === null ? (
               <i>无</i>
@@ -745,27 +1010,13 @@ export function GameTable({
               <MahjongTile tile={room.indicatorTile} indicator compact />
             )}
           </div>
-          <div className="turn-marker">
-            <small>
-              {room.roundPhase === "DISCARD_RESPONSE"
-                ? "等待响应"
-                : room.roundPhase === "ROUND_OVER"
-                  ? "本局结束"
-                  : secondsRemaining === null
-                    ? "当前回合"
-                    : `剩余 ${secondsRemaining} 秒`}
-            </small>
-            <b>
-              {room.roundOutcome?.kind === "WIN"
-                ? `${playerAt(room, room.roundOutcome.winnerSeat).nickname} · ${room.roundOutcome.winType === "HARD" ? "硬胡" : "软胡"}`
-                : room.roundOutcome?.kind === "DRAW"
-                  ? "流局"
-                  : room.actingSeat === null
-                    ? "等待"
-                    : playerAt(room, room.actingSeat).nickname}
-            </b>
-          </div>
-          <div className="wildcard-block">
+          <TurnMarker
+            room={room}
+            selfSeat={selfSeat}
+            connectionStatus={connectionStatus}
+            pendingAction={pendingAction}
+          />
+          <div className={`wildcard-block ${showRoundStart ? "is-revealing" : ""}`}>
             <span className="special-tile-label">赖子</span>
             {room.wildcardKind === null ? (
               <i>无</i>
@@ -810,32 +1061,19 @@ export function GameTable({
             player={playerAt(room, seat)}
             position={relativePosition(seat, selfSeat)}
             wildcardKind={room.wildcardKind}
+            recentDiscardId={recentDiscardIds.get(seat) ?? null}
           />
         ))}
 
-        <section className="self-area">
+        <section className={`self-area ${selfTurn ? "is-self-turn" : ""}`}>
           {self === null ? null : (
             <PrimaryActionBar
               room={room}
               self={self}
-              selectedTileId={selectedTileId}
-              busy={busy}
+              selectedTile={selectedTile}
+              busy={interactionLocked}
               onSend={(type, payload) => void onSend(type, payload)}
             />
-          )}
-          {handActions.length === 0 ? null : (
-            <div className="hand-action-bar" aria-label="手牌操作">
-              {handActions.map((action) => (
-                <button
-                  key={action}
-                  type="button"
-                  disabled={busy || selectedTile === null}
-                  onClick={() => sendAction(action)}
-                >
-                  {ACTION_LABELS[action] ?? action}
-                </button>
-              ))}
-            </div>
           )}
           <div className="meld-row">
             {self?.melds.map((meld) => (
@@ -848,14 +1086,16 @@ export function GameTable({
             ))}
           </div>
           <div className="hand-composition">
-            <div className="hand-row">
-              {sortedHand.map((tile: Tile) => (
+            <AnimatedHandRow
+              tiles={sortedHand}
+              motionEnabled={connectionStatus === "connected"}
+              renderTile={(tile) => (
                 <MahjongTile
                   key={tile.id}
                   tile={tile}
                   wildcardKind={room.wildcardKind}
                   selected={tile.id === selectedTileId}
-                  disabled={busy}
+                  disabled={interactionLocked || !canSelectHand}
                   highlighted={
                     handHighlight.kongTileIds.has(tile.id) || handHighlight.pongTileIds.has(tile.id)
                   }
@@ -866,13 +1106,10 @@ export function GameTable({
                         ? "可碰"
                         : undefined
                   }
-                  onSelect={(next) =>
-                    setSelectedTileId(next.id === selectedTileId ? null : next.id)
-                  }
-                  onDoubleSelect={doubleClickDiscard}
+                  onSelect={pressHandTile}
                 />
-              ))}
-            </div>
+              )}
+            />
             {drawnTile === null ? null : (
               <div className="drawn-tile-slot" title="本回合摸到的牌">
                 <span aria-hidden="true">摸</span>
@@ -880,7 +1117,7 @@ export function GameTable({
                   tile={drawnTile}
                   wildcardKind={room.wildcardKind}
                   selected={drawnTile.id === selectedTileId}
-                  disabled={busy}
+                  disabled={interactionLocked || !canSelectHand}
                   highlighted={
                     handHighlight.kongTileIds.has(drawnTile.id) ||
                     handHighlight.pongTileIds.has(drawnTile.id)
@@ -892,10 +1129,8 @@ export function GameTable({
                         ? "可碰"
                         : undefined
                   }
-                  onSelect={(next) =>
-                    setSelectedTileId(next.id === selectedTileId ? null : next.id)
-                  }
-                  onDoubleSelect={doubleClickDiscard}
+                  motion={animateDrawnTile ? "drawn" : undefined}
+                  onSelect={pressHandTile}
                 />
               </div>
             )}
@@ -904,18 +1139,61 @@ export function GameTable({
       </section>
 
       <div className="action-dock" aria-live="polite">
-        <div className="action-status">
-          {error ??
-            (room.actingSeat === selfSeat || actions.length > 0
-              ? "请选择牌或操作"
-              : "等待其他玩家")}
-        </div>
+        {room.mode === "FRIEND" ? (
+          <div className="chat-console">
+            <div className="chat-feed" aria-live="polite" aria-label="房间消息">
+              {statusMessage === null ? null : (
+                <span className="action-status">{statusMessage}</span>
+              )}
+              {chatMessages.length === 0 && statusMessage === null ? (
+                <span className="action-status">
+                  {room.actingSeat === selfSeat || actions.length > 0
+                    ? "请选择牌或操作"
+                    : "等待其他玩家"}
+                </span>
+              ) : (
+                chatMessages.map((message) => (
+                  <span className="chat-message" key={message.id}>
+                    <b>{message.nickname}</b>
+                    {message.message}
+                  </span>
+                ))
+              )}
+            </div>
+            <form
+              className="chat-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitChat();
+              }}
+            >
+              <input
+                value={chatDraft}
+                maxLength={60}
+                aria-label="发送房间消息"
+                placeholder="说点什么…"
+                onChange={(event) => setChatDraft(event.target.value)}
+              />
+              <button type="submit" disabled={chatSending || chatDraft.trim().length === 0}>
+                发送
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="action-status">
+            {statusMessage ??
+              (room.actingSeat === selfSeat || actions.length > 0
+                ? "请选择牌或操作"
+                : "等待其他玩家")}
+          </div>
+        )}
         <div className="action-buttons">
           {dockActions.map((action) => (
             <button
               key={action}
               type="button"
-              disabled={busy || (needsTile(action) && selectedTile === null)}
+              className={action === "PASS_RESPONSE" ? "aux-action action-pass" : "aux-action"}
+              disabled={interactionLocked}
               onClick={() => sendAction(action)}
             >
               {ACTION_LABELS[action] ?? action}

@@ -38,7 +38,7 @@ function players(overrides?: Partial<Record<Seat, PlayerProjection>>): PlayerPro
 
 function room(overrides?: Partial<RoomProjection>): RoomProjection {
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     roomId: "room-1",
     roomCode: "123456",
     version: 1,
@@ -47,11 +47,13 @@ function room(overrides?: Partial<RoomProjection>): RoomProjection {
     stage: "PLAYING",
     roundId: "round-1",
     roundStartedAt: null,
+    waitingExpiresAt: null,
     isOwner: false,
     selfReady: true,
     selfSeat: 0,
     selfDrawnTileId: null,
     status: "ACTIVE",
+    closeReason: null,
     dissolveAfterRound: false,
     indicatorTile: null,
     wildcardKind: null,

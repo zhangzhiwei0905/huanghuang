@@ -39,6 +39,31 @@ describe("roomApi", () => {
     await expect(roomApi.continueBot("123456")).resolves.toMatchObject({ stage: "PLAYING" });
   });
 
+  it("sends explicit ready state and owner base-score updates", async () => {
+    const requests: { path: string; method: string | undefined; body: unknown }[] = [];
+    vi.stubGlobal("fetch", (path: string, init: RequestInit | undefined): Promise<Response> => {
+      requests.push({
+        path,
+        method: init?.method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+      });
+      return Promise.resolve(
+        new Response(JSON.stringify({ roomCode: "123456" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    await roomApi.ready("123456", false);
+    await roomApi.updateBaseScore("123456", 10);
+
+    expect(requests).toEqual([
+      { path: "/api/rooms/123456/ready", method: "POST", body: { ready: false } },
+      { path: "/api/rooms/123456/settings", method: "PATCH", body: { baseScore: 10 } },
+    ]);
+  });
+
   it("does not send a JSON content type with an empty DELETE body", async () => {
     vi.stubGlobal("fetch", (_path: string, init: RequestInit | undefined): Promise<Response> => {
       const headers = new Headers(init?.headers);

@@ -18,6 +18,16 @@ export type PlayerProjection = {
 };
 
 export type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
+export type RoomCloseReason = "OWNER_DISSOLVED" | "WAITING_TIMEOUT" | "EMPTY_ROOM";
+
+export type ChatMessageProjection = {
+  id: string;
+  roomId: string;
+  senderSeat: Seat;
+  nickname: string;
+  message: string;
+  sentAt: string;
+};
 
 export type LobbySeatProjection = {
   seat: Seat;
@@ -52,7 +62,7 @@ export type RoundSettlementProjection = {
 };
 
 export type RoomProjection = {
-  schemaVersion: 2;
+  schemaVersion: 4;
   roomId: string;
   roomCode: string;
   version: number;
@@ -61,11 +71,13 @@ export type RoomProjection = {
   stage: RoomStage;
   roundId: string | null;
   roundStartedAt: string | null;
+  waitingExpiresAt: string | null;
   isOwner: boolean;
   selfReady: boolean;
   selfSeat: Seat | null;
   selfDrawnTileId: string | null;
   status: "ACTIVE" | "CLOSED";
+  closeReason: RoomCloseReason | null;
   dissolveAfterRound: boolean;
   indicatorTile: Tile | null;
   wildcardKind: TileKind | null;

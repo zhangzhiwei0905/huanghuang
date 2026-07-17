@@ -141,7 +141,7 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
           </form>
         )}
       </section>
-      <p className="home-footnote">默认静音 · 匿名会话 · 无历史记录</p>
+      <p className="home-footnote">默认静音 · 匿名会话 · iPhone 可添加到主屏幕全屏游玩</p>
     </main>
   );
 }

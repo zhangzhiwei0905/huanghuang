@@ -26,7 +26,14 @@ connection.pragma("busy_timeout = 5000");
 - Tables and columns use lowercase `snake_case`; TypeScript domain fields use `camelCase`.
 - IDs are UUID strings, room codes are six-character strings and timestamps are UTC ISO-8601 strings.
 - Schema creation is currently an idempotent startup migration in `GameDatabase.migrate`. New migrations must remain additive until a versioned migration runner replaces it.
-- Closed rooms remain in SQLite but are not restored as active rooms.
+- A room closure is persisted long enough to serve the authoritative close projection, then the scheduler deletes the row after the bounded notification window. Startup also deletes stale `CLOSED` rows before restoring active rooms.
+
+## Room retirement
+
+- `RoomService.closeRoom` makes a room non-joinable immediately and schedules a 30-second notification window.
+- During that window, existing members can still resolve the snapshot and read `closeReason`; no command, join or chat may treat it as active.
+- After the window, remove the room from `roomsByCode` and call `GameDatabase.deleteRoom(room.id)`. This bounded retention prevents both the in-memory map and the `rooms` table from accumulating abandoned rooms.
+- Legacy active snapshots with `dissolveAfterRound = true` are deleted during restore rather than revived under obsolete delayed-dissolve semantics.
 
 ## Backups
 
@@ -37,4 +44,5 @@ The production database is mounted at `/data/huanghuang.sqlite`. For the current
 - Do not persist private hands in logs or client projections.
 - Do not acknowledge a successful command before its room snapshot and deduplication row commit.
 - Do not open one SQLite connection per Socket or request.
+- Do not delete a room before its close update can be read by subscribed clients; also do not retain closed room snapshots indefinitely.
 - Do not copy a live WAL database file without using the documented stop-and-copy procedure or a future SQLite online-backup implementation.

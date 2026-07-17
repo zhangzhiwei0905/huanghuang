@@ -47,8 +47,17 @@ export const roomApi = {
   get(roomCode: string): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}`);
   },
-  ready(roomCode: string): Promise<RoomProjection> {
-    return request(`/api/rooms/${roomCode}/ready`, { method: "POST", body: "{}" });
+  ready(roomCode: string, ready: boolean): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/ready`, {
+      method: "POST",
+      body: JSON.stringify({ ready }),
+    });
+  },
+  updateBaseScore(roomCode: string, baseScore: BaseScore): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/settings`, {
+      method: "PATCH",
+      body: JSON.stringify({ baseScore }),
+    });
   },
   continueBot(roomCode: string): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/continue`, { method: "POST", body: "{}" });

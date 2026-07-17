@@ -2,7 +2,12 @@ import type { RoundState } from "@huanghuang/game-engine";
 import { afterEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { GameDatabase, type AnonymousSession } from "./database.js";
-import { RoomService, type RoomState } from "./room-service.js";
+import {
+  CLOSED_ROOM_EVICTION_MS,
+  RoomService,
+  WAITING_ROOM_TIMEOUT_MS,
+  type RoomState,
+} from "./room-service.js";
 
 const owner: AnonymousSession = { id: "owner", nickname: "房主" };
 
@@ -38,6 +43,7 @@ describe("RoomService", () => {
       actionDeadlineAt: null,
       roundId: null,
     });
+    expect(Date.parse(projection.waitingExpiresAt ?? "")).toBeGreaterThan(Date.now());
     expect(projection.players).toEqual([]);
     expect(projection.lobbySeats.filter((seat) => seat.occupied)).toHaveLength(1);
     expect(projection.lobbySeats[0]).toMatchObject({
@@ -91,20 +97,25 @@ describe("RoomService", () => {
     ];
 
     for (const guest of guests) service.joinRoom(guest, room.code);
-    service.setReady(owner.id, room.code);
+    service.setReady(owner.id, room.code, true);
     const versionAfterReady = room.version;
-    service.setReady(owner.id, room.code);
+    service.setReady(owner.id, room.code, true);
     expect(room.version).toBe(versionAfterReady);
 
-    service.setReady(guests[0]?.id ?? "", room.code);
-    service.setReady(guests[1]?.id ?? "", room.code);
+    service.setReady(owner.id, room.code, false);
+    expect(service.project(room, owner.id).selfReady).toBe(false);
+    service.setReady(owner.id, room.code, true);
+
+    service.setReady(guests[0]?.id ?? "", room.code, true);
+    service.setReady(guests[1]?.id ?? "", room.code, true);
     expect(room.stage).toBe("WAITING");
     expect(room.round).toBeNull();
 
-    service.setReady(guests[2]?.id ?? "", room.code);
+    service.setReady(guests[2]?.id ?? "", room.code, true);
     expect(room.stage).toBe("PLAYING");
     expect(room.round).not.toBeNull();
     expect(room.readySessionIds).toEqual([]);
+    expect(room.waitingExpiresAt).toBeNull();
     expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
     expect(Object.values(activeRound(room).players).every((player) => player.score === 0)).toBe(
       true,
@@ -121,9 +132,9 @@ describe("RoomService", () => {
     ];
     for (const guest of guests) {
       service.joinRoom(guest, room.code);
-      service.setReady(guest.id, room.code);
+      service.setReady(guest.id, room.code, true);
     }
-    service.setReady(owner.id, room.code);
+    service.setReady(owner.id, room.code, true);
 
     const round = activeRound(room);
     round.players[0].score = 12;
@@ -145,6 +156,7 @@ describe("RoomService", () => {
     expect(room.scores).toEqual({ 0: 12, 1: -4, 2: -4, 3: -4 });
     expect(room.nextDealerSeat).toBe(2);
     expect(room.readySessionIds).toEqual([]);
+    expect(Date.parse(room.waitingExpiresAt ?? "")).toBeGreaterThan(Date.now());
     expect(service.project(room, owner.id).lobbySeats.map((seat) => seat.score)).toEqual([
       12, -4, -4, -4,
     ]);
@@ -234,6 +246,144 @@ describe("RoomService", () => {
     expect(room.ownerSessionId).toBe(guest.id);
     expect(room.seats[0].controller).toBe("EMPTY");
     expect(room.seats[0].sessionId).toBeNull();
+    expect(service.hasMember(owner.id, room.code)).toBe(false);
+
+    service.joinRoom(owner, room.code);
+    expect(service.hasMember(owner.id, room.code)).toBe(true);
+    expect(service.project(room, owner.id).selfSeat).not.toBeNull();
+  });
+
+  it("allows only the current friend-room owner to change the waiting-room base score", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const guest = { id: "guest", nickname: "客人" };
+    service.joinRoom(guest, room.code);
+    service.setReady(owner.id, room.code, true);
+    service.setReady(guest.id, room.code, true);
+
+    expect(service.updateBaseScore(guest.id, room.code, 5)).toBe("FORBIDDEN");
+    expect(service.updateBaseScore(owner.id, room.code, 10)).toBe(room);
+    expect(room.baseScore).toBe(10);
+    expect(room.readySessionIds).toEqual([]);
+
+    service.leaveRoom(owner.id, room.code);
+    expect(room.ownerSessionId).toBe(guest.id);
+    expect(service.updateBaseScore(guest.id, room.code, 5)).toBe(room);
+    expect(room.baseScore).toBe(5);
+  });
+
+  it("closes a waiting friend room with an owner-dissolved reason", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const guest = { id: "guest", nickname: "客人" };
+    service.joinRoom(guest, room.code);
+
+    service.requestDissolve(owner.id, room.code);
+
+    expect(room.status).toBe("CLOSED");
+    expect(service.project(room, guest.id).closeReason).toBe("OWNER_DISSOLVED");
+  });
+
+  it("closes an active friend room immediately when its owner dissolves it", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) service.joinRoom(guest, room.code);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+
+    service.requestDissolve(owner.id, room.code);
+
+    expect(room.status).toBe("CLOSED");
+    expect(room.closeReason).toBe("OWNER_DISSOLVED");
+    expect(room.dissolveAfterRound).toBe(false);
+  });
+
+  it("closes and evicts a friend room when waiting reaches three minutes", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const expiresAt = Date.parse(room.waitingExpiresAt ?? "");
+
+    expect(expiresAt).toBeGreaterThan(Date.now() + WAITING_ROOM_TIMEOUT_MS - 1000);
+    service.tick(expiresAt - 1);
+    expect(room.status).toBe("ACTIVE");
+
+    service.tick(expiresAt);
+    expect(room.status).toBe("CLOSED");
+    expect(room.closeReason).toBe("WAITING_TIMEOUT");
+    expect(service.getRoom(room.code)).toBe(room);
+
+    service.tick(expiresAt + CLOSED_ROOM_EVICTION_MS);
+    expect(service.getRoom(room.code)).toBeNull();
+  });
+
+  it("physically deletes a closed room snapshot after the notification window", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const service = new RoomService(database);
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const expiresAt = Date.parse(room.waitingExpiresAt ?? "");
+    const persistedCount = () =>
+      (
+        database.connection
+          .prepare("SELECT COUNT(*) AS count FROM rooms WHERE id = ?")
+          .get(room.id) as { count: number }
+      ).count;
+
+    expect(persistedCount()).toBe(1);
+    service.tick(expiresAt);
+    expect(persistedCount()).toBe(1);
+
+    service.tick(expiresAt + CLOSED_ROOM_EVICTION_MS);
+    expect(persistedCount()).toBe(0);
+  });
+
+  it("does not close a friend room that starts before its waiting deadline", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const expiresAt = Date.parse(room.waitingExpiresAt ?? "");
+    const guests = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) service.joinRoom(guest, room.code);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+
+    service.tick(expiresAt + WAITING_ROOM_TIMEOUT_MS);
+
+    expect(room.status).toBe("ACTIVE");
+    expect(room.stage).not.toBe("WAITING");
+    expect(room.closeReason).toBeNull();
+  });
+
+  it("broadcasts ephemeral chat data only for members in an active friend round", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+
+    expect(service.createChatMessage(owner.id, room.code, "还没开局")).toBe("ACTION_NOT_AVAILABLE");
+    for (const guest of guests) service.joinRoom(guest, room.code);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    const versionBeforeChat = room.version;
+
+    expect(service.createChatMessage("outsider", room.code, "偷听")).toBe("NOT_A_MEMBER");
+    expect(service.createChatMessage(guests[0]?.id ?? "", room.code, "三条有人要吗")).toMatchObject(
+      {
+        roomId: room.id,
+        senderSeat: 1,
+        nickname: "甲",
+        message: "三条有人要吗",
+      },
+    );
+    expect(room.version).toBe(versionBeforeChat);
   });
 
   it("uses trustee control while disconnected and restores human control on reconnect", () => {
@@ -249,15 +399,26 @@ describe("RoomService", () => {
     expect(room.seats[0].connected).toBe(true);
   });
 
-  it("marks an owner-requested dissolve for the end of an active round", () => {
+  it("closes an active bot room immediately when the owner dissolves", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "BOT");
 
     const result = service.requestDissolve(owner.id, room.code);
 
     expect(result).toBe(room);
-    expect(room.dissolveAfterRound).toBe(true);
-    expect(room.status).toBe("ACTIVE");
+    expect(room.dissolveAfterRound).toBe(false);
+    expect(room.status).toBe("CLOSED");
+    expect(room.closeReason).toBe("OWNER_DISSOLVED");
+  });
+
+  it("closes a friend room when its only player leaves", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+
+    service.leaveRoom(owner.id, room.code);
+
+    expect(room.status).toBe("CLOSED");
+    expect(room.closeReason).toBe("EMPTY_ROOM");
   });
 
   it("projects an authoritative round settlement including payments and net score changes", () => {

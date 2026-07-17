@@ -39,11 +39,27 @@ export const joinRoomSchema = z.object({
   roomCode: z.string().regex(/^\d{6}$/u),
 });
 
+export const readyRoomSchema = z.object({
+  ready: z.boolean(),
+});
+
+export const updateRoomSettingsSchema = z.object({
+  baseScore: baseScoreSchema,
+});
+
+export const chatMessageInputSchema = z.object({
+  roomCode: z.string().regex(/^\d{6}$/u),
+  message: z.string().trim().min(1).max(60),
+});
+
 export type CommandType = z.infer<typeof commandTypeSchema>;
 export type CommandEnvelope = z.infer<typeof commandEnvelopeSchema>;
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
 export type RoomMode = z.infer<typeof roomModeSchema>;
+export type ReadyRoomInput = z.infer<typeof readyRoomSchema>;
+export type UpdateRoomSettingsInput = z.infer<typeof updateRoomSettingsSchema>;
+export type ChatMessageInput = z.infer<typeof chatMessageInputSchema>;
 
 export type CommandResult = {
   accepted: boolean;

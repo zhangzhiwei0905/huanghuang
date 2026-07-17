@@ -51,6 +51,43 @@ function actionCategory(action: PlayerActionNotice["action"]): "pong" | "kong" |
 - When two action types can never be legal at the same time (e.g. `CLAIM_EXPOSED_KONG` vs `DECLARE_CONCEALED_KONG`, or `CLAIM_PONG` vs `CLAIM_INDICATOR_PONG_KONG`), it's fine to render one button that dispatches whichever is currently in `legalActions`, with a small dynamic sub-label showing the specific action (e.g. "杠" button sub-labels "明杠"/"暗杠"). The `aria-label` must state the specific action, not the generic merged label, so screen readers get the real action name.
 - For actions needing a tileId/meldId payload (`DECLARE_CONCEALED_KONG`, `DECLARE_ADDED_KONG`), prefer the user's manually-selected tile when it's a valid source; otherwise auto-derive from the eligibility module above. Never duplicate payload-shape logic — one function builds the payload, both the manual-select path and the auto-derive path call it.
 
+## On-demand primary game actions
+
+`RoomProjection.legalActions` is the only source for showing an in-game action. Do not render a permanent row of disabled actions: an unavailable action must not occupy space or compete with the current decision.
+
+Use `apps/web/src/components/actionButtons.ts` as the single presentation mapping:
+
+```text
+DISCARD_TILE                                -> 出牌
+RELEASE_WILDCARD                            -> 放赖
+CLAIM_PONG / CLAIM_INDICATOR_PONG_KONG      -> 碰
+CLAIM_EXPOSED_KONG / DECLARE_CONCEALED_KONG -> 杠
+DECLARE_ADDED_KONG                          -> 补杠
+DECLARE_WIN                                 -> 自摸
+```
+
+- Render these six conceptual actions only in the action bar immediately above the self hand. Keep `PASS_RESPONSE` and `CONTINUE_TURN` as quieter auxiliary controls in the bottom dock.
+- Preserve mapping order and mutual exclusion in the pure `primaryActionButtons` function. Rendering code consumes its models and must not repeat legal-action branches.
+- `DISCARD_TILE` requires a selected non-wildcard physical tile. `RELEASE_WILDCARD` requires a selected physical wildcard. Share this check through `hasValidTileSelection`; never send a known-invalid selection and wait for a server rejection to explain the UI state.
+- Discard is the stable high-frequency primary style; wildcard release is the distinctive multiplier style; pong/kong/added-kong share the neutral base-action style; self-draw is the win style. Both themes use one component tree and the existing semantic tokens.
+- On phone landscape, keep every button at least 44px high and position the action group so its actual button rectangles do not overlap the central discard zone or the hand.
+
+Wrong:
+
+```tsx
+<button disabled={!legal.includes("DECLARE_WIN")}>自摸</button>
+<button disabled={!legal.includes("CLAIM_PONG")}>碰</button>
+```
+
+Correct:
+
+```tsx
+const buttons = primaryActionButtons(room.legalActions);
+return buttons.length === 0 ? null : buttons.map(renderActionButton);
+```
+
+Tests must cover empty actions, turn-action ordering, discard-response pong/kong isolation, indicator-pong mapping, auxiliary-action exclusion, and wildcard versus non-wildcard selection.
+
 ## Accessibility
 
 - Touch targets are at least 44 by 44 CSS pixels.
@@ -58,8 +95,85 @@ function actionCategory(action: PlayerActionNotice["action"]): "pong" | "kong" |
 - Focus remains visible in both themes.
 - Respect `prefers-reduced-motion`.
 
+## Hand selection and table motion
+
+- Keep physical tile identity (`tile.id`) through selection and animation. A first press selects, a second press on the same ordinary tile may submit `DISCARD_TILE`, and pressing another tile switches selection.
+- Route this decision through the pure `decideTilePress` helper. A wildcard never uses the second-press discard path; it remains selected for the explicit `RELEASE_WILDCARD` action.
+- The synchronous event handler and the room controller both guard submissions. A disabled React render alone is not a sufficient duplicate-click lock because two input events can arrive before the next render.
+- Keep a newly drawn tile outside the sorted hand until it leaves the hand. After the authoritative projection removes a tile, sort/render the next projection and animate wrapper elements with FLIP.
+- FLIP and tile-entry effects are presentation only: measure after layout, animate `transform`/`opacity`, and never reorder or remove projection data from an animation callback.
+- Treat initial mount, reconnect recovery, and `prefers-reduced-motion` as no-history states. Render the final projection immediately and do not replay old draw, discard, round-start, or special-tile effects.
+- Put high-frequency timers in the smallest owning component. `TurnMarker` may update twice per second; it must not force the entire `GameTable` to re-render.
+
+Required tests cover first/select, switch/select, second-press discard, wildcard protection, illegal phase, and synchronous lock behavior.
+
 ## Common mistakes
 
 - Do not use an array index as a tile key; physical `tile.id` is the identity.
 - Do not optimistically remove a tile before the authoritative projection arrives.
 - Do not fork discreet and premium theme markup.
+- Do not keep both `click` and `dblclick` discard paths; their event sequence can submit twice or make touch behavior inconsistent.
+- Do not use array order as animation history after reconnect; there is no trustworthy client-side transition to replay.
+
+## Scenario: iOS dynamic viewport and installable shell
+
+### 1. Scope / Trigger
+
+Any change to root layout height, fixed game controls, safe-area padding, PWA metadata or service-worker caching must preserve browser and installed iOS landscape behavior.
+
+### 2. Signatures
+
+```text
+viewport: width=device-width, initial-scale=1, viewport-fit=cover
+CSS: --app-height, --safe-top, --safe-right, --safe-bottom, --safe-left
+manifest: display=standalone, orientation=landscape, start_url=/
+service worker exclusions: /api/*, /socket.io/*
+```
+
+### 3. Contracts
+
+- `main.tsx` updates only `--app-height` from `visualViewport.height` (falling back to `innerHeight`) on resize, orientation change and page show.
+- Fixed headers, the table and the bottom action dock consume shared height and safe-area variables. Do not mix new `100vh` calculations into child components.
+- The production-only service worker may cache the app shell and same-origin static assets. API and Socket.IO remain network-only, and cached data is never a room-state source.
+- Apple metadata and 180px/192px/512px icons ship from `apps/web/public` and must appear in `dist` after Vite build.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Safari address bar expands/collapses | Recompute `--app-height`; table controls stay inside the visual viewport |
+| Device has a notch/home indicator | Apply `env(safe-area-inset-*)` to fixed edges |
+| App is installed | Launch standalone in landscape with the declared icons/theme |
+| API/Socket request occurs | Bypass service-worker cache entirely |
+| Offline shell is available | Render the shell; room restoration may still fail clearly because gameplay requires network |
+
+### 5. Good/Base/Bad Cases
+
+- Good: at 844×390, game shell height is 390px and header + table + dock exactly fill it without document scrolling.
+- Base: desktop browsers without safe-area insets resolve each inset to `0px`.
+- Bad: using `100vh` for the table while the dock uses `visualViewport`; mobile Safari then clips or creates an extra scroll region.
+
+### 6. Tests Required
+
+- Run Web typecheck and production build; assert manifest, service worker and all three PNG icons exist in `apps/web/dist`.
+- Browser-check desktop and phone landscape widths, verify no game-shell horizontal/vertical overflow, and inspect console errors.
+- Verify the service worker and manifest return 200 from the production server; real-device acceptance still includes Safari and “Add to Home Screen”.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```css
+.game-shell { height: 100vh; }
+.action-dock { bottom: 0; }
+```
+
+Correct:
+
+```css
+.game-shell { height: var(--app-height); }
+.action-dock {
+  height: calc(var(--action-dock-height) + var(--safe-bottom));
+  padding-bottom: calc(6px + var(--safe-bottom));
+}
+```

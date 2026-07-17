@@ -58,7 +58,7 @@ type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
   → 四座均为真人且四人全部准备
   → PLAYING（清空准备状态、服务端发牌、记录 roundStartedAt）
   → ROUND_RESULT（保留现有约 4 秒结算展示）
-  → dissolveAfterRound ? CLOSED : WAITING（保留座位与累计积分、清空准备）
+  → WAITING（保留座位与累计积分、清空准备并重新开始 3 分钟等待计时）
 ```
 
 `setReady` 必须幂等：重复准备不重复加版本、不重复发牌；只有 `FRIEND + WAITING` 且调用者占座时有效。最后一位玩家准备触发一次原子开局。
@@ -79,7 +79,7 @@ type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
 
 - 好友房等待阶段：玩家主动离开后座位变空并移除准备状态；房主离开仍按既有规则随机转让给其他真人，无人时关闭房间。
 - 好友局进行中：保留既有机器人/托管接管当前局的行为；该局结束回到等待房后，已主动离开的座位显示为空，机器人不作为下一局好友房成员。
-- 好友房等待阶段房主解散可立即关闭；进行中仍设置 `dissolveAfterRound`。
+- 好友房任何阶段房主主动解散都立即关闭，不再保留 `dissolveAfterRound` 延迟语义。
 - 人机模式不允许加入；退出即关闭该单人房间。
 - 断线不等于离房：`PLAYING` 中转托管，`WAITING` 中保留座位和准备状态并标记离线；原匿名会话重连恢复。
 
@@ -248,3 +248,24 @@ DECLARE_WIN                                       → 自摸
 
 - 不新增吃牌命令：本项目规则与协议没有吃牌，动作 UI 继续只消费 `legalActions`。
 - 不引入动画依赖，不变更 Socket 事件或命令 payload。所有动画仅为客户端表现，可随时移除而不影响状态同步。
+
+## 11. 第五轮房间回收与 iOS/PWA
+
+### 11.1 等待超时与关闭原因
+
+- `RoomState.waitingExpiresAt` 是服务端 UTC ISO 时间锚点；`FRIEND + WAITING` 必须非空，其他阶段为空。
+- 创建好友房与 `enterWaiting` 都写入 `now + 3 分钟`；四人准备触发 `startRound` 时清空，加入、准备切换、底分调整不延长计时。
+- `RoomCloseReason` 增加 `WAITING_TIMEOUT`；前端继续通过关闭投影选择提示，不根据 HTTP 错误猜测原因。
+- `requestDissolve` 在所有阶段直接写入 `CLOSED + OWNER_DISSOLVED`。房主离房且无人接任时同样立即关闭；有人时随机转让并保持原等待截止时间。
+
+### 11.2 通知与内存回收
+
+- 关闭房间先持久化并广播一次权威关闭投影，确保在线成员收到原因。
+- `tick` 对关闭房间保留 30 秒通知窗口；客户端收到版本事件后仍可读取关闭投影，随后房间从 `roomsByCode` 和 SQLite 房间表删除。
+- 进程启动时先清理遗留 `CLOSED` 行，旧版 `dissolveAfterRound` 活跃快照也直接删除，不再恢复为可加入房间。
+
+### 11.3 iOS 动态视口与 PWA
+
+- HTML viewport 使用 `viewport-fit=cover`，CSS 统一通过 `--app-height` 和 `env(safe-area-inset-*)` 布局；Visual Viewport 变化只更新根变量，不修改游戏状态。
+- PWA manifest 使用 `display: standalone`、`orientation: landscape`、`start_url: /`，同时补齐 Apple Web App meta 与 180/192/512 图标。
+- service worker 仅缓存应用壳和同源静态资源，API、Socket.IO 与房间 URL 始终 network-only；更新采用版本化缓存并清理旧缓存。

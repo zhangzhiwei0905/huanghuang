@@ -20,10 +20,12 @@ import {
 } from "@huanghuang/game-engine";
 import type {
   BaseScore,
+  ChatMessageProjection,
   CommandEnvelope,
   CommandResult,
   PlayerController,
   RoomMode,
+  RoomCloseReason,
   RoomProjection,
   RoomStage,
   RoundSettlementProjection,
@@ -56,6 +58,7 @@ type PersistedRoomState = {
   status: "ACTIVE" | "CLOSED";
   version: number;
   dissolveAfterRound: boolean;
+  closeReason?: RoomCloseReason | null;
   seats: Record<Seat, SeatController>;
   waitingHumans?: LegacyWaitingHuman[];
   readySessionIds?: string[];
@@ -65,6 +68,7 @@ type PersistedRoomState = {
   nextDealerSeat?: Seat;
   round: RoundState | null;
   roundStartedAt?: string | null;
+  waitingExpiresAt?: string | null;
   actionDeadlineAt?: string | null;
   nextRoundAt?: string | null;
 };
@@ -77,6 +81,7 @@ export type RoomState = {
   status: "ACTIVE" | "CLOSED";
   version: number;
   dissolveAfterRound: boolean;
+  closeReason: RoomCloseReason | null;
   mode: RoomMode;
   stage: RoomStage;
   seats: Record<Seat, SeatController>;
@@ -85,12 +90,16 @@ export type RoomState = {
   nextDealerSeat: Seat;
   round: RoundState | null;
   roundStartedAt: string | null;
+  waitingExpiresAt: string | null;
   actionDeadlineAt: string | null;
   nextRoundAt: string | null;
 };
 
 export type JoinRoomResult = RoomState | "ROOM_FULL" | "ROOM_NOT_JOINABLE" | null;
 export type RoomActionResult = RoomState | "ACTION_NOT_AVAILABLE" | null;
+export type RoomSettingsResult = RoomState | "ACTION_NOT_AVAILABLE" | "FORBIDDEN" | null;
+export type ChatMessageResult =
+  ChatMessageProjection | "ACTION_NOT_AVAILABLE" | "NOT_A_MEMBER" | null;
 
 type CommandPayload = Record<string, unknown>;
 
@@ -102,6 +111,8 @@ const BOT_DELAY_MS = 650;
 const TURN_TIMEOUT_MS = 15_000;
 const RESPONSE_TIMEOUT_MS = 5_000;
 const ROUND_RESULT_MS = 4_000;
+export const WAITING_ROOM_TIMEOUT_MS = 3 * 60_000;
+export const CLOSED_ROOM_EVICTION_MS = 30_000;
 
 function emptySeat(seat: Seat): SeatController {
   return {
@@ -174,10 +185,16 @@ function tileKindField(payload: CommandPayload): TileKind | null {
 
 export class RoomService {
   private readonly roomsByCode = new Map<string, RoomState>();
+  private readonly closedRoomEvictionAt = new Map<string, number>();
 
   constructor(private readonly database: GameDatabase) {
+    this.database.deleteClosedRooms();
     for (const json of this.database.loadActiveRooms()) {
       const room = this.normalizeRoom(JSON.parse(json) as PersistedRoomState);
+      if (room.dissolveAfterRound) {
+        this.database.deleteRoom(room.id);
+        continue;
+      }
       this.refreshDeadline(room);
       this.roomsByCode.set(room.code, room);
     }
@@ -206,6 +223,7 @@ export class RoomService {
         status: persisted.status,
         version: persisted.version,
         dissolveAfterRound: persisted.dissolveAfterRound,
+        closeReason: persisted.closeReason ?? null,
         mode,
         stage,
         seats,
@@ -218,6 +236,11 @@ export class RoomService {
           (randomInt(4) as Seat),
         round: stage === "WAITING" ? null : round,
         roundStartedAt: persisted.roundStartedAt ?? null,
+        waitingExpiresAt:
+          mode === "FRIEND" && stage === "WAITING"
+            ? (persisted.waitingExpiresAt ??
+              new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString())
+            : null,
         actionDeadlineAt: persisted.actionDeadlineAt ?? null,
         nextRoundAt: persisted.nextRoundAt ?? null,
       };
@@ -271,6 +294,7 @@ export class RoomService {
         status: persisted.status,
         version: persisted.version,
         dissolveAfterRound: persisted.dissolveAfterRound,
+        closeReason: persisted.closeReason ?? null,
         mode: "FRIEND",
         stage: "WAITING",
         seats,
@@ -279,6 +303,7 @@ export class RoomService {
         nextDealerSeat: randomInt(4) as Seat,
         round: null,
         roundStartedAt: null,
+        waitingExpiresAt: new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString(),
         actionDeadlineAt: null,
         nextRoundAt: null,
       };
@@ -294,6 +319,7 @@ export class RoomService {
       status: persisted.status,
       version: persisted.version,
       dissolveAfterRound: persisted.dissolveAfterRound,
+      closeReason: persisted.closeReason ?? null,
       mode,
       stage,
       seats: structuredClone(persisted.seats),
@@ -302,6 +328,7 @@ export class RoomService {
       nextDealerSeat: round?.outcome?.nextDealerSeat ?? round?.dealerSeat ?? (randomInt(4) as Seat),
       round,
       roundStartedAt: null,
+      waitingExpiresAt: null,
       actionDeadlineAt: persisted.actionDeadlineAt ?? null,
       nextRoundAt: persisted.nextRoundAt ?? null,
     };
@@ -368,21 +395,34 @@ export class RoomService {
     room.stage = "PLAYING";
     room.readySessionIds = [];
     room.roundStartedAt = new Date(now).toISOString();
+    room.waitingExpiresAt = null;
     room.nextRoundAt = null;
     this.refreshDeadline(room, now);
   }
 
-  private enterWaiting(room: RoomState): void {
+  private enterWaiting(room: RoomState, now = Date.now()): void {
     this.syncRoundResult(room);
     room.stage = "WAITING";
     room.round = null;
     room.readySessionIds = [];
     room.roundStartedAt = null;
+    room.waitingExpiresAt = new Date(now + WAITING_ROOM_TIMEOUT_MS).toISOString();
     room.actionDeadlineAt = null;
     room.nextRoundAt = null;
     for (const seat of SEATS) {
       if (room.seats[seat].sessionId === null) room.seats[seat] = emptySeat(seat);
     }
+  }
+
+  private closeRoom(room: RoomState, reason: RoomCloseReason, now = Date.now()): void {
+    room.status = "CLOSED";
+    room.closeReason = reason;
+    room.dissolveAfterRound = false;
+    room.readySessionIds = [];
+    room.actionDeadlineAt = null;
+    room.nextRoundAt = null;
+    room.waitingExpiresAt = null;
+    this.closedRoomEvictionAt.set(room.code, now + CLOSED_ROOM_EVICTION_MS);
   }
 
   private acceptRule(room: RoomState, result: RuleResult): boolean {
@@ -447,26 +487,42 @@ export class RoomService {
 
   tick(now = Date.now()): { roomId: string; version: number }[] {
     const updates: { roomId: string; version: number }[] = [];
-    for (const room of this.roomsByCode.values()) {
-      if (room.status !== "ACTIVE") continue;
-      if (room.stage === "ROUND_RESULT") {
+    for (const [code, room] of this.roomsByCode) {
+      if (room.status !== "ACTIVE") {
+        const evictionAt = this.closedRoomEvictionAt.get(code);
+        if (evictionAt !== undefined && evictionAt <= now) {
+          this.roomsByCode.delete(code);
+          this.closedRoomEvictionAt.delete(code);
+          this.database.deleteRoom(room.id);
+        }
+        continue;
+      }
+      if (room.stage === "WAITING") {
         if (
           room.mode === "FRIEND" &&
-          room.nextRoundAt !== null &&
-          Date.parse(room.nextRoundAt) <= now
+          room.waitingExpiresAt !== null &&
+          Date.parse(room.waitingExpiresAt) <= now
         ) {
-          if (room.dissolveAfterRound) {
-            room.status = "CLOSED";
-          } else {
-            this.enterWaiting(room);
-          }
+          this.closeRoom(room, "WAITING_TIMEOUT", now);
           room.version += 1;
           this.save(room);
           updates.push({ roomId: room.id, version: room.version });
         }
         continue;
       }
-      if (room.stage !== "PLAYING") continue;
+      if (room.stage === "ROUND_RESULT") {
+        if (
+          room.mode === "FRIEND" &&
+          room.nextRoundAt !== null &&
+          Date.parse(room.nextRoundAt) <= now
+        ) {
+          this.enterWaiting(room, now);
+          room.version += 1;
+          this.save(room);
+          updates.push({ roomId: room.id, version: room.version });
+        }
+        continue;
+      }
       if (room.actionDeadlineAt === null || Date.parse(room.actionDeadlineAt) > now) continue;
       const seat = this.actingSeat(room);
       if (seat === null) continue;
@@ -502,6 +558,7 @@ export class RoomService {
       status: "ACTIVE",
       version: 0,
       dissolveAfterRound: false,
+      closeReason: null,
       mode,
       stage: mode === "FRIEND" ? "WAITING" : "PLAYING",
       seats: {
@@ -515,6 +572,8 @@ export class RoomService {
       nextDealerSeat: randomInt(4) as Seat,
       round: null,
       roundStartedAt: null,
+      waitingExpiresAt:
+        mode === "FRIEND" ? new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString() : null,
       actionDeadlineAt: null,
       nextRoundAt: null,
     };
@@ -537,18 +596,22 @@ export class RoomService {
     return room;
   }
 
-  setReady(sessionId: string, code: string): RoomActionResult {
+  setReady(sessionId: string, code: string, ready: boolean): RoomActionResult {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
     if (room.mode !== "FRIEND" || room.stage !== "WAITING") return "ACTION_NOT_AVAILABLE";
     const seat = sessionSeat(room, sessionId);
     if (seat === null) return "ACTION_NOT_AVAILABLE";
-    if (room.readySessionIds.includes(sessionId)) return room;
+    const isReady = room.readySessionIds.includes(sessionId);
+    if (isReady === ready) return room;
 
-    room.readySessionIds.push(sessionId);
+    room.readySessionIds = ready
+      ? [...room.readySessionIds, sessionId]
+      : room.readySessionIds.filter((id) => id !== sessionId);
     const occupiedSessions = SEATS.map((candidate) => room.seats[candidate].sessionId);
     if (
       occupiedSessions.every((candidate): candidate is string => candidate !== null) &&
+      ready &&
       occupiedSessions.every((candidate) => room.readySessionIds.includes(candidate))
     ) {
       this.startRound(room);
@@ -575,18 +638,48 @@ export class RoomService {
     return this.roomsByCode.get(code) ?? null;
   }
 
+  hasMember(sessionId: string, code: string): boolean {
+    const room = this.roomsByCode.get(code);
+    return room !== undefined && sessionSeat(room, sessionId) !== null;
+  }
+
+  updateBaseScore(sessionId: string, code: string, baseScore: BaseScore): RoomSettingsResult {
+    const room = this.roomsByCode.get(code);
+    if (room?.status !== "ACTIVE") return null;
+    if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
+    if (room.mode !== "FRIEND" || room.stage !== "WAITING") return "ACTION_NOT_AVAILABLE";
+    if (room.baseScore === baseScore) return room;
+
+    room.baseScore = baseScore;
+    room.readySessionIds = [];
+    room.version += 1;
+    this.save(room);
+    return room;
+  }
+
+  createChatMessage(sessionId: string, code: string, message: string): ChatMessageResult {
+    const room = this.roomsByCode.get(code);
+    if (room?.status !== "ACTIVE") return null;
+    const seat = sessionSeat(room, sessionId);
+    if (seat === null) return "NOT_A_MEMBER";
+    if (room.mode !== "FRIEND" || room.stage !== "PLAYING") {
+      return "ACTION_NOT_AVAILABLE";
+    }
+    return {
+      id: randomUUID(),
+      roomId: room.id,
+      senderSeat: seat,
+      nickname: room.seats[seat].nickname,
+      message,
+      sentAt: new Date().toISOString(),
+    };
+  }
+
   requestDissolve(sessionId: string, code: string): RoomState | "FORBIDDEN" | null {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
     if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
-    if (room.stage === "WAITING") {
-      room.status = "CLOSED";
-    } else {
-      room.dissolveAfterRound = true;
-      if (room.stage === "ROUND_RESULT" && room.mode === "FRIEND") {
-        room.nextRoundAt = new Date().toISOString();
-      }
-    }
+    this.closeRoom(room, "OWNER_DISSOLVED");
     room.version += 1;
     this.save(room);
     return room;
@@ -600,7 +693,7 @@ export class RoomService {
 
     room.readySessionIds = room.readySessionIds.filter((id) => id !== sessionId);
     if (room.mode === "BOT") {
-      room.status = "CLOSED";
+      this.closeRoom(room, "EMPTY_ROOM");
       room.version += 1;
       this.save(room);
       return room;
@@ -614,7 +707,7 @@ export class RoomService {
       });
       const nextOwner = candidates[randomInt(Math.max(candidates.length, 1))];
       if (nextOwner === undefined) {
-        room.status = "CLOSED";
+        this.closeRoom(room, "EMPTY_ROOM");
       } else {
         room.ownerSessionId = nextOwner;
       }
@@ -732,7 +825,7 @@ export class RoomService {
           : { kind: "DRAW" as const, nextDealerSeat: round.outcome.nextDealerSeat };
 
     return {
-      schemaVersion: 2,
+      schemaVersion: 4,
       roomId: room.id,
       roomCode: room.code,
       version: room.version,
@@ -741,11 +834,13 @@ export class RoomService {
       stage: room.stage,
       roundId: round?.id ?? null,
       roundStartedAt: room.roundStartedAt,
+      waitingExpiresAt: room.waitingExpiresAt,
       isOwner: room.ownerSessionId === sessionId,
       selfReady: room.readySessionIds.includes(sessionId),
       selfSeat,
       selfDrawnTileId,
       status: room.status,
+      closeReason: room.closeReason,
       dissolveAfterRound: room.dissolveAfterRound,
       indicatorTile: round?.indicatorTile ?? null,
       wildcardKind: round?.wildcardKind ?? null,
