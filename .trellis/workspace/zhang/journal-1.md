@@ -75,3 +75,34 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 麻将牌面素材咨询
+
+**Date**: 2026-07-17
+**Task**: 麻将牌面素材咨询
+**Branch**: `main`
+
+### Summary
+
+分析当前麻将牌纯 CSS 绘制的实现方式（无图片素材），给出改用图片/SVG 素材重做牌面的方案：27 张牌面清单（万/条/筒各1-9）、SVG 格式建议、viewBox 尺寸、存放路径 apps/web/src/assets/tiles/，并整理成可直接交给 Codex 的生成 prompt。未修改任何代码；发现用户已在其他会话/工具中创建了 07-17-mahjong-tile-svg-assets 任务并完成素材生成与组件接入，本次不做归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
