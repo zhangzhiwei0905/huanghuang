@@ -173,3 +173,37 @@ Imported and adapted 27 wan, tiao, and tong SVG tiles from lietxia/mahjong_graph
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 牌桌视觉完善与生产部署加速
+
+**Date**: 2026-07-17
+**Task**: 牌桌视觉完善与生产部署加速
+**Branch**: `main`
+
+### Summary
+
+完成牌桌头像、余牌、终局手牌、聊天气泡、放赖与边框等视觉优化并部署生产；清理 Huanghuang 旧部署文件、镜像和残留单机房间；确认阿里云镜像加速器生效，重构 Dockerfile 依赖分层和 BuildKit 缓存，将增量镜像构建从约 486 秒降至 48.61 秒、核心发布降至 63.146 秒，并保存生产部署记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0888402` | (see git log) |
+| `cbb97b2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
