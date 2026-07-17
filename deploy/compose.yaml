@@ -3,6 +3,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/server.Dockerfile
+      args:
+        APP_REVISION: ${APP_REVISION:-unknown}
     environment:
       NODE_ENV: production
       PORT: 3000

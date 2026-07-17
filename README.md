@@ -61,7 +61,31 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
 docker compose -f deploy/compose.yaml ps
 ```
 
-Caddy 自动申请和续期 HTTPS 证书。应用数据位于 Docker 命名卷 `deploy_game_data`；更新应用前应备份此卷。
+Caddy 自动申请和续期 HTTPS 证书。应用数据位于 Compose 项目的 `game_data` 命名卷（当前线上为 `huanghuang_game_data`）；更新应用前应备份此卷。
+
+生产镜像已按增量部署优化：Dockerfile 先复制 workspace 的 `package.json` 与锁文件并安装依赖，之后才复制源代码。普通代码更新会复用包含 `better-sqlite3` 的依赖层，只重新执行应用构建。BuildKit 还会持久缓存 pnpm 包、Corepack 和 node-gyp 下载；依赖变化时也不需要重新下载全部内容。
+
+当前 2 核 4 GB 生产机实测：首次建立新缓存的完整构建约 322 秒，依赖不变的增量构建约 51 秒。修改锁文件或任一 workspace 的 `package.json` 时仍会重新安装依赖；执行 `docker builder prune`、`docker build --no-cache` 或更换 Builder 后也会失去这部分加速。
+
+服务器可在 `/etc/docker/daemon.json` 配置阿里云 Docker Hub 镜像加速器：
+
+```json
+{
+  "registry-mirrors": ["https://<你的专属地址>.mirror.aliyuncs.com"]
+}
+```
+
+配置后需要在维护窗口重启 Docker 才会生效。当前生产服务器已经配置并启用专属加速器，无需重复操作。镜像加速器只影响 `node:24-alpine` 等 Docker Hub 镜像拉取，不会加速 pnpm 包下载或 `better-sqlite3` 的本地 C/C++ 编译。
+
+手动构建时将提交号只注入应用构建层：
+
+```bash
+APP_REVISION=$(git rev-parse --short HEAD)
+docker build \
+  --build-arg APP_REVISION="$APP_REVISION" \
+  -t "huanghuang-app:$APP_REVISION" \
+  -f deploy/server.Dockerfile .
+```
 
 停止写入后进行一致性备份：
 
