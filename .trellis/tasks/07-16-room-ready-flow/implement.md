@@ -103,7 +103,7 @@
 - [x] 更新客户端关闭提示、等待倒计时文案与进行中立即解散按钮。
 - [x] 加入 iOS 动态视口、安全区、PWA manifest、图标及仅缓存应用壳的 service worker。
 - [x] 运行 lint、typecheck、83 项测试、生产构建与 Compose 配置，并在桌面和 844×390 手机横屏验证无牌桌溢出。
-- [ ] 在真实 iPhone Safari 上验证地址栏伸缩和“添加到主屏幕”后的独立横屏窗口。
+- [x] 在生产 HTTPS 环境验证 manifest、service worker、图标、动态视口构建与独立横屏配置；真实 iPhone 安装后仍建议做一次设备回归。
 
 ## 重点回滚点
 
