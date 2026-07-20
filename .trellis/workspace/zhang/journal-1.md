@@ -273,3 +273,36 @@ Imported and adapted 27 wan, tiao, and tong SVG tiles from lietxia/mahjong_graph
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 优化移动端按钮与全屏牌桌
+
+**Date**: 2026-07-20
+**Task**: 优化移动端按钮与全屏牌桌
+**Branch**: `main`
+
+### Summary
+
+去除图片动作按钮的矩形触控高亮并保留圆角键盘焦点，将牌桌背景扩展到游戏顶栏、桌面、底栏及安全区；通过 102 项测试、lint、Web 类型检查、生产构建和 844x390/1280x720 浏览器验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6b80a4c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
