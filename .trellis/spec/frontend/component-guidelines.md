@@ -20,9 +20,10 @@ export function ActionButton({ label, disabled, onPress }: ActionButtonProps) {
 
 - Use shared CSS custom properties and stable class names.
 - Both visual themes must use the same component tree and hit targets.
-- `.table-surface` owns the playable-table artwork. Use the optimized derivative of `apps/web/src/assets/background.png` with `background-size: cover`, no tiling, and theme-specific translucent overlays; do not apply this artwork to home, waiting-room, header, or action-dock surfaces.
+- `.game-shell` owns the playable-table artwork so the game header, `.table-surface`, action dock, and safe-area regions read as one continuous full-viewport surface. Use the optimized derivative of `apps/web/src/assets/background.png` with `background-size: cover`, no tiling, and theme-specific translucent overlays. Keep `.table-surface` transparent and give the game header/dock only lightweight translucent chrome; do not apply this artwork to home or waiting-room surfaces.
 - Animate only `transform`, `opacity`, and `box-shadow` for table actions. `box-shadow` is scoped to the pong/kong/wildcard-release action-feedback exception (see below) — do not use it to add ambient shadows/glow elsewhere.
 - A control must have a visible text or accessible name; color alone cannot communicate wildcard or disabled state.
+- Illustrated primary actions must set `-webkit-tap-highlight-color: transparent` so a touch never exposes the rectangular hit box. Override the shared browser outline with a visible rounded `::before` focus border; never remove keyboard focus feedback without a shaped replacement.
 
 ## Action-feedback animation (pong / kong / wildcard release)
 
@@ -214,6 +215,7 @@ service worker exclusions: /api/*, /socket.io/*
 
 - `main.tsx` updates only `--app-height` from `visualViewport.height` (falling back to `innerHeight`) on resize, orientation change and page show.
 - Fixed headers, the table and the bottom action dock consume shared height and safe-area variables. Do not mix new `100vh` calculations into child components.
+- The full-screen table artwork belongs to `.game-shell`; the header, transparent table, fixed dock, and safe-area padding must composite over that same background instead of introducing opaque white bands.
 - The production-only service worker may cache the app shell and same-origin static assets. API and Socket.IO remain network-only, and cached data is never a room-state source.
 - Apple metadata and 180px/192px/512px icons ship from `apps/web/public` and must appear in `dist` after Vite build.
 
