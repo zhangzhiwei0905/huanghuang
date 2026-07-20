@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
-- **Last Active**: 2026-07-17
+- **Total Sessions**: 8
+- **Last Active**: 2026-07-20
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~242 | Active |
+| `journal-1.md` | ~275 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-07-20 | 牌桌品牌图标、动作按钮与背景上线 | `973a564` | `main` |
 | 7 | 2026-07-17 | 优化牌桌人机与结算 | `9d75067` | `feat/table-ai-settlement-optimization` |
 | 6 | 2026-07-17 | 牌桌视觉完善与生产部署加速 | `0888402`, `cbb97b2` | `main` |
 | 5 | 2026-07-17 | 房间生命周期与 iOS PWA 上线 | `e51e8c3`, `1b26e80` | `main` |

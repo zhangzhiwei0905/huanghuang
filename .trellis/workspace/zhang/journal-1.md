@@ -240,3 +240,36 @@ Imported and adapted 27 wan, tiao, and tong SVG tiles from lietxia/mahjong_graph
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 牌桌品牌图标、动作按钮与背景上线
+
+**Date**: 2026-07-20
+**Task**: 牌桌品牌图标、动作按钮与背景上线
+**Branch**: `main`
+
+### Summary
+
+使用新素材替换 Web/PWA 图标和七类游戏操作按钮，将过与碰杠响应合并到同一操作栏，接入双主题牌桌背景并压缩运行时资源；通过 102 项测试、lint、类型检查、生产构建及桌面/844x390 视觉验证，部署到 huanghuang.amazingzz.xyz，完成数据库与回滚镜像备份并验证 HTTPS、PWA 和 Socket.IO。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `973a564` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
