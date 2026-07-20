@@ -202,4 +202,39 @@ describe("game table presentation", () => {
     expect(markup).toContain("+24");
     expect(markup).toContain("-16");
   });
+
+  it("renders pong, kong and pass together in the primary action bar", () => {
+    const room: RoomProjection = {
+      ...resultRoom(),
+      stage: "PLAYING",
+      roundPhase: "DISCARD_RESPONSE",
+      roundOutcome: null,
+      roundSettlement: null,
+      actingSeat: 0,
+      currentSeat: 1,
+      legalActions: ["CLAIM_PONG", "CLAIM_EXPOSED_KONG", "PASS_RESPONSE"],
+    };
+    const markup = renderToStaticMarkup(
+      createElement(GameTable, {
+        room,
+        busy: false,
+        connectionStatus: "connected",
+        pendingAction: null,
+        error: null,
+        chatMessages: [],
+        onReady: resolveVoid,
+        onBaseScoreChange: resolveVoid,
+        onContinue: resolveVoid,
+        onChat: resolveChat,
+        onLeave: resolveVoid,
+        onDissolve: resolveVoid,
+        onSend: resolveVoid,
+      }),
+    );
+
+    expect(markup).toContain("primary-action-button action-pong");
+    expect(markup).toContain("primary-action-button action-kong");
+    expect(markup).toContain("primary-action-button action-pass");
+    expect(markup).not.toContain("aux-action action-pass");
+  });
 });

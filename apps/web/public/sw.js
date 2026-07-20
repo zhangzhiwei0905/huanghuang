@@ -1,6 +1,6 @@
 /* global Response, URL, caches, fetch, self */
 
-const CACHE_NAME = "huanghuang-shell-v2";
+const CACHE_NAME = "huanghuang-shell-v3";
 const APP_SHELL = [
   "/manifest.webmanifest",
   "/icons/apple-touch-icon.png",

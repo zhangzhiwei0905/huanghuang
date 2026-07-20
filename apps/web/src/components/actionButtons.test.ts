@@ -12,7 +12,7 @@ function actions(...values: CommandEnvelope["type"][]): CommandEnvelope["type"][
 
 describe("primaryActionButtons", () => {
   it("renders nothing when no primary action is legal", () => {
-    expect(primaryActionButtons(actions("PASS_RESPONSE"))).toEqual([]);
+    expect(primaryActionButtons(actions("CONTINUE_TURN"))).toEqual([]);
   });
 
   it("keeps only the legal turn actions in the requested visual order", () => {
@@ -27,30 +27,38 @@ describe("primaryActionButtons", () => {
     ]);
   });
 
-  it("shows only pong and kong for a discard response", () => {
+  it("keeps pong, kong and pass together for a discard response", () => {
     expect(
       primaryActionButtons(actions("CLAIM_EXPOSED_KONG", "CLAIM_PONG", "PASS_RESPONSE")),
     ).toEqual([
       { kind: "pong", action: "CLAIM_PONG", label: "碰", detail: "碰牌" },
       { kind: "kong", action: "CLAIM_EXPOSED_KONG", label: "杠", detail: "明杠" },
+      { kind: "pass", action: "PASS_RESPONSE", label: "过", detail: "放弃响应" },
     ]);
   });
 
-  it("maps the indicator claim to pong and preserves its special detail", () => {
-    expect(primaryActionButtons(actions("CLAIM_INDICATOR_PONG_KONG"))).toEqual([
+  it("maps indicator-pong and pass without dropping either response", () => {
+    expect(primaryActionButtons(actions("CLAIM_INDICATOR_PONG_KONG", "PASS_RESPONSE"))).toEqual([
       {
         kind: "pong",
         action: "CLAIM_INDICATOR_PONG_KONG",
         label: "碰",
         detail: "亮牌碰杠",
       },
+      { kind: "pass", action: "PASS_RESPONSE", label: "过", detail: "放弃响应" },
     ]);
   });
 
-  it("keeps auxiliary actions outside the primary action family", () => {
+  it("keeps pass in the visible action family and continue-turn in the dock", () => {
     expect(isPrimaryGameAction("DISCARD_TILE")).toBe(true);
-    expect(isPrimaryGameAction("PASS_RESPONSE")).toBe(false);
+    expect(isPrimaryGameAction("PASS_RESPONSE")).toBe(true);
     expect(isPrimaryGameAction("CONTINUE_TURN")).toBe(false);
+  });
+
+  it("keeps pong and pass when kong is not legal", () => {
+    expect(
+      primaryActionButtons(actions("CLAIM_PONG", "PASS_RESPONSE")).map(({ kind }) => kind),
+    ).toEqual(["pong", "pass"]);
   });
 
   it("requires a non-wildcard tile for discard and the wildcard tile for release", () => {

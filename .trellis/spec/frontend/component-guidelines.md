@@ -20,6 +20,7 @@ export function ActionButton({ label, disabled, onPress }: ActionButtonProps) {
 
 - Use shared CSS custom properties and stable class names.
 - Both visual themes must use the same component tree and hit targets.
+- `.table-surface` owns the playable-table artwork. Use the optimized derivative of `apps/web/src/assets/background.png` with `background-size: cover`, no tiling, and theme-specific translucent overlays; do not apply this artwork to home, waiting-room, header, or action-dock surfaces.
 - Animate only `transform`, `opacity`, and `box-shadow` for table actions. `box-shadow` is scoped to the pong/kong/wildcard-release action-feedback exception (see below) — do not use it to add ambient shadows/glow elsewhere.
 - A control must have a visible text or accessible name; color alone cannot communicate wildcard or disabled state.
 
@@ -64,9 +65,10 @@ CLAIM_PONG / CLAIM_INDICATOR_PONG_KONG      -> 碰
 CLAIM_EXPOSED_KONG / DECLARE_CONCEALED_KONG -> 杠
 DECLARE_ADDED_KONG                          -> 补杠
 DECLARE_WIN                                 -> 自摸
+PASS_RESPONSE                              -> 过
 ```
 
-- Render these six conceptual actions only in the action bar immediately above the self hand. Keep `PASS_RESPONSE` and `CONTINUE_TURN` as quieter auxiliary controls in the bottom dock.
+- Render these seven image-backed conceptual actions only in the action bar immediately above the self hand. `PASS_RESPONSE` must stay beside pong/kong response choices so the player can see every legal response in one place; keep only `CONTINUE_TURN` as a quieter auxiliary control in the bottom dock.
 - Preserve mapping order and mutual exclusion in the pure `primaryActionButtons` function. Rendering code consumes its models and must not repeat legal-action branches.
 - `DISCARD_TILE` requires a selected non-wildcard physical tile. `RELEASE_WILDCARD` requires a selected physical wildcard. Share this check through `hasValidTileSelection`; never send a known-invalid selection and wait for a server rejection to explain the UI state.
 - Discard is the stable high-frequency primary style; wildcard release is the distinctive multiplier style; pong/kong/added-kong share the neutral base-action style; self-draw is the win style. Both themes use one component tree and the existing semantic tokens.
@@ -86,7 +88,22 @@ const buttons = primaryActionButtons(room.legalActions);
 return buttons.length === 0 ? null : buttons.map(renderActionButton);
 ```
 
-Tests must cover empty actions, turn-action ordering, discard-response pong/kong isolation, indicator-pong mapping, auxiliary-action exclusion, and wildcard versus non-wildcard selection.
+Tests must cover empty actions, turn-action ordering, `碰 + 过`, `碰 + 杠 + 过`, `亮牌碰杠 + 过`, auxiliary-action exclusion, and wildcard versus non-wildcard selection. A rendering regression test must assert that `PASS_RESPONSE` uses `.primary-action-button.action-pass` and is absent from the auxiliary dock.
+
+Wrong:
+
+```tsx
+const dockActions = legalActions.filter((action) => action === "PASS_RESPONSE");
+```
+
+Correct:
+
+```tsx
+const buttons = primaryActionButtons(legalActions); // includes PASS_RESPONSE last
+const dockActions = legalActions.filter((action) => !isPrimaryGameAction(action));
+```
+
+This prevents the pass choice from becoming visually detached or clipped while pong/kong buttons remain visible above the hand.
 
 ## Accessibility
 

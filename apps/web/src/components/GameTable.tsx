@@ -17,6 +17,7 @@ import {
   handHighlightGroups,
 } from "./actionEligibility.js";
 import {
+  ACTION_BUTTON_IMAGES,
   hasValidTileSelection,
   isPrimaryGameAction,
   isWildcardTile,
@@ -648,8 +649,13 @@ function PrimaryActionBar({
             aria-label={`${button.label}，${detail}`}
             onClick={() => clickAction(button)}
           >
-            <strong>{button.label}</strong>
-            <small>{detail}</small>
+            <img
+              className="primary-action-art"
+              src={ACTION_BUTTON_IMAGES[button.kind]}
+              alt=""
+              aria-hidden="true"
+            />
+            <small className="primary-action-detail">{detail}</small>
           </button>
         );
       })}
@@ -1188,7 +1194,7 @@ export function GameTable({
             <button
               key={action}
               type="button"
-              className={action === "PASS_RESPONSE" ? "aux-action action-pass" : "aux-action"}
+              className="aux-action"
               disabled={interactionLocked}
               onClick={() => sendAction(action)}
             >

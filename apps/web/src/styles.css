@@ -501,15 +501,19 @@ h1 {
   margin-left: var(--safe-left);
   min-height: 368px;
   overflow: hidden;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(rgb(238 246 240 / 14%), rgb(238 246 240 / 14%)),
+    url("./assets/background.optimized.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
 :root[data-theme="premium"] .table-surface {
-  background-image: radial-gradient(
-    circle at center,
-    color-mix(in srgb, var(--surface) 82%, #000) 0,
-    var(--surface-deep) 72%
-  );
+  background-image:
+    linear-gradient(rgb(10 26 22 / 34%), rgb(10 26 22 / 34%)),
+    url("./assets/background.optimized.jpg");
 }
 
 .player-station {
@@ -950,74 +954,66 @@ h1 {
 }
 .primary-action-button {
   position: relative;
-  display: flex;
-  min-width: 78px;
-  min-height: 56px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  padding: 6px 16px;
-  color: var(--ink);
-  background: var(--panel);
-  font-size: 12px;
+  display: block;
+  width: clamp(100px, 12vw, 148px);
+  min-width: 100px;
+  min-height: 48px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 26% / 50%;
+  padding: 0;
+  color: #fff;
+  background: transparent;
   transition:
     transform 140ms ease,
-    border-color 140ms ease,
-    background-color 140ms ease,
+    filter 140ms ease,
     opacity 140ms ease;
 }
-.primary-action-button strong {
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1.1;
+.primary-action-art {
+  position: absolute;
+  inset: -6%;
+  display: block;
+  width: 112%;
+  height: 112%;
+  object-fit: cover;
+  pointer-events: none;
 }
-.primary-action-button small {
-  color: currentColor;
-  font-size: 10px;
-  font-weight: 500;
-  opacity: 0.78;
+.primary-action-detail {
+  position: absolute;
+  z-index: 1;
+  right: 8%;
+  bottom: 7%;
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: 999px;
+  padding: 1px 5px;
+  color: #fff;
+  background: rgb(20 24 22 / 66%);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 40%);
   white-space: nowrap;
 }
 .primary-action-button:hover:not(:disabled) {
   transform: translateY(-1px);
+  filter: brightness(1.06);
 }
 .primary-action-button.action-discard {
-  min-width: 116px;
-  border-color: var(--ink);
-  color: var(--panel);
-  background: var(--ink);
+  min-width: 100px;
 }
 .primary-action-button.action-wildcard {
-  min-width: 96px;
-  border-color: var(--accent);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--panel) 88%, var(--accent));
+  min-width: 100px;
 }
 .primary-action-button.action-wildcard::after {
   content: "×2";
   position: absolute;
-  top: 5px;
-  right: 7px;
+  z-index: 1;
+  top: 9%;
+  right: 8%;
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  opacity: 0.72;
-}
-.primary-action-button.action-pong,
-.primary-action-button.action-kong,
-.primary-action-button.action-added-kong {
-  border-color: var(--line-strong);
-  background: color-mix(in srgb, var(--panel) 92%, var(--surface));
-}
-.primary-action-button.action-win {
-  min-width: 104px;
-  border: 2px solid var(--accent);
-  color: var(--accent-ink);
-  background: var(--accent);
+  text-shadow: 0 1px 1px rgb(0 0 0 / 45%);
 }
 .primary-action-button.action-discard:disabled,
 .primary-action-button.action-wildcard:disabled {
@@ -1406,13 +1402,6 @@ h1 {
   border-color: var(--line-strong);
   background: transparent;
 }
-.action-buttons .action-pass {
-  border-color: transparent;
-  color: var(--muted);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--muted) 40%, transparent);
-  text-underline-offset: 3px;
-}
 .action-buttons .win-action {
   border-color: var(--accent);
   color: var(--accent-ink);
@@ -1491,24 +1480,12 @@ h1 {
     max-width: calc(100vw - 16px);
   }
   .primary-action-button {
-    min-width: 60px;
-    min-height: 48px;
-    padding: 4px 8px;
+    width: clamp(96px, 13vw, 116px);
+    min-width: 96px;
+    min-height: 44px;
   }
-  .primary-action-button.action-discard {
-    min-width: 88px;
-  }
-  .primary-action-button.action-wildcard {
-    min-width: 76px;
-  }
-  .primary-action-button.action-win {
-    min-width: 84px;
-  }
-  .primary-action-button strong {
-    font-size: 15px;
-  }
-  .primary-action-button small {
-    font-size: 9px;
+  .primary-action-detail {
+    font-size: 7px;
   }
 }
 
@@ -1715,25 +1692,9 @@ h1 {
     padding-right: 8px;
   }
   .primary-action-button {
-    min-width: 48px;
+    width: clamp(94px, 12.5vw, 108px);
+    min-width: 94px;
     min-height: 44px;
-    padding: 2px 6px;
-    border-radius: 8px;
-  }
-  .primary-action-button.action-discard {
-    min-width: 78px;
-  }
-  .primary-action-button.action-wildcard {
-    min-width: 68px;
-  }
-  .primary-action-button.action-win {
-    min-width: 74px;
-  }
-  .primary-action-button strong {
-    font-size: 12px;
-  }
-  .primary-action-button small {
-    font-size: 7px;
   }
   .hand-composition {
     min-height: 56px;

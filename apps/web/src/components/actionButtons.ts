@@ -1,4 +1,11 @@
 import type { CommandEnvelope, Tile, TileKind } from "@huanghuang/protocol";
+import addedKongImage from "../assets/buttons/optimized/补杠.png";
+import discardImage from "../assets/buttons/optimized/出牌.png";
+import kongImage from "../assets/buttons/optimized/杠.png";
+import passImage from "../assets/buttons/optimized/过.png";
+import pongImage from "../assets/buttons/optimized/碰.png";
+import wildcardImage from "../assets/buttons/optimized/放赖.png";
+import winImage from "../assets/buttons/optimized/胡牌.png";
 
 export type PrimaryGameAction = Extract<
   CommandEnvelope["type"],
@@ -10,15 +17,33 @@ export type PrimaryGameAction = Extract<
   | "DECLARE_CONCEALED_KONG"
   | "DECLARE_ADDED_KONG"
   | "DECLARE_WIN"
+  | "PASS_RESPONSE"
 >;
 
-export type ActionButtonKind = "discard" | "wildcard" | "pong" | "kong" | "added-kong" | "win";
+export type ActionButtonKind =
+  | "discard"
+  | "wildcard"
+  | "pong"
+  | "kong"
+  | "added-kong"
+  | "win"
+  | "pass";
 
 export type ActionButtonModel = {
   kind: ActionButtonKind;
   action: PrimaryGameAction;
-  label: "出牌" | "放赖" | "碰" | "杠" | "补杠" | "自摸";
+  label: "出牌" | "放赖" | "碰" | "杠" | "补杠" | "自摸" | "过";
   detail: string;
+};
+
+export const ACTION_BUTTON_IMAGES: Record<ActionButtonKind, string> = {
+  discard: discardImage,
+  wildcard: wildcardImage,
+  pong: pongImage,
+  kong: kongImage,
+  "added-kong": addedKongImage,
+  win: winImage,
+  pass: passImage,
 };
 
 const PRIMARY_ACTIONS = new Set<CommandEnvelope["type"]>([
@@ -30,6 +55,7 @@ const PRIMARY_ACTIONS = new Set<CommandEnvelope["type"]>([
   "DECLARE_CONCEALED_KONG",
   "DECLARE_ADDED_KONG",
   "DECLARE_WIN",
+  "PASS_RESPONSE",
 ]);
 
 export function isPrimaryGameAction(action: CommandEnvelope["type"]): boolean {
@@ -107,6 +133,9 @@ export function primaryActionButtons(legalActions: readonly string[]): ActionBut
   }
   if (legal.has("DECLARE_WIN")) {
     buttons.push({ kind: "win", action: "DECLARE_WIN", label: "自摸", detail: "本局获胜" });
+  }
+  if (legal.has("PASS_RESPONSE")) {
+    buttons.push({ kind: "pass", action: "PASS_RESPONSE", label: "过", detail: "放弃响应" });
   }
 
   return buttons;
