@@ -306,3 +306,39 @@ Imported and adapted 27 wan, tiao, and tong SVG tiles from lietxia/mahjong_graph
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Complete bootstrap guidelines
+
+**Date**: 2026-07-21
+**Task**: 00-bootstrap-guidelines
+**Branch**: `main`
+
+### Summary
+
+对照当前 monorepo 完成 Trellis bootstrap gap-fill：刷新前后端 directory / error-handling / type-safety / quality / hooks / logging / index，勾选 PRD 并 archive 任务；厚场景文档保持不变。
+
+### Main Changes
+
+- 同步 `apps/web` pure helpers 与 server 模块职责到 `.trellis/spec/`
+- 将 index 脚手架改为 Pre-Development Checklist
+- Archive `00-bootstrap-guidelines` → `archive/2026-07/`
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f1eca48` | chore(task): archive 00-bootstrap-guidelines |
+| `1219a4c` | docs(spec): complete bootstrap guidelines gap-fill |
+
+### Testing
+
+- [OK] Path citations verified against live source files (docs-only change)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - bootstrap complete; future sessions load filled specs
