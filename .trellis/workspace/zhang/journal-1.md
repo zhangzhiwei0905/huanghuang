@@ -342,3 +342,40 @@ Imported and adapted 27 wan, tiao, and tong SVG tiles from lietxia/mahjong_graph
 ### Next Steps
 
 - None - bootstrap complete; future sessions load filled specs
+
+
+## Session 11: Miniprogram port planning + first three children
+
+**Date**: 2026-07-21
+**Task**: 07-21-miniprogram-port (+ children)
+**Branch**: `miniprogram`
+
+### Summary
+
+Planned WeChat-only Taro React port with shared server token auth; implemented server dual auth, Taro scaffold, and core lobby/room client; integration docs/checklist ready; real-device AC5 left for operator.
+
+### Main Changes
+
+- Server Bearer/`X-Session-Token` + Socket auth; `/api/session`; optional WeChat code route
+- `apps/miniprogram` Taro 4 scaffold + home/room core path
+- Docs: `docs/miniprogram-auth.md`, `docs/miniprogram-device-qa.md`
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `69474a5` | feat(server): dual cookie/Bearer session for miniprogram |
+| `8bbca62` | feat(miniprogram): add Taro 4 WeChat scaffold |
+| `f71dea6` | feat(miniprogram): core lobby and room game path |
+
+### Testing
+
+- [OK] pnpm lint / test (106) / miniprogram typecheck / build:weapp / web build
+
+### Status
+
+[WIP] Integration AC5 real-device pending user
+
+### Next Steps
+
+- Operator device QA; then archive integration + parent

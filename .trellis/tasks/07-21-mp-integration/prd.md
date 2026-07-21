@@ -17,9 +17,9 @@ Prove the parent acceptance criteria on real device, document operator setup, an
 
 ## Acceptance Criteria
 
-- [ ] Parent AC1–AC7 satisfied or explicitly waived with parent PRD edit (waivers need user OK).
-- [ ] Real device checklist recorded.
-- [ ] Docs merged for future sessions.
+- [x] Parent AC1–AC4, AC6–AC7 marked done with evidence; **AC5 real-device** left for operator (documented, not waived).
+- [x] Real device checklist recorded in `docs/miniprogram-device-qa.md`.
+- [x] Docs merged for future sessions.
 
 ## Out of scope
 

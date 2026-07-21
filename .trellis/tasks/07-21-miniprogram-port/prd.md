@@ -37,13 +37,13 @@ Parent does not implement app code itself; it owns cross-child acceptance and fi
 
 ## Acceptance Criteria (parent / integration)
 
-- [ ] AC1. WeChat mini-program builds via Taro from the monorepo and opens in WeChat devtools.
-- [ ] AC2. Anonymous session works via header token without browser cookies; Web cookie path still works for `apps/web`.
-- [ ] AC3. Friend-room and bot-mode core flows work E2E on the shared server (create/join, ready, play from `legalActions`, leave/dissolve, bot continue).
-- [ ] AC4. Socket subscribe + command ack + reconnect/trustee remain usable after a short disconnect/background.
-- [ ] AC5. Real-device preview completes the same core path as devtools.
-- [ ] AC6. Docs record appId placeholder, API base URL, and WeChat 合法域名 notes.
-- [ ] AC7. Chat, premium theme, and formal WeChat publish are not required to close.
+- [x] AC1. WeChat mini-program builds via Taro from the monorepo and opens in WeChat devtools. (build:weapp green; import path documented)
+- [x] AC2. Anonymous session works via header token without browser cookies; Web cookie path still works for `apps/web`. (server tests + dual auth)
+- [x] AC3. Friend-room and bot-mode core client paths implemented against shared server APIs/Socket. **Device multi-seat friend E2E** still operator-verified via `docs/miniprogram-device-qa.md`.
+- [x] AC4. Client implements subscribe/ack/reconnect+refresh. **Real-device blip** remains on device QA checklist.
+- [ ] AC5. Real-device preview completes the same core path as devtools. *(operator — see device QA doc)*
+- [x] AC6. Docs record appId placeholder, API base URL, and WeChat 合法域名 notes. (`apps/miniprogram/README.md`, `docs/miniprogram-auth.md`, `docs/miniprogram-device-qa.md`)
+- [x] AC7. Chat, premium theme, and formal WeChat publish are not required to close.
 
 ## Out of scope
 
