@@ -1,5 +1,5 @@
 import type { PropsWithChildren } from "react";
-import "./app.scss";
+import "./styles/theme.scss";
 
 function App({ children }: PropsWithChildren) {
   return children;

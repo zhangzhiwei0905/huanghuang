@@ -1,0 +1,52 @@
+.mj-tile {
+  position: relative;
+  width: 64px;
+  height: 88px;
+  border-radius: 8px;
+  background: var(--tile, #f4f2ea);
+  border: 1px solid var(--tile-edge, #c8c6bc);
+  box-shadow: 0 3px 0 rgb(0 0 0 / 12%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mj-tile--compact {
+  width: 44px;
+  height: 60px;
+}
+
+.mj-tile--selected {
+  transform: translateY(-10px);
+  border-color: var(--accent, #2f6a4c);
+  box-shadow: 0 10px 0 color-mix(in srgb, var(--accent, #2f6a4c) 55%, transparent);
+}
+
+.mj-tile--dimmed {
+  opacity: 0.45;
+}
+
+.mj-tile--wildcard {
+  outline: 2px solid var(--tile-gold, #8a713f);
+}
+
+.mj-tile__face {
+  width: 86%;
+  height: 86%;
+}
+
+.mj-tile__badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 22px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 16px;
+  line-height: 1.4;
+  color: #fff8e7;
+  background: var(--tile-gold, #8a713f);
+  text-align: center;
+}

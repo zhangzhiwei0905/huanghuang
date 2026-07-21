@@ -1,0 +1,121 @@
+/* Web-aligned discreet theme tokens + game shell utilities */
+
+page {
+  --page: #eef6f0;
+  --panel: #f8fbf6;
+  --surface: #dcece1;
+  --surface-deep: #c6ddcf;
+  --line: #cde0d3;
+  --line-strong: #9cbfa9;
+  --ink: #272925;
+  --muted: #5f625b;
+  --accent: #2f6a4c;
+  --accent-ink: #f5fbf6;
+  --danger: #7a4b45;
+  --tile: #f4f2ea;
+  --tile-edge: #c8c6bc;
+  --tile-gold: #8a713f;
+  --radius: 10px;
+  --game-art-overlay: rgb(238 246 240 / 14%);
+  --game-chrome: rgb(238 246 240 / 32%);
+  --game-chrome-line: rgb(77 116 91 / 24%);
+  --game-header-height: 54px;
+  --action-dock-height: 120px;
+
+  font-family: "PingFang SC", "SF Pro Text", "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  background: var(--page);
+  min-height: 100%;
+}
+
+page[data-theme="premium"] {
+  --page: #151917;
+  --panel: #202622;
+  --surface: #293a32;
+  --surface-deep: #1d2d27;
+  --line: #48534a;
+  --line-strong: #8b7955;
+  --ink: #f0e8d6;
+  --muted: #aaa795;
+  --accent: #b89b61;
+  --accent-ink: #171915;
+  --danger: #cc8174;
+  --tile: #eee4cf;
+  --tile-edge: #a7916a;
+  --tile-gold: #967335;
+  --game-art-overlay: rgb(10 26 22 / 34%);
+  --game-chrome: rgb(10 26 22 / 38%);
+  --game-chrome-line: rgb(184 155 97 / 28%);
+}
+
+.game-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(var(--game-art-overlay), var(--game-art-overlay)),
+    url("../assets/background.optimized.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.game-header {
+  min-height: calc(var(--game-header-height) + env(safe-area-inset-top));
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--game-chrome-line);
+  background: var(--game-chrome);
+  color: var(--ink);
+}
+
+.game-header__meta {
+  font-size: 22px;
+  color: var(--muted);
+}
+
+.table-surface {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  margin: 0 8px;
+  overflow: hidden;
+}
+
+.panel-card {
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: none;
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 999px;
+  font-size: 28px;
+  margin: 0;
+}
+
+.btn-ghost {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 26px;
+  margin: 0;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 26px;
+  margin: 0;
+}

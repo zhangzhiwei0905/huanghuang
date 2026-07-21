@@ -1,23 +1,31 @@
 import { useMemo, useState } from "react";
 import { Button, Text, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
-import type { BaseScore, RoomProjection, Tile } from "@huanghuang/protocol";
+import type { BaseScore, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
+import { ActionDock } from "../../components/ActionDock";
+import { MahjongTile } from "../../components/MahjongTile";
+import { useRoom } from "../../hooks/useRoom";
 import {
   hasValidTileSelection,
-  isWildcardTile,
   primaryActionButtons,
-  type PrimaryGameAction,
+  type ActionButtonModel,
 } from "../../lib/actionButtons";
 import {
   deriveAddedKongPayload,
   deriveConcealedKongPayload,
 } from "../../lib/actionEligibility";
 import { decideTilePress } from "../../lib/handInteraction";
+import { isWildcardTile } from "../../lib/tileArt";
 import { sortHand, tileLabel } from "../../lib/tiles";
-import { useRoom } from "../../hooks/useRoom";
 import "./index.scss";
 
 const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
+const SEATS: readonly Seat[] = [0, 1, 2, 3];
+const POSITION_CLASS = ["pos-self", "pos-right", "pos-opposite", "pos-left"] as const;
+
+function relativePosition(seat: Seat, selfSeat: Seat): number {
+  return ((seat - selfSeat + 4) % 4) as 0 | 1 | 2 | 3;
+}
 
 function selfPlayer(room: RoomProjection) {
   if (room.selfSeat === null) return null;
@@ -27,6 +35,7 @@ function selfPlayer(room: RoomProjection) {
 export default function RoomPage() {
   const roomCtrl = useRoom();
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
+  const [inviteStatus, setInviteStatus] = useState("复制房号");
   const room = roomCtrl.room;
 
   useDidShow(() => {
@@ -38,32 +47,31 @@ export default function RoomPage() {
   });
 
   const self = room === null ? null : selfPlayer(room);
+  const selfSeat = room?.selfSeat ?? 0;
   const hand = useMemo(() => sortHand(self?.hand ?? []), [self?.hand]);
   const selectedTile =
     hand.find((tile) => tile.id === selectedTileId) ??
-    (selectedTileId === null ? null : hand[0] ?? null);
+    (selectedTileId === null ? null : (hand[0] ?? null));
   const buttons = primaryActionButtons(room?.legalActions ?? []);
   const canDiscard = room?.legalActions.includes("DISCARD_TILE") === true;
   const locked = roomCtrl.busy || roomCtrl.connectionStatus !== "connected";
 
-  if (room === null) {
-    return (
-      <View className="room">
-        <Text className="room__title">{roomCtrl.notice ?? "尚未进入房间"}</Text>
-        <Button
-          className="room__button room__button--primary"
-          onClick={() => void Taro.navigateBack()}
-        >
-          返回大厅
-        </Button>
-      </View>
-    );
+  async function copyRoomCode() {
+    if (room === null) return;
+    try {
+      await Taro.setClipboardData({ data: room.roomCode });
+      setInviteStatus("已复制");
+      setTimeout(() => setInviteStatus("复制房号"), 2000);
+    } catch {
+      setInviteStatus("复制失败");
+    }
   }
 
-  async function onAction(action: PrimaryGameAction) {
+  async function onAction(button: ActionButtonModel) {
     if (room === null || self === null) return;
+    const action = button.action;
     if (!hasValidTileSelection(action, selectedTile, room.wildcardKind)) {
-      Taro.showToast({ title: "请先选择合适的牌", icon: "none" });
+      void Taro.showToast({ title: "请先选择合适的牌", icon: "none" });
       return;
     }
     if (action === "DISCARD_TILE" && selectedTile !== null) {
@@ -79,7 +87,7 @@ export default function RoomPage() {
     if (action === "DECLARE_CONCEALED_KONG") {
       const payload = deriveConcealedKongPayload(room, self, selectedTile);
       if (payload === null) {
-        Taro.showToast({ title: "没有可暗杠的牌", icon: "none" });
+        void Taro.showToast({ title: "没有可暗杠的牌", icon: "none" });
         return;
       }
       await roomCtrl.send(action, payload);
@@ -88,7 +96,7 @@ export default function RoomPage() {
     if (action === "DECLARE_ADDED_KONG") {
       const payload = deriveAddedKongPayload(room, self, selectedTile);
       if (payload === null) {
-        Taro.showToast({ title: "没有可补杠的牌", icon: "none" });
+        void Taro.showToast({ title: "没有可补杠的牌", icon: "none" });
         return;
       }
       await roomCtrl.send(action, payload);
@@ -114,184 +122,236 @@ export default function RoomPage() {
     }
   }
 
-  return (
-    <View className="room">
-      <View className="room__bar">
-        <Text className="room__meta">
-          房号 {room.roomCode} · {room.mode} · {room.stage} · v{room.version}
-        </Text>
-        <Text className="room__meta">
-          连接 {roomCtrl.connectionStatus}
-          {roomCtrl.pendingAction !== null ? ` · ${roomCtrl.pendingAction}` : ""}
-        </Text>
+  if (room === null) {
+    return (
+      <View className="game-shell empty-shell">
+        <Text className="empty-title">{roomCtrl.notice ?? "尚未进入房间"}</Text>
+        <Button className="btn-accent" onClick={() => void Taro.navigateBack()}>
+          返回大厅
+        </Button>
       </View>
-      {roomCtrl.error !== null ? <Text className="room__error">{roomCtrl.error}</Text> : null}
-      {roomCtrl.notice !== null ? <Text className="room__error">{roomCtrl.notice}</Text> : null}
+    );
+  }
+
+  return (
+    <View className={`game-shell${room.actingSeat === room.selfSeat ? " is-self-turn" : ""}`}>
+      <View className="game-header">
+        <Button className="header-btn" disabled={roomCtrl.busy} onClick={() => void roomCtrl.leaveRoom()}>
+          离开
+        </Button>
+        <View className="room-code">
+          <Text className="room-code__label">{room.mode === "BOT" ? "MODE" : "ROOM"}</Text>
+          <Text className="room-code__value">
+            {room.mode === "BOT" ? "人机对战" : room.roomCode}
+          </Text>
+        </View>
+        <View className="game-meta">
+          <Text className="game-header__meta">底分 {room.baseScore}</Text>
+          <Text className="game-header__meta">{roomCtrl.connectionStatus}</Text>
+          {room.mode === "FRIEND" ? (
+            <Button className="header-btn" onClick={() => void copyRoomCode()}>
+              {inviteStatus}
+            </Button>
+          ) : null}
+          {room.mode === "FRIEND" && room.isOwner ? (
+            <Button
+              className="header-btn header-btn--danger"
+              disabled={roomCtrl.busy}
+              onClick={() => void roomCtrl.dissolve()}
+            >
+              解散
+            </Button>
+          ) : null}
+        </View>
+      </View>
+
+      {roomCtrl.error !== null ? <Text className="banner-error">{roomCtrl.error}</Text> : null}
 
       {room.stage === "WAITING" ? (
-        <View className="room__panel">
-          <Text className="room__title">等待房</Text>
-          <Text className="room__meta">
-            底分 {room.baseScore}
-            {room.waitingExpiresAt !== null ? ` · 超时 ${room.waitingExpiresAt}` : ""}
-          </Text>
-          <View className="room__row">
-            {room.lobbySeats.map((seat) => (
-              <View
-                key={seat.seat}
-                className={`room__seat${seat.isSelf ? " room__seat--self" : ""}`}
-              >
-                <Text>
-                  座{seat.seat} {seat.nickname ?? "空位"}{" "}
-                  {seat.occupied ? (seat.connected ? "在线" : "离线") : ""}{" "}
-                  {seat.ready ? "已准备" : seat.occupied ? "未准备" : ""}
-                  {seat.isOwner ? " · 房主" : ""}
-                </Text>
-              </View>
-            ))}
-          </View>
-          {room.isOwner ? (
-            <View className="room__row">
-              {BASE_SCORES.map((score) => (
-                <Button
-                  key={score}
-                  className="room__button"
-                  disabled={roomCtrl.busy || room.baseScore === score}
-                  onClick={() => void roomCtrl.updateBaseScore(score)}
+        <View className="waiting-panel">
+          <View className="panel-card">
+            <Text className="waiting-title">等待开局</Text>
+            <View className="invite-row">
+              <Text className="invite-code">{room.roomCode}</Text>
+              <Button className="btn-accent" onClick={() => void copyRoomCode()}>
+                {inviteStatus}
+              </Button>
+            </View>
+            <Text className="waiting-hint">把 6 位房号发给好友，让他们在小程序「加入房间」</Text>
+
+            <View className="lobby-grid">
+              {room.lobbySeats.map((seat) => (
+                <View
+                  key={seat.seat}
+                  className={`lobby-seat${seat.isSelf ? " is-self" : ""}${seat.ready ? " is-ready" : ""}`}
                 >
-                  底分 {score}
-                </Button>
+                  <Text className="lobby-seat__name">
+                    {seat.occupied ? seat.nickname ?? "玩家" : "空位"}
+                  </Text>
+                  <Text className="lobby-seat__meta">
+                    座{seat.seat}
+                    {seat.isOwner ? " · 房主" : ""}
+                    {seat.occupied ? (seat.connected ? " · 在线" : " · 离线") : ""}
+                    {seat.ready ? " · 已准备" : seat.occupied ? " · 未准备" : ""}
+                  </Text>
+                </View>
               ))}
             </View>
-          ) : null}
-          <View className="room__actions">
-            <Button
-              className="room__button room__button--primary"
-              disabled={roomCtrl.busy}
-              onClick={() => void roomCtrl.ready()}
-            >
-              {room.selfReady ? "取消准备" : "准备"}
-            </Button>
+
             {room.isOwner ? (
-              <Button
-                className="room__button room__button--danger"
-                disabled={roomCtrl.busy}
-                onClick={() => void roomCtrl.dissolve()}
-              >
-                解散
-              </Button>
+              <View className="score-row">
+                {BASE_SCORES.map((score) => (
+                  <Button
+                    key={score}
+                    className={`score-chip${room.baseScore === score ? " is-active" : ""}`}
+                    disabled={roomCtrl.busy || room.baseScore === score}
+                    onClick={() => void roomCtrl.updateBaseScore(score)}
+                  >
+                    底分 {score}
+                  </Button>
+                ))}
+              </View>
             ) : null}
-            <Button className="room__button" disabled={roomCtrl.busy} onClick={() => void roomCtrl.leaveRoom()}>
-              离开
-            </Button>
+
+            <View className="waiting-actions">
+              <Button
+                className="btn-accent"
+                disabled={roomCtrl.busy}
+                onClick={() => void roomCtrl.ready()}
+              >
+                {room.selfReady ? "取消准备" : "准备"}
+              </Button>
+              <Button className="btn-ghost" disabled={roomCtrl.busy} onClick={() => void roomCtrl.leaveRoom()}>
+                离开房间
+              </Button>
+            </View>
           </View>
         </View>
-      ) : null}
-
-      {room.stage === "PLAYING" || room.stage === "ROUND_RESULT" ? (
-        <View className="room__panel">
-          <Text className="room__title">
-            {room.stage === "ROUND_RESULT" ? "本局结果" : "对局中"}
-          </Text>
-          <View className="room__table">
-            <Text className="room__table-text">
-              房号 {room.roomCode}
-              {"\n"}
-              余牌 {room.wallRemaining}
-              {room.wildcardKind !== null ? ` · 赖 ${tileLabel(room.wildcardKind)}` : ""}
-              {"\n"}
-              连接 {roomCtrl.connectionStatus}
-            </Text>
-          </View>
-          <Text className="room__meta">
-            {room.actionDeadlineAt !== null ? `截止 ${room.actionDeadlineAt}` : "等待操作"}
-            {roomCtrl.pendingAction !== null ? ` · 提交中 ${roomCtrl.pendingAction}` : ""}
-          </Text>
-
-          {room.players.map((player) => (
-            <View key={player.seat} className="room__chip">
-              <Text>
-                座{player.seat} {player.nickname} {player.controller} 分{player.score} 手
-                {player.handCount} 倍{player.personalMultiplier}
-              </Text>
-            </View>
-          ))}
-
-          <Text className="room__section-label">我的副露</Text>
-          <View className="room__melds">
-            {(self?.melds ?? []).length === 0 ? (
-              <Text className="room__meta">暂无副露</Text>
-            ) : (
-              (self?.melds ?? []).map((meld) => (
-                <Text key={meld.id} className="room__chip">
-                  {meld.kind} {tileLabel(meld.tileKind)}
-                </Text>
-              ))
-            )}
-          </View>
-
-          <Text className="room__section-label">我的手牌（点选，再点可出牌）</Text>
-          <View className="room__hand">
-            {hand.map((tile) => {
-              const wildcard = isWildcardTile(tile, room.wildcardKind);
-              const selected = tile.id === selectedTileId;
+      ) : (
+        <>
+          <View className="table-surface">
+            {SEATS.map((seat) => {
+              const player = room.players[seat];
+              if (player === undefined) return null;
+              const pos = POSITION_CLASS[relativePosition(seat, selfSeat)] ?? "pos-self";
+              const active = room.actingSeat === seat;
               return (
                 <View
-                  key={tile.id}
-                  className={`room__tile${selected ? " room__tile--selected" : ""}${
-                    wildcard ? " room__tile--wildcard" : ""
+                  key={seat}
+                  className={`player-station ${pos}${active ? " is-active" : ""}${
+                    seat === room.selfSeat ? " is-self" : ""
                   }`}
-                  onClick={() => onTilePress(tile)}
                 >
-                  <Text>{tileLabel(tile)}</Text>
+                  <Text className="player-station__name">
+                    {player.nickname}
+                    {player.controller === "BOT" ? "·机" : ""}
+                  </Text>
+                  <Text className="player-station__meta">
+                    分{player.score} · 手{player.handCount} · 倍{player.personalMultiplier}
+                    {player.connected ? "" : " · 离"}
+                  </Text>
+                  <View className="player-station__melds">
+                    {player.melds.map((meld) => (
+                      <Text key={meld.id} className="meld-chip">
+                        {meld.kind === "PONG" ? "碰" : "杠"}
+                        {tileLabel(meld.tileKind)}
+                      </Text>
+                    ))}
+                  </View>
                 </View>
               );
             })}
+
+            <View className="table-center">
+              <View className="center-block">
+                <Text className="center-label">亮牌</Text>
+                {room.indicatorTile !== null ? (
+                  <MahjongTile tile={room.indicatorTile} compact wildcardKind={room.wildcardKind} />
+                ) : (
+                  <Text className="center-empty">—</Text>
+                )}
+              </View>
+              <View className="center-block center-block--main">
+                <Text className="center-label">余牌 {room.wallRemaining}</Text>
+                <Text className="center-status">
+                  {room.stage === "ROUND_RESULT" ? "本局结束" : room.roundPhase ?? room.stage}
+                </Text>
+              </View>
+              <View className="center-block">
+                <Text className="center-label">赖子</Text>
+                {room.wildcardKind !== null ? (
+                  <MahjongTile
+                    tile={{ id: "wildcard-preview", ...room.wildcardKind }}
+                    compact
+                    wildcardKind={room.wildcardKind}
+                  />
+                ) : (
+                  <Text className="center-empty">—</Text>
+                )}
+              </View>
+            </View>
+
+            {SEATS.map((seat) => {
+              const player = room.players[seat];
+              if (player === undefined) return null;
+              const pos = POSITION_CLASS[relativePosition(seat, selfSeat)] ?? "pos-self";
+              const discards = player.discards.slice(-8);
+              return (
+                <View key={`d-${seat}`} className={`discard-zone ${pos}`}>
+                  {discards.map((tile) => (
+                    <MahjongTile
+                      key={tile.id}
+                      tile={tile}
+                      compact
+                      wildcardKind={room.wildcardKind}
+                    />
+                  ))}
+                </View>
+              );
+            })}
+
+            <View className="self-area">
+              <Text className="self-area__label">
+                我的手牌
+                {selectedTile !== null
+                  ? ` · 已选 ${tileLabel(selectedTile)}${
+                      isWildcardTile(selectedTile, room.wildcardKind) ? "（赖）" : ""
+                    }`
+                  : ""}
+              </Text>
+              <View className="self-hand">
+                {hand.map((tile) => (
+                  <MahjongTile
+                    key={tile.id}
+                    tile={tile}
+                    selected={tile.id === selectedTileId}
+                    wildcardKind={room.wildcardKind}
+                    onPress={onTilePress}
+                  />
+                ))}
+              </View>
+            </View>
           </View>
 
-          <Text className="room__section-label">操作</Text>
-          <View className="room__actions">
-            {buttons.map((button) => (
-              <Button
-                key={button.action}
-                className="room__button room__button--primary"
-                disabled={locked}
-                onClick={() => void onAction(button.action)}
-              >
-                {button.label}
-              </Button>
-            ))}
-            <Button className="room__button" disabled={roomCtrl.busy} onClick={() => void roomCtrl.refresh()}>
-              同步
-            </Button>
-          </View>
+          <ActionDock
+            buttons={buttons}
+            disabled={locked}
+            onAction={(button) => void onAction(button)}
+          />
 
           {room.stage === "ROUND_RESULT" && room.mode === "BOT" ? (
-            <Button
-              className="room__button room__button--primary"
-              disabled={roomCtrl.busy}
-              onClick={() => void roomCtrl.continueBot()}
-            >
-              再来一局
-            </Button>
-          ) : null}
-
-          <View className="room__actions">
-            {room.isOwner ? (
+            <View className="result-bar">
               <Button
-                className="room__button room__button--danger"
+                className="btn-accent"
                 disabled={roomCtrl.busy}
-                onClick={() => void roomCtrl.dissolve()}
+                onClick={() => void roomCtrl.continueBot()}
               >
-                解散
+                再来一局
               </Button>
-            ) : null}
-            <Button className="room__button" disabled={roomCtrl.busy} onClick={() => void roomCtrl.leaveRoom()}>
-              离开
-            </Button>
-          </View>
-        </View>
-      ) : null}
+            </View>
+          ) : null}
+        </>
+      )}
     </View>
   );
 }

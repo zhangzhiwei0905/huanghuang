@@ -1,0 +1,30 @@
+{
+  "id": "mp-web-parity-ui",
+  "name": "mp-web-parity-ui",
+  "title": "Miniprogram Web-parity UI and friend rooms",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "zhang",
+  "assignee": "zhang",
+  "createdAt": "2026-07-21",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "miniprogram",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-21-mp-ui-assets",
+    "07-21-mp-ui-table",
+    "07-21-mp-friend-room"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
