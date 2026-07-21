@@ -27,7 +27,7 @@ export default function IndexPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const title = useMemo(() => {
+  const heading = useMemo(() => {
     if (mode === "CREATE") return "创建好友房";
     if (mode === "JOIN") return "加入房间";
     if (mode === "BOT") return "人机对战";
@@ -61,44 +61,39 @@ export default function IndexPage() {
       await Taro.navigateTo({ url: "/pages/room/index" });
     } catch (cause) {
       const code = cause instanceof ApiError ? cause.code : "UNKNOWN";
-      setError(
-        kind === "JOIN" ? errorLabel(code) || "没有找到这个房间或当前无法加入" : errorLabel(code),
-      );
+      setError(errorLabel(code));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <View className="home-shell">
-      <View className="home-panel">
-        <View className="brand-block">
-          <Text className="eyebrow">PRIVATE TABLE / 04</Text>
-          <Text className="home-title">{title}</Text>
-          <Text className="subtitle">四人数字麻将 · 好友房 / 人机对战</Text>
-        </View>
+    <View className="mp-home">
+      <View className="mp-home__brand">
+        <Text className="mp-home__eyebrow">PRIVATE TABLE · 横屏</Text>
+        <Text className="mp-home__title">{heading}</Text>
+        <Text className="mp-home__sub">四人数字麻将 · 好友房 / 人机</Text>
+      </View>
 
+      <View className="mp-home__panel">
         {mode === "HOME" ? (
-          <View className="home-actions">
-            <Button className="primary-action" disabled={busy} onClick={() => setMode("CREATE")}>
+          <View className="mp-home__actions">
+            <Button className="mp-btn mp-btn--primary" disabled={busy} onClick={() => setMode("CREATE")}>
               创建房间
             </Button>
-            <Button className="secondary-action" disabled={busy} onClick={() => setMode("JOIN")}>
+            <Button className="mp-btn" disabled={busy} onClick={() => setMode("JOIN")}>
               加入房间
             </Button>
-            <Button className="secondary-action" disabled={busy} onClick={() => setMode("BOT")}>
+            <Button className="mp-btn" disabled={busy} onClick={() => setMode("BOT")}>
               人机对战
-            </Button>
-            <Button className="secondary-action" disabled={busy} onClick={() => setMode("JOIN")}>
-              邀请好友
             </Button>
           </View>
         ) : (
-          <View className="entry-form">
-            <View className="field">
-              <Text className="field__label">牌桌昵称</Text>
+          <View className="mp-home__form">
+            <View className="mp-field">
+              <Text className="mp-field__label">昵称</Text>
               <Input
-                className="field__input"
+                className="mp-field__input"
                 value={nickname}
                 maxlength={12}
                 placeholder="怎么称呼你"
@@ -107,25 +102,25 @@ export default function IndexPage() {
             </View>
 
             {mode === "JOIN" ? (
-              <View className="field">
-                <Text className="field__label">六位房间号</Text>
+              <View className="mp-field">
+                <Text className="mp-field__label">房间号</Text>
                 <Input
-                  className="field__input"
+                  className="mp-field__input"
                   value={roomCode}
                   maxlength={6}
                   type="number"
-                  placeholder="例如 123456"
+                  placeholder="6 位数字"
                   onInput={(event) => setRoomCode(event.detail.value)}
                 />
               </View>
             ) : (
-              <View className="field">
-                <Text className="field__label">底分</Text>
-                <View className="score-row">
+              <View className="mp-field">
+                <Text className="mp-field__label">底分</Text>
+                <View className="mp-score-row">
                   {BASE_SCORES.map((score) => (
                     <Button
                       key={score}
-                      className={`score-chip${baseScore === score ? " is-active" : ""}`}
+                      className={`mp-score${baseScore === score ? " is-on" : ""}`}
                       disabled={busy}
                       onClick={() => setBaseScore(score)}
                     >
@@ -136,17 +131,19 @@ export default function IndexPage() {
               </View>
             )}
 
-            {error !== null ? <Text className="form-error">{error}</Text> : null}
+            {error !== null ? <Text className="mp-error">{error}</Text> : null}
 
-            <View className="form-actions">
+            <View className="mp-home__form-actions">
               <Button
-                className="primary-action"
+                className="mp-btn mp-btn--primary"
                 disabled={busy}
-                onClick={() => void submit(mode === "JOIN" ? "JOIN" : mode === "BOT" ? "BOT" : "CREATE")}
+                onClick={() =>
+                  void submit(mode === "JOIN" ? "JOIN" : mode === "BOT" ? "BOT" : "CREATE")
+                }
               >
-                {mode === "JOIN" ? "进入房间" : mode === "BOT" ? "开始人机" : "创建并进入"}
+                {mode === "JOIN" ? "进入" : mode === "BOT" ? "开始" : "创建"}
               </Button>
-              <Button className="secondary-action" disabled={busy} onClick={() => setMode("HOME")}>
+              <Button className="mp-btn" disabled={busy} onClick={() => setMode("HOME")}>
                 返回
               </Button>
             </View>

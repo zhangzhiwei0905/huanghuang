@@ -1,11 +1,11 @@
 .mj-tile {
   position: relative;
-  width: 64px;
-  height: 88px;
-  border-radius: 8px;
+  width: 56px;
+  height: 76px;
+  border-radius: 6px;
   background: var(--tile, #f4f2ea);
   border: 1px solid var(--tile-edge, #c8c6bc);
-  box-shadow: 0 3px 0 rgb(0 0 0 / 12%);
+  box-shadow: 0 2px 0 rgb(0 0 0 / 12%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -14,14 +14,14 @@
 }
 
 .mj-tile--compact {
-  width: 44px;
-  height: 60px;
+  width: 36px;
+  height: 50px;
 }
 
 .mj-tile--selected {
-  transform: translateY(-10px);
+  transform: translateY(-8px);
   border-color: var(--accent, #2f6a4c);
-  box-shadow: 0 10px 0 color-mix(in srgb, var(--accent, #2f6a4c) 55%, transparent);
+  box-shadow: 0 8px 0 color-mix(in srgb, var(--accent, #2f6a4c) 55%, transparent);
 }
 
 .mj-tile--dimmed {
@@ -39,13 +39,13 @@
 
 .mj-tile__badge {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 22px;
-  padding: 0 4px;
-  border-radius: 4px;
-  font-size: 16px;
-  line-height: 1.4;
+  top: 1px;
+  right: 1px;
+  min-width: 18px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.3;
   color: #fff8e7;
   background: var(--tile-gold, #8a713f);
   text-align: center;

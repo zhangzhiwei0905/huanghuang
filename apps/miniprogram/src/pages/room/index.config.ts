@@ -3,6 +3,6 @@ export default {
   navigationBarBackgroundColor: "#eef6f0",
   navigationBarTextStyle: "black",
   backgroundColor: "#dcece1",
+  pageOrientation: "landscape",
   disableScroll: true,
-  pageOrientation: "auto",
 };
