@@ -379,3 +379,39 @@ Planned WeChat-only Taro React port with shared server token auth; implemented s
 ### Next Steps
 
 - Operator device QA; then archive integration + parent
+
+
+## Session 12: Miniprogram playable in WeChat DevTools
+
+**Date**: 2026-07-21
+**Task**: 07-21-miniprogram-port / integration
+**Branch**: `miniprogram`
+
+### Summary
+
+Operator verified core path in WeChat DevTools: realtime works after socket.io-mp switch; can discard and pong. Parent AC1–AC7 closed; integration and parent archived.
+
+### Main Changes
+
+- `socket.io-mp` for WeChat native WebSocket
+- Room UI polish (functional, not web pixel parity)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0914d13` | fix(miniprogram): use socket.io-mp for WeChat realtime |
+| `e2a2ded` | docs(miniprogram): note socket.io-mp requirement |
+
+### Testing
+
+- [OK] Operator DevTools: play / pong / discard
+- [OK] pnpm test / miniprogram build earlier in session
+
+### Status
+
+[OK] **Completed** (MVP core path)
+
+### Next Steps
+
+- Optional: UI closer to web, real-device on LAN, deploy miniprogram branch server + 合法域名
