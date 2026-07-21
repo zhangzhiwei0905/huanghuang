@@ -72,3 +72,10 @@ Auth contract: see [`docs/miniprogram-auth.md`](../../docs/miniprogram-auth.md).
 | Room | `pages/room/index` | waiting room + playable table, Socket.IO commands |
 
 Room handoff uses temporary storage key `huanghuang_open_room` after create/join.
+
+## Realtime notes
+
+Use `socket.io-mp` (WeChat native WebSocket transport). Plain `socket.io-client` does **not** work reliably in WeChat DevTools and will loop on “实时连接暂时中断，正在重连”.
+
+Local DevTools still needs **不校验合法域名**. Server must be the `miniprogram` branch with token auth.
+
