@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/",
   "projectname": "huanghuang",
   "description": "晃晃微信小程序",
-  "appid": "touristappid",
+  "appid": "wx071ff3f9c1647f4c",
   "setting": {
     "urlCheck": false,
     "es6": false,
@@ -11,8 +11,32 @@
     "postcss": false,
     "minified": false,
     "coverView": true,
-    "showShadowRootInWxmlPanel": true
+    "showShadowRootInWxmlPanel": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
   },
   "compileType": "miniprogram",
-  "condition": {}
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {}
 }

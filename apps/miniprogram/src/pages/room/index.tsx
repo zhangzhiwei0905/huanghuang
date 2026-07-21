@@ -193,10 +193,19 @@ export default function RoomPage() {
           <Text className="room__title">
             {room.stage === "ROUND_RESULT" ? "本局结果" : "对局中"}
           </Text>
+          <View className="room__table">
+            <Text className="room__table-text">
+              房号 {room.roomCode}
+              {"\n"}
+              余牌 {room.wallRemaining}
+              {room.wildcardKind !== null ? ` · 赖 ${tileLabel(room.wildcardKind)}` : ""}
+              {"\n"}
+              连接 {roomCtrl.connectionStatus}
+            </Text>
+          </View>
           <Text className="room__meta">
-            余牌 {room.wallRemaining}
-            {room.wildcardKind !== null ? ` · 赖 ${tileLabel(room.wildcardKind)}` : ""}
-            {room.actionDeadlineAt !== null ? ` · 截止 ${room.actionDeadlineAt}` : ""}
+            {room.actionDeadlineAt !== null ? `截止 ${room.actionDeadlineAt}` : "等待操作"}
+            {roomCtrl.pendingAction !== null ? ` · 提交中 ${roomCtrl.pendingAction}` : ""}
           </Text>
 
           {room.players.map((player) => (
@@ -210,14 +219,18 @@ export default function RoomPage() {
 
           <Text className="room__section-label">我的副露</Text>
           <View className="room__melds">
-            {(self?.melds ?? []).map((meld) => (
-              <Text key={meld.id} className="room__chip">
-                {meld.kind} {tileLabel(meld.tileKind)}
-              </Text>
-            ))}
+            {(self?.melds ?? []).length === 0 ? (
+              <Text className="room__meta">暂无副露</Text>
+            ) : (
+              (self?.melds ?? []).map((meld) => (
+                <Text key={meld.id} className="room__chip">
+                  {meld.kind} {tileLabel(meld.tileKind)}
+                </Text>
+              ))
+            )}
           </View>
 
-          <Text className="room__section-label">我的手牌</Text>
+          <Text className="room__section-label">我的手牌（点选，再点可出牌）</Text>
           <View className="room__hand">
             {hand.map((tile) => {
               const wildcard = isWildcardTile(tile, room.wildcardKind);

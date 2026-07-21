@@ -1,6 +1,6 @@
 import type { BaseScore, CommandEnvelope, RoomProjection } from "@huanghuang/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import { io, type Socket } from "socket.io-mp";
 import {
   ApiError,
   createCommand,
@@ -138,34 +138,41 @@ export function useRoom(): RoomController {
     const current = room;
     if (current === null) return;
     const token = getStoredSessionToken();
+    // socket.io-mp uses WeChat native WebSocket; browser socket.io-client does not work in devtools.
     const socket: Socket = io(API_BASE, {
       autoConnect: false,
-      transports: ["websocket", "polling"],
       withCredentials: false,
-      timeout: 5000,
+      timeout: 8000,
+      reconnection: true,
+      reconnectionAttempts: 8,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       auth: token !== null ? { token } : {},
     });
     let connectedTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
     socketRef.current = socket;
 
     const markConnectedAfterProjection = () => {
+      if (disposed) return;
       if (connectedTimer !== null) clearTimeout(connectedTimer);
       connectedTimer = setTimeout(() => setConnectionStatus("connected"), 0);
     };
     const subscribe = () => {
+      if (disposed) return;
       setConnectionStatus(hasEverConnectedRef.current ? "reconnecting" : "connecting");
       hasEverConnectedRef.current = true;
       const latestToken = getStoredSessionToken();
       if (latestToken !== null) {
         socket.auth = { token: latestToken };
       }
+      setError(null);
       socket.emit(
         "room:subscribe",
         current.roomCode,
         (projection: RoomProjection | { error: string }) => {
+          if (disposed) return;
           if ("error" in projection) {
             if (projection.error === "ROOM_NOT_FOUND" || projection.error === "NOT_A_MEMBER") {
               clearLocalRoom("房间已关闭，请重新创建或加入房间");
@@ -180,24 +187,40 @@ export function useRoom(): RoomController {
         },
       );
     };
-    const scheduleReconnect = () => {
-      if (reconnectTimer !== null) return;
+    const scheduleHardReconnect = () => {
+      if (disposed || reconnectTimer !== null) return;
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
-        setSocketGeneration((value) => value + 1);
-      }, 1500);
+        if (!disposed) setSocketGeneration((value) => value + 1);
+      }, 2000);
     };
-    const handleDisconnect = () => {
+    const handleDisconnect = (reason?: string) => {
+      if (disposed) return;
       setConnectionStatus("reconnecting");
-      setError("实时连接暂时中断，正在重连");
-      scheduleReconnect();
+      setError(
+        reason === "io server disconnect"
+          ? "服务器断开了实时连接，正在重连"
+          : "实时连接暂时中断，正在重连",
+      );
+      // Built-in reconnection handles most cases; hard recreate after auth failure / stuck state.
+      if (reason === "io server disconnect") {
+        scheduleHardReconnect();
+      }
     };
-    const handleConnectError = () => {
+    const handleConnectError = (err: Error) => {
+      if (disposed) return;
       setConnectionStatus("reconnecting");
-      setError("实时连接暂时中断，正在重连");
-      scheduleReconnect();
+      const message = err.message || "";
+      if (message.includes("UNAUTHENTICATED") || message.includes("unauthorized")) {
+        setError("会话无效，请返回大厅重新进入房间");
+      } else {
+        setError(`实时连接失败（${message || "network"}），正在重连`);
+      }
+      scheduleHardReconnect();
     };
-    const handleRoomUpdate = () => void refresh();
+    const handleRoomUpdate = () => {
+      if (!disposed) void refresh();
+    };
 
     socket.on("connect", subscribe);
     socket.on("disconnect", handleDisconnect);
@@ -206,6 +229,7 @@ export function useRoom(): RoomController {
     socket.connect();
 
     return () => {
+      disposed = true;
       if (connectedTimer !== null) clearTimeout(connectedTimer);
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
       socketRef.current = null;

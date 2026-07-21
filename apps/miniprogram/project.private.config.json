@@ -1,7 +1,23 @@
 {
   "description": "Local WeChat devtools overrides. Do not commit real secrets.",
-  "projectname": "huanghuang",
+  "projectname": "miniprogram",
   "setting": {
-    "urlCheck": false
-  }
+    "urlCheck": false,
+    "coverView": true,
+    "lazyloadPlaceholderEnable": false,
+    "skylineRenderEnable": false,
+    "preloadBackgroundData": false,
+    "autoAudits": false,
+    "useApiHook": true,
+    "showShadowRootInWxmlPanel": true,
+    "useStaticServer": false,
+    "useLanDebug": false,
+    "showES6CompileOption": false,
+    "compileHotReLoad": true,
+    "checkInvalidKey": true,
+    "ignoreDevUnusedFiles": true,
+    "bigPackageSizeSupport": false
+  },
+  "libVersion": "3.17.0",
+  "condition": {}
 }
