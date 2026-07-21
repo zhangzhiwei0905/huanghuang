@@ -18,10 +18,10 @@ Add a Taro 4 + React WeChat mini-program package to the pnpm workspace that comp
 
 ## Acceptance Criteria
 
-- [ ] `pnpm` install/build path for the mini-program is documented and works.
-- [ ] Project opens in WeChat devtools (simulator).
-- [ ] Can import types from `@huanghuang/protocol`.
-- [ ] Base URL configuration is not hard-coded to localhost-only for production builds.
+- [x] `pnpm` install/build path for the mini-program is documented and works.
+- [x] Project opens in WeChat devtools (simulator). (import apps/miniprogram; dist built)
+- [x] Can import types from `@huanghuang/protocol`.
+- [x] Base URL configuration is not hard-coded to localhost-only for production builds. (`TARO_APP_API_BASE`)
 
 ## Out of scope
 
