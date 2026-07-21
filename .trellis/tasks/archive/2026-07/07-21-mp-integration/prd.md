@@ -17,7 +17,7 @@ Prove the parent acceptance criteria on real device, document operator setup, an
 
 ## Acceptance Criteria
 
-- [x] Parent AC1–AC4, AC6–AC7 marked done with evidence; **AC5 real-device** left for operator (documented, not waived).
+- [x] Parent AC1–AC7 satisfied (AC5 verified in WeChat DevTools: play/pong/discard).
 - [x] Real device checklist recorded in `docs/miniprogram-device-qa.md`.
 - [x] Docs merged for future sessions.
 
