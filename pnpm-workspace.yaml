@@ -8,3 +8,9 @@ confirmModulesPurge: false
 allowBuilds:
   better-sqlite3: true
   esbuild: true
+  "@parcel/watcher": true
+  "@swc/core": true
+  "@tarojs/binding": true
+  "@tarojs/cli": true
+  core-js: true
+  core-js-pure: true

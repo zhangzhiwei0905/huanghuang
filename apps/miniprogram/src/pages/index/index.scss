@@ -1,0 +1,59 @@
+.scaffold {
+  padding: 48px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.scaffold__title {
+  font-size: 40px;
+  font-weight: 700;
+  color: #d8f3dc;
+}
+
+.scaffold__meta {
+  font-size: 24px;
+  color: #95d5b2;
+  word-break: break-all;
+}
+
+.scaffold__input {
+  margin-top: 12px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: #1b4332;
+  color: #f1faee;
+  font-size: 28px;
+}
+
+.scaffold__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.scaffold__button {
+  background: #2d6a4f;
+  color: #f1faee;
+  border-radius: 999px;
+  font-size: 28px;
+}
+
+.scaffold__button--primary {
+  background: #40916c;
+}
+
+.scaffold__status {
+  margin-top: 12px;
+  font-size: 26px;
+  color: #fefae0;
+  line-height: 1.5;
+}
+
+.scaffold__hint {
+  margin-top: 24px;
+  font-size: 22px;
+  color: #74c69d;
+  line-height: 1.6;
+}

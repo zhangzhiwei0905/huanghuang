@@ -1,0 +1,7 @@
+{
+  "description": "Local WeChat devtools overrides. Do not commit real secrets.",
+  "projectname": "huanghuang",
+  "setting": {
+    "urlCheck": false
+  }
+}

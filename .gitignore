@@ -12,3 +12,5 @@ playwright-report/
 test-results/
 .DS_Store
 .zcode/
+apps/miniprogram/dist/
+apps/miniprogram/.swc/

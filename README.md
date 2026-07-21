@@ -29,6 +29,16 @@ pnpm dev
 
 浏览器打开 `http://localhost:5173`。开发命令会启动 Vite，并在 3000 端口启动服务端；服务端开发进程在改代码后需要手动重启，避免 macOS 文件监听数量限制。
 
+### 微信小程序（开发中 · `miniprogram` 分支）
+
+Taro 4 + React 客户端在 `apps/miniprogram`。鉴权说明见 `docs/miniprogram-auth.md`，包内说明见 `apps/miniprogram/README.md`。
+
+```bash
+pnpm --filter @huanghuang/miniprogram build:weapp
+# 微信开发者工具导入 apps/miniprogram（miniprogramRoot=dist）
+# 生产 API：TARO_APP_API_BASE=https://你的域名 pnpm --filter @huanghuang/miniprogram build:weapp
+```
+
 iPhone/iPad 使用 Safari 打开 HTTPS 生产地址后，可通过“分享 → 添加到主屏幕”安装；从主屏幕启动会使用独立横屏窗口。普通 Safari 访问也会跟随地址栏高度和设备安全区动态调整。
 
 生产构建与本地启动：
