@@ -14,7 +14,7 @@ import { resolve } from "node:path";
 import { Server } from "socket.io";
 import { GameDatabase } from "./database.js";
 import { RoomService } from "./room-service.js";
-import { SessionService } from "./session-service.js";
+import { SessionService, SESSION_TOKEN_HEADER } from "./session-service.js";
 
 const app = Fastify({ logger: true });
 await app.register(cookie);
@@ -28,6 +28,14 @@ const sockets = new Server(app.server, {
     maxDisconnectionDuration: 2 * 60 * 1000,
     skipMiddlewares: false,
   },
+});
+
+// Mini-program clients read X-Session-Token; browsers expose it only if allowed.
+app.addHook("onRequest", async (_request, reply) => {
+  reply.header(
+    "Access-Control-Expose-Headers",
+    `${SESSION_TOKEN_HEADER}, ${SESSION_TOKEN_HEADER.toUpperCase()}`,
+  );
 });
 
 const webRoot = resolve(import.meta.dirname, "../../web/dist");
@@ -44,10 +52,86 @@ if (existsSync(webRoot)) {
 app.get("/health/live", () => ({ status: "ok" }));
 app.get("/health/ready", () => ({ status: "ready" }));
 
+/** Issue or refresh an anonymous session without joining a room (mini-program entry). */
+app.post("/api/session", (request, reply) => {
+  const body = (request.body ?? {}) as { nickname?: unknown };
+  const nickname =
+    typeof body.nickname === "string" && body.nickname.trim().length > 0
+      ? body.nickname.trim().slice(0, 12)
+      : "玩家";
+  if (sessions.resolve(request) !== null) {
+    const ensured = sessions.ensure(request, reply, nickname);
+    return {
+      sessionId: ensured.session.id,
+      nickname: ensured.session.nickname,
+      sessionToken: ensured.rawToken,
+    };
+  }
+  const issued = sessions.issue(nickname, reply);
+  return {
+    sessionId: issued.session.id,
+    nickname: issued.session.nickname,
+    sessionToken: issued.rawToken,
+  };
+});
+
+app.get("/api/session", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  return { sessionId: session.id, nickname: session.nickname };
+});
+
+/**
+ * Optional WeChat code exchange. Enabled only when WECHAT_APP_ID + WECHAT_APP_SECRET are set.
+ * MVP binds by issuing a fresh anonymous session after verifying the code; openId persistence
+ * can land later without changing the client token shape.
+ */
+app.post("/api/auth/wechat", async (request, reply) => {
+  const appId = process.env.WECHAT_APP_ID;
+  const appSecret = process.env.WECHAT_APP_SECRET;
+  if (appId === undefined || appId.length === 0 || appSecret === undefined || appSecret.length === 0) {
+    return reply.code(501).send({ error: "WECHAT_AUTH_DISABLED" });
+  }
+  const body = (request.body ?? {}) as { code?: unknown; nickname?: unknown };
+  if (typeof body.code !== "string" || body.code.length === 0) {
+    return reply.code(400).send({ error: "INVALID_INPUT" });
+  }
+  const nickname =
+    typeof body.nickname === "string" && body.nickname.trim().length > 0
+      ? body.nickname.trim().slice(0, 12)
+      : "微信玩家";
+  const url = new URL("https://api.weixin.qq.com/sns/jscode2session");
+  url.searchParams.set("appid", appId);
+  url.searchParams.set("secret", appSecret);
+  url.searchParams.set("js_code", body.code);
+  url.searchParams.set("grant_type", "authorization_code");
+  let openId: string | undefined;
+  try {
+    const response = await fetch(url);
+    const payload = (await response.json()) as { openid?: string; errcode?: number };
+    if (typeof payload.openid !== "string" || payload.openid.length === 0) {
+      request.log.warn({ errcode: payload.errcode }, "wechat jscode2session failed");
+      return await reply.code(401).send({ error: "WECHAT_AUTH_FAILED" });
+    }
+    openId = payload.openid;
+  } catch (error) {
+    request.log.error({ err: error }, "wechat jscode2session network error");
+    return await reply.code(502).send({ error: "WECHAT_AUTH_UNAVAILABLE" });
+  }
+  // Token-only binding for MVP: issue a normal anonymous session. openId is not logged.
+  void openId;
+  const issued = sessions.issue(nickname, reply);
+  return {
+    sessionId: issued.session.id,
+    nickname: issued.session.nickname,
+    sessionToken: issued.rawToken,
+  };
+});
+
 app.post("/api/rooms", (request, reply) => {
   const parsed = createRoomSchema.safeParse(request.body);
   if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
-  const session = sessions.ensure(request, reply, parsed.data.nickname);
+  const { session } = sessions.ensure(request, reply, parsed.data.nickname);
   const room = rooms.createRoom(session, parsed.data.baseScore, parsed.data.mode);
   return reply.code(201).send(rooms.project(room, session.id));
 });
@@ -55,7 +139,7 @@ app.post("/api/rooms", (request, reply) => {
 app.post("/api/rooms/join", (request, reply) => {
   const parsed = joinRoomSchema.safeParse(request.body);
   if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
-  const session = sessions.ensure(request, reply, parsed.data.nickname);
+  const { session } = sessions.ensure(request, reply, parsed.data.nickname);
   const room = rooms.joinRoom(session, parsed.data.roomCode);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
   if (room === "ROOM_FULL") return reply.code(409).send({ error: "ROOM_FULL" });
@@ -138,7 +222,25 @@ app.delete<{ Params: { code: string } }>("/api/rooms/:code", (request, reply) =>
 });
 
 sockets.use((socket, next) => {
-  const session = sessions.resolveRawCookie(socket.request.headers.cookie);
+  const headers: {
+    authorization?: string | string[];
+    cookie?: string;
+    [key: string]: unknown;
+  } = {};
+  if (socket.handshake.headers.authorization !== undefined) {
+    headers.authorization = socket.handshake.headers.authorization;
+  }
+  if (socket.handshake.headers.cookie !== undefined) {
+    headers.cookie = socket.handshake.headers.cookie;
+  }
+  const tokenHeader = socket.handshake.headers[SESSION_TOKEN_HEADER];
+  if (tokenHeader !== undefined) {
+    headers[SESSION_TOKEN_HEADER] = tokenHeader;
+  }
+  const session = sessions.resolveSocketHandshake({
+    auth: socket.handshake.auth,
+    headers,
+  });
   if (session === null) return next(new Error("UNAUTHENTICATED"));
   const socketData = socket.data as { sessionId?: string };
   socketData.sessionId = session.id;
