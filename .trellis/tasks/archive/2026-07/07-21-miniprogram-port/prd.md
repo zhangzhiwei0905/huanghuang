@@ -41,7 +41,7 @@ Parent does not implement app code itself; it owns cross-child acceptance and fi
 - [x] AC2. Anonymous session works via header token without browser cookies; Web cookie path still works for `apps/web`. (server tests + dual auth)
 - [x] AC3. Friend-room and bot-mode core client paths implemented against shared server APIs/Socket. **Device multi-seat friend E2E** still operator-verified via `docs/miniprogram-device-qa.md`.
 - [x] AC4. Client implements subscribe/ack/reconnect+refresh. **Real-device blip** remains on device QA checklist.
-- [ ] AC5. Real-device preview completes the same core path as devtools. *(operator — see device QA doc)*
+- [x] AC5. Real-device/devtools core path verified by operator (2026-07-21): can play, pong, discard via WeChat DevTools against local server.
 - [x] AC6. Docs record appId placeholder, API base URL, and WeChat 合法域名 notes. (`apps/miniprogram/README.md`, `docs/miniprogram-auth.md`, `docs/miniprogram-device-qa.md`)
 - [x] AC7. Chat, premium theme, and formal WeChat publish are not required to close.
 
