@@ -1,8 +1,13 @@
+
 .mj-tile {
   position: relative;
-  width: 56px;
-  height: 76px;
-  border-radius: 6px;
+  width: 7.2vmin;
+  height: 10vmin;
+  min-width: 36px;
+  min-height: 50px;
+  max-width: 58px;
+  max-height: 80px;
+  border-radius: 0.5vmin;
   background: var(--tile, #f4f2ea);
   border: 1px solid var(--tile-edge, #c8c6bc);
   box-shadow: 0 2px 0 rgb(0 0 0 / 12%);
@@ -14,14 +19,18 @@
 }
 
 .mj-tile--compact {
-  width: 36px;
-  height: 50px;
+  width: 3.8vmin;
+  height: 5.4vmin;
+  min-width: 20px;
+  min-height: 28px;
+  max-width: 28px;
+  max-height: 40px;
 }
 
 .mj-tile--selected {
-  transform: translateY(-8px);
+  transform: translateY(-1.2vmin);
   border-color: var(--accent, #2f6a4c);
-  box-shadow: 0 8px 0 color-mix(in srgb, var(--accent, #2f6a4c) 55%, transparent);
+  box-shadow: 0 0.9vmin 0 color-mix(in srgb, var(--accent, #2f6a4c) 55%, transparent);
 }
 
 .mj-tile--dimmed {
@@ -33,18 +42,18 @@
 }
 
 .mj-tile__face {
-  width: 86%;
-  height: 86%;
+  width: 88%;
+  height: 88%;
 }
 
 .mj-tile__badge {
   position: absolute;
   top: 1px;
   right: 1px;
-  min-width: 18px;
-  padding: 0 3px;
-  border-radius: 3px;
-  font-size: 12px;
+  min-width: 1.8vmin;
+  padding: 0 2px;
+  border-radius: 2px;
+  font-size: 1.6vmin;
   line-height: 1.3;
   color: #fff8e7;
   background: var(--tile-gold, #8a713f);
