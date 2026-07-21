@@ -21,10 +21,11 @@ the rest conversationally.
 
 ## Status (update the checkboxes as you complete each item)
 
-- [ ] Fill backend guidelines
-- [ ] Fill frontend guidelines
-- [ ] Add code examples
+- [x] Fill backend guidelines
+- [x] Fill frontend guidelines
+- [x] Add code examples
 
+> Gap-fill pass (2026-07-21): refreshed directory trees for current `apps/web` pure helpers + server modules; expanded error-handling (HTTP vs Socket), type-safety, quality, hooks, logging; cleaned index scaffolding into pre-dev checklists. Thick scenario docs (`component-guidelines`, `state-management`, backend `quality-guidelines`, `database-guidelines`) retained as authoritative.
 ---
 
 ## Spec files to populate
