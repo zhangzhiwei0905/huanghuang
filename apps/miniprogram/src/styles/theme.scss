@@ -49,16 +49,11 @@ page[data-theme="premium"] {
 }
 
 .game-shell {
-  min-height: 100vh;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   background-color: var(--surface);
-  background-image:
-    linear-gradient(var(--game-art-overlay), var(--game-art-overlay)),
-    url("../assets/background.optimized.jpg");
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
+  /* Background art is an <Image>, not CSS url() — avoids base64 bloat over 2MB preview limit. */
 }
 
 .game-header {

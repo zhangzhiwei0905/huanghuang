@@ -1,6 +1,7 @@
 /* Landscape-first room shell for WeChat mini-program */
 
 .game-shell {
+  position: relative;
   height: 100vh;
   width: 100vw;
   box-sizing: border-box;
@@ -8,13 +9,36 @@
   flex-direction: column;
   overflow: hidden;
   background-color: var(--surface, #dcece1);
-  background-image:
-    linear-gradient(var(--game-art-overlay, rgb(238 246 240 / 14%)), var(--game-art-overlay, rgb(238 246 240 / 14%))),
-    url("../../assets/background.optimized.jpg");
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
   color: var(--ink, #272925);
+}
+
+.game-shell__bg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.game-shell__overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  background: var(--game-art-overlay, rgb(238 246 240 / 14%));
+  pointer-events: none;
+}
+
+.game-shell__content {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .empty-shell {
@@ -425,4 +449,14 @@
   display: flex;
   justify-content: center;
   background: var(--game-chrome, rgb(238 246 240 / 32%));
+}
+
+.empty-shell-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
 }
