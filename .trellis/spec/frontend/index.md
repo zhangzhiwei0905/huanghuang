@@ -1,39 +1,37 @@
 # Frontend Development Guidelines
 
-> Best practices for frontend development in this project.
+> Authoritative conventions for `apps/web` and its use of `@huanghuang/protocol`.
 
 ---
 
 ## Overview
 
-This directory contains guidelines for frontend development. Fill in each file with your project's specific conventions.
-
----
+Document **what this repo actually does**. The web app is a projection renderer: authority stays on the server; pure modules may only derive presentation and highlight state from projection fields.
 
 ## Guidelines Index
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | Active |
-| [Component Guidelines](./component-guidelines.md) | Component patterns, props, composition | Active |
-| [Hook Guidelines](./hook-guidelines.md) | Custom hooks and realtime subscriptions | Active |
-| [State Management](./state-management.md) | Local state, preferences, server projections | Active |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | Active |
-| [Type Safety](./type-safety.md) | Shared schemas and strict TypeScript | Active |
+| [Directory Structure](./directory-structure.md) | `apps/web` layout and ownership | Active |
+| [Component Guidelines](./component-guidelines.md) | Components, themes, action dock, motion | Active |
+| [Hook Guidelines](./hook-guidelines.md) | `useRoom` Socket lifecycle and mutations | Active |
+| [State Management](./state-management.md) | Projection versioning, local vs server state | Active |
+| [Quality Guidelines](./quality-guidelines.md) | Checks, tests, a11y, forbidden client rules | Active |
+| [Type Safety](./type-safety.md) | Protocol ownership and TS strictness | Active |
 
----
+## Pre-Development Checklist
 
-## How to Fill These Guidelines
+When changing web UI or client networking, read at least:
 
-For each guideline file:
+1. [Directory Structure](./directory-structure.md) — where the change belongs
+2. [Hook Guidelines](./hook-guidelines.md) — if Socket, commands, or room restore change
+3. [State Management](./state-management.md) — if projection or local state ownership changes
+4. [Component Guidelines](./component-guidelines.md) — if table, tiles, or action chrome change
+5. [Type Safety](./type-safety.md) — if shared types or payloads change
+6. Shared [Thinking Guides](../guides/index.md) when the change crosses layers
 
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
+## Maintenance
 
-The goal is to help AI assistants and new team members understand how YOUR project works.
+When UI conventions change (new pure helper module, theme tokens, action mapping), update the matching guide in the same task. Prefer citing real files under `apps/web/src`.
 
----
-
-**Language**: All documentation should be written in **English**.
+**Language**: documentation in **English**.

@@ -2,21 +2,21 @@
 
 ## Current implementation
 
-`apps/web/src/hooks/useRoom.ts` owns the authoritative `RoomProjection`, one Socket.IO connection, full-snapshot recovery and room mutations. `App` consumes this controller; leaf table and tile components receive callbacks and projections through props.
+`apps/web/src/hooks/useRoom.ts` owns the authoritative `RoomProjection`, one Socket.IO connection, full-snapshot recovery, chat buffer, and room mutations. `App` consumes this controller; leaf table and tile components receive callbacks and projections through props only.
 
 ## Conventions
 
 - Prefix custom hooks with `use` and keep one public hook per file.
-- Socket subscription hooks subscribe once, clean up the exact handler, and expose typed projections from `@huanghuang/protocol`.
+- Socket subscription hooks subscribe once, clean up the **exact** named handlers, and expose typed projections from `@huanghuang/protocol`.
 - Reuse the subscription Socket for commands. Creating a short-lived command Socket would trigger disconnect trustee behavior and is forbidden.
-- Network mutations return command acknowledgements; they do not mutate the authoritative projection locally.
+- Network mutations return command acknowledgements; they do not mutate the authoritative projection locally on optimistic success.
 - Replace projections only when their version is not older than the current version. A `room:update` notification triggers `GET /api/rooms/:code` rather than carrying private state in a broadcast.
-- Timer hooks display a server deadline and never decide timeout behavior.
+- Timer display uses the server deadline; the client never decides timeout winners.
 - Track connection state explicitly as `connecting | connected | reconnecting`. Every Socket `connect` must re-send `room:subscribe`; disconnect and connect-error handlers lock game input until a fresh snapshot is applied.
-- Use a synchronous mutation ref around every room mutation and command, then expose `pendingAction` for UI feedback. Clear the lock on acknowledgement, failure, or the bounded command timeout.
+- Use a synchronous mutation ref around every room mutation and command, then expose `pendingAction` / `busy` for UI feedback. Clear the lock on acknowledgement, failure, or the bounded command timeout (`COMMAND_ACK_TIMEOUT_MS`, currently 8000).
 - Give command acknowledgements a timeout and request a full snapshot after uncertainty. The client must never wait forever or invent the command result.
-- Register named Socket handlers and remove those exact handlers during cleanup. Clear reconnect timers and transient chat timers as part of the same lifecycle.
-- A valid `?room=123456` URL may restore an existing anonymous member with `GET /api/rooms/:code`; a failed membership check falls back to the normal join form because the URL alone is not authorization.
+- Map stable error codes to Chinese player-facing labels in one place (`ERROR_LABELS` / `errorLabel` in `useRoom.ts`), not inside leaf components.
+- A valid `?room=123456` URL may restore an existing anonymous member with `GET /api/rooms/:code` from `App.tsx`; a failed membership check falls back to the normal join form because the URL alone is not authorization. Use a cancellable mount effect so Strict Mode remounts still complete restoration.
 
 ## Required test points
 
@@ -24,10 +24,12 @@
 - A version gap requests a full snapshot.
 - Re-rendering does not create duplicate command submissions.
 - Development Strict Mode cleanup followed by setup still completes URL restoration; do not pair an irreversible “already attempted” ref with a cancellable mount effect.
+- Command ack timeout clears `pendingAction` and recovers via snapshot.
 
 ## Forbidden patterns
 
-- No raw `socket.on` calls in leaf tile components.
-- No rule calculation in hooks.
-- No dependency-array suppression to hide lifecycle bugs.
-- No unbounded acknowledgement waits or reconnect-only subscriptions.
+- No raw `socket.on` calls in leaf tile or table components.
+- No rule calculation in hooks (no win/score/legal-action authority).
+- No dependency-array suppression (`eslint-disable`) to hide lifecycle bugs.
+- No unbounded acknowledgement waits or reconnect-only subscriptions that skip `room:subscribe`.
+- No second Socket instance for REST-less command fan-out.

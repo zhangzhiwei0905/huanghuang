@@ -22,8 +22,16 @@ Never log:
 - nicknames when an opaque session or room ID is sufficient;
 - command payloads that contain physical tile IDs unless a narrowly scoped local diagnosis explicitly requires them.
 
-The `technical_logs` table is reserved for future retained application events. Do not write to it until retention and redaction are implemented together.
+## Persistence note
+
+`GameDatabase.migrate` creates a `technical_logs` table reserved for future retained application events. **Do not write to it** until retention, redaction, and a write API are implemented together. Operational truth today is Fastify's process logger.
 
 ## Error handling relationship
 
-Expected rule rejections are returned as stable command error codes and are not server errors. Log infrastructure failures once at the boundary where they are handled; do not log and rethrow the same failure through every layer.
+Expected rule rejections are returned as stable command / HTTP error codes and are **not** server errors. Log infrastructure failures once at the boundary where they are handled; do not log and rethrow the same failure through every layer. Domain codes such as `ACTION_NOT_AVAILABLE` and `VERSION_CONFLICT` belong in the response body / ack, not as `logger.error` spam.
+
+## Forbidden patterns
+
+- `console.log` for production diagnostics instead of Fastify's logger.
+- Logging full `RoomState` snapshots or private hands.
+- Elevating expected player mistakes to `error` level.
