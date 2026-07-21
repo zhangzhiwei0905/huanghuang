@@ -62,3 +62,13 @@ Auth contract: see [`docs/miniprogram-auth.md`](../../docs/miniprogram-auth.md).
 
 - Full table UI (`mp-core-client`)
 - Real-device integration checklist (`mp-integration`)
+
+
+## Core client pages
+
+| Page | Path | Role |
+|------|------|------|
+| Home | `pages/index/index` | create friend/bot, join by code, issue session token |
+| Room | `pages/room/index` | waiting room + playable table, Socket.IO commands |
+
+Room handoff uses temporary storage key `huanghuang_open_room` after create/join.

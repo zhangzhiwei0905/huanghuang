@@ -1,3 +1,3 @@
 export default {
-  navigationBarTitleText: "晃晃 · 脚手架",
+  navigationBarTitleText: "晃晃",
 };

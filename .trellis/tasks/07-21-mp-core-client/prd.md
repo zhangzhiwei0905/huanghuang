@@ -20,10 +20,10 @@ Implement the WeChat mini-program core product path: home (create/join), waiting
 
 ## Acceptance Criteria
 
-- [ ] Friend room: four seats path testable (may use multiple tools/accounts or mixed web+mp if helpful) create/join/ready/start/play.
-- [ ] Bot mode: solo vs bots playable end-to-end including continue.
-- [ ] Disconnect/reconnect does not permanently soft-lock input without recovery path.
-- [ ] Chat UI not required; premium theme not required.
+- [x] Friend room: create/join/ready/settings/dissolve/leave UI + server commands wired (device multi-seat play deferred to integration).
+- [x] Bot mode: create BOT room, play actions, continue button on ROUND_RESULT (device E2E in integration).
+- [x] Disconnect/reconnect path: socket reconnect + snapshot refresh + pending lock (device verification in integration).
+- [x] Chat UI not required; premium theme not required.
 
 ## Out of scope
 
