@@ -13,6 +13,28 @@ const NICK_KEY = "huanghuang-nickname";
 
 type Mode = "HOME" | "CREATE" | "JOIN" | "BOT";
 
+// A rejection here can come from two very different layers: our own API
+// (ApiError, with a known error code) or wx.request/Taro.request itself
+// failing before it ever reached the server (wrong/unwhitelisted domain,
+// DNS, TLS, timeout — none of which are ApiError instances, and none of
+// which Taro/wx wrap in a real `Error`; they reject with a plain
+// `{ errMsg: string }`). Swallowing the latter into one generic "操作没有
+//成功" string makes real-device domain-whitelist failures indistinguishable
+// from an actual server error — surface whatever detail is available.
+function describeSubmitError(cause: unknown): string {
+  if (cause instanceof ApiError) return errorLabel(cause.code);
+  if (cause instanceof Error && cause.message.length > 0) {
+    return `请求失败：${cause.message}`;
+  }
+  if (typeof cause === "object" && cause !== null && "errMsg" in cause) {
+    const message = (cause as { errMsg?: unknown }).errMsg;
+    if (typeof message === "string" && message.length > 0) {
+      return `请求失败：${message}`;
+    }
+  }
+  return "操作没有成功，请再试一次";
+}
+
 export default function IndexPage() {
   const [mode, setMode] = useState<Mode>("HOME");
   const [nickname, setNickname] = useState(() => {
@@ -61,8 +83,7 @@ export default function IndexPage() {
       Taro.setStorageSync("huanghuang_open_room", room);
       await Taro.navigateTo({ url: "/pages/room/index" });
     } catch (cause) {
-      const code = cause instanceof ApiError ? cause.code : "UNKNOWN";
-      setError(errorLabel(code));
+      setError(describeSubmitError(cause));
     } finally {
       setBusy(false);
     }
