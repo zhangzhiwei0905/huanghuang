@@ -53,6 +53,22 @@ raise, hint labels, the drawn-tile "摸" marker) is clipped unless the container
 reserves headroom (`padding-top: 2.6vmin`). Don't position children above the
 container's content box.
 
+### Gotcha: `wx.request` always sends `Content-Type: application/json`
+
+This cannot be suppressed from the client — not by omitting the header key,
+not by setting it to `""`. Both were tried and verified against the live mp
+runtime (`mini.evaluate` calling `wx.request` directly, bypassing Taro): the
+server still received `application/json` and 400'd on a bodyless DELETE
+either way. A client-side "only set Content-Type when there's a body" fix
+(`src/api/http.ts`) **looks correct in code review but does nothing at
+runtime** — don't trust it without a live probe.
+
+The real fix has to be server-side: `apps/server/src/index.ts` overrides
+Fastify's JSON `addContentTypeParser` to treat an empty body as `undefined`
+instead of throwing `FST_ERR_CTP_EMPTY_JSON_BODY`. Any bodyless
+POST/PATCH/DELETE route needs this — don't reintroduce a client-only "fix"
+for the same symptom.
+
 ---
 
 ## Projection-Derived UI State
