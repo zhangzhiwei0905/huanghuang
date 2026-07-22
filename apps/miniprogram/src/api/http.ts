@@ -39,10 +39,15 @@ async function request<T>(
     method: init?.method ?? "GET",
     data: init?.data,
     header: {
-      // Fastify's default JSON body parser rejects a request that declares
-      // this content type but sends no body (FST_ERR_CTP_EMPTY_JSON_BODY,
-      // HTTP 400) — e.g. DELETE /api/rooms/:code (leave room) never sends a
-      // body. Only advertise JSON when there's actually a body to describe.
+      // wx.request always sends `Content-Type: application/json` on every
+      // request regardless of what's in this header object — omitting the
+      // key, or even setting it to "" here, does not suppress it (verified
+      // against the live runtime). The actual fix for bodyless requests
+      // (e.g. DELETE /api/rooms/:code) is server-side: apps/server/src/
+      // index.ts registers a JSON content-type parser that tolerates an
+      // empty body instead of Fastify's default 400. This header is kept
+      // conditional only because it's still correct documentation of intent
+      // for requests that do carry a body.
       ...(init?.data !== undefined ? { "Content-Type": "application/json" } : {}),
       ...authHeaders(),
     },

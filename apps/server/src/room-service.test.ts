@@ -607,9 +607,12 @@ describe("RoomService", () => {
       { seat: 2, roundDelta: -6, totalScore: -9 },
       { seat: 3, roundDelta: -6, totalScore: -11 },
     ]);
-    expect(service.project(room, owner.id).players.slice(1).every((player) => player.hand === null)).toBe(
-      true,
-    );
+    expect(
+      service
+        .project(room, owner.id)
+        .players.slice(1)
+        .every((player) => player.hand === null),
+    ).toBe(true);
   });
 
   it("preserves reducer-driven kong transfers when the round ends in a draw", () => {
@@ -635,7 +638,9 @@ describe("RoomService", () => {
     round.players[0].hand[0] = { id: "draw-added-kong", ...kongKind };
     for (const seat of [1, 2, 3] as const) {
       round.players[seat].hand = round.players[seat].hand.map((tile, index) =>
-        sameTileKind(tile, finalDraw) ? { id: `safe-${seat}-${index}`, suit: "WAN", rank: 1 } : tile,
+        sameTileKind(tile, finalDraw)
+          ? { id: `safe-${seat}-${index}`, suit: "WAN", rank: 1 }
+          : tile,
       );
     }
     round.wall = [finalDraw];

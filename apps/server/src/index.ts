@@ -19,6 +19,26 @@ import { SessionService, SESSION_TOKEN_HEADER } from "./session-service.js";
 const app = Fastify({ logger: true });
 await app.register(cookie);
 
+// wx.request (WeChat mini-program) always sends `Content-Type: application/
+// json` on every request, including bodyless DELETE calls (e.g. leave room)
+// — client-side header overrides cannot suppress this, it's baked into the
+// mp runtime. Fastify's built-in JSON parser rejects that combination
+// (FST_ERR_CTP_EMPTY_JSON_BODY, HTTP 400) as a matter of policy. Override it
+// to treat an empty body as `undefined` instead of an error; a body that IS
+// present still goes through normal JSON.parse (and a genuinely malformed
+// non-empty body still 400s, as before).
+app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, done) => {
+  if (body === "") {
+    done(null, undefined);
+    return;
+  }
+  try {
+    done(null, JSON.parse(body as string));
+  } catch (cause) {
+    done(cause as Error, undefined);
+  }
+});
+
 const database = new GameDatabase(process.env.DATABASE_PATH ?? ":memory:");
 const sessions = new SessionService(database);
 const rooms = new RoomService(database);
@@ -89,7 +109,12 @@ app.get("/api/session", (request, reply) => {
 app.post("/api/auth/wechat", async (request, reply) => {
   const appId = process.env.WECHAT_APP_ID;
   const appSecret = process.env.WECHAT_APP_SECRET;
-  if (appId === undefined || appId.length === 0 || appSecret === undefined || appSecret.length === 0) {
+  if (
+    appId === undefined ||
+    appId.length === 0 ||
+    appSecret === undefined ||
+    appSecret.length === 0
+  ) {
     return reply.code(501).send({ error: "WECHAT_AUTH_DISABLED" });
   }
   const body = (request.body ?? {}) as { code?: unknown; nickname?: unknown };

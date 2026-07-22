@@ -253,8 +253,16 @@ export function useRoom(): RoomController {
       try {
         await roomApi.leave(current.roomCode);
         clearLocalRoom();
-      } catch {
-        setError("离开房间失败，请稍后再试");
+      } catch (cause) {
+        // Room already gone server-side (closed/evicted between page load and
+        // this click) isn't really a failure from the player's perspective —
+        // just finish leaving locally instead of showing an error they can't
+        // act on.
+        if (cause instanceof ApiError && cause.code === "ROOM_NOT_FOUND") {
+          clearLocalRoom();
+          return;
+        }
+        setError(errorLabel(cause instanceof ApiError ? cause.code : "UNKNOWN_ERROR"));
       }
     });
   }, [clearLocalRoom, runExclusive]);

@@ -94,9 +94,7 @@ describe("SessionService", () => {
 
     const issued = sessions.issue("Cookie君", reply);
     const cookieHeader = `huanghuang_session=${issued.rawToken}`;
-    const resolved = sessions.resolveFromRawToken(
-      extractRawSessionToken({ cookieHeader }),
-    );
+    const resolved = sessions.resolveFromRawToken(extractRawSessionToken({ cookieHeader }));
     expect(resolved?.nickname).toBe("Cookie君");
   });
 });

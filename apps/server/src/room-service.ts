@@ -557,10 +557,7 @@ export class RoomService {
       if (room.actionDeadlineAt === null || Date.parse(room.actionDeadlineAt) > now) continue;
       const seat = this.actingSeat(room);
       if (seat === null) continue;
-      const changed = this.acceptRule(
-        room,
-        this.automaticAction(room, seat),
-      );
+      const changed = this.acceptRule(room, this.automaticAction(room, seat));
       if (!changed) this.refreshDeadline(room, now);
       this.save(room);
       updates.push({ roomId: room.id, version: room.version });

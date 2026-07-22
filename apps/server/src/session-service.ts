@@ -8,7 +8,9 @@ export const SESSION_TOKEN_HEADER = "x-session-token";
 
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 
-export function extractBearerToken(authorizationHeader: string | string[] | undefined): string | null {
+export function extractBearerToken(
+  authorizationHeader: string | string[] | undefined,
+): string | null {
   const raw = Array.isArray(authorizationHeader) ? authorizationHeader[0] : authorizationHeader;
   if (raw === undefined || raw.length === 0) return null;
   const match = /^Bearer\s+(.+)$/i.exec(raw.trim());
@@ -89,7 +91,9 @@ export class SessionService {
         ? (handshake.auth as Record<string, unknown>)
         : undefined;
     const authToken =
-      typeof authRecord?.token === "string" && authRecord.token.length > 0 ? authRecord.token : null;
+      typeof authRecord?.token === "string" && authRecord.token.length > 0
+        ? authRecord.token
+        : null;
     const headerBag = handshake.headers[SESSION_TOKEN_HEADER];
     const sessionTokenHeader =
       typeof headerBag === "string" || Array.isArray(headerBag) ? headerBag : undefined;
