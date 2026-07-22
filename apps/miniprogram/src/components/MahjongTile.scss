@@ -1,4 +1,3 @@
-
 .mj-tile {
   position: relative;
   width: 7.2vmin;
@@ -19,12 +18,12 @@
 }
 
 .mj-tile--compact {
-  width: 3.8vmin;
-  height: 5.4vmin;
-  min-width: 20px;
-  min-height: 28px;
-  max-width: 28px;
-  max-height: 40px;
+  width: 4.6vmin;
+  height: 6.4vmin;
+  min-width: 26px;
+  min-height: 36px;
+  max-width: 34px;
+  max-height: 48px;
 }
 
 .mj-tile--selected {
@@ -39,6 +38,15 @@
 
 .mj-tile--wildcard {
   outline: 2px solid var(--tile-gold, #8a713f);
+}
+
+/* Legal pong/kong source tile — outline + border only, no glow/animation,
+   so it stays a clear, calm hint rather than competing with selection. */
+.mj-tile--highlighted {
+  z-index: 1;
+  border-color: var(--accent, #2f6a4c);
+  outline: 2px solid var(--accent, #2f6a4c);
+  outline-offset: 1px;
 }
 
 .mj-tile__face {
@@ -58,4 +66,20 @@
   color: #fff8e7;
   background: var(--tile-gold, #8a713f);
   text-align: center;
+}
+
+.mj-tile__hint {
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  min-width: 2.4vmin;
+  padding: 0 0.3vmin;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  color: #fff;
+  background: var(--accent, #2f6a4c);
+  font-size: 1.4vmin;
+  line-height: 1.4;
+  text-align: center;
+  white-space: nowrap;
 }

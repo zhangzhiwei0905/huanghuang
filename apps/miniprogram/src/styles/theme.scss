@@ -1,5 +1,24 @@
 /* Web-aligned discreet theme tokens + game shell utilities */
 
+button {
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  -webkit-tap-highlight-color: transparent;
+  line-height: normal;
+}
+
+button::after {
+  border: none;
+}
+
+.is-pressed {
+  opacity: 0.8;
+  transform: scale(0.97);
+}
+
 page {
   --page: #eef6f0;
   --panel: #f8fbf6;
@@ -56,31 +75,18 @@ page[data-theme="premium"] {
   /* Background art is an <Image>, not CSS url() — avoids base64 bloat over 2MB preview limit. */
 }
 
-.game-header {
-  min-height: calc(var(--game-header-height) + env(safe-area-inset-top));
-  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-bottom: 1px solid var(--game-chrome-line);
-  background: var(--game-chrome);
-  color: var(--ink);
-}
-
+/* .game-header box model / colors are owned by the page-specific
+   src/pages/room/index.scss now — that stylesheet has the authoritative,
+   complete definition (and the WAITING-only vs. floating-header split).
+   Only the shared font token stays here. */
 .game-header__meta {
   font-size: 22px;
   color: var(--muted);
 }
 
-.table-surface {
-  position: relative;
-  flex: 1;
-  min-height: 420px;
-  margin: 0 8px;
-  overflow: hidden;
-}
+/* .table-surface sizing is owned by src/pages/room/index.scss.
+   (Previously duplicated here with a conflicting 8px side margin and a
+   420px min-height that fought the full-bleed landscape layout.) */
 
 .panel-card {
   background: color-mix(in srgb, var(--panel) 92%, transparent);

@@ -1,4 +1,3 @@
-
 /* Landscape phone table — proportions closer to web (header / felt / hand / dock) */
 
 .game-shell {
@@ -113,7 +112,7 @@
   background: var(--panel, #f8fbf6) !important;
   color: var(--ink, #272925) !important;
   border: 1px solid var(--line, #cde0d3) !important;
-  border-radius: 0.6vmin !important;
+  border-radius: 999px !important;
 }
 
 .header-btn--danger {
@@ -130,6 +129,97 @@
   background: rgb(122 75 69 / 12%);
   color: var(--danger, #7a4b45);
   font-size: 2.2vmin;
+}
+
+/* On the chrome-free PLAYING/ROUND_RESULT layout there's no light panel
+   behind this text anymore (full-bleed table photo instead), so the
+   low-opacity/dark-on-dark combo above is unreadable. Give it its own
+   opaque pill so it's legible against any part of the background art. */
+.banner-error--floating {
+  position: absolute;
+  z-index: 21;
+  top: calc(7vmin + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 8vmin);
+  margin: 0;
+  padding: 0.8vmin 2vmin;
+  border-radius: 999px;
+  background: #7a4b45;
+  color: #fff;
+  box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 25%);
+  text-align: center;
+}
+
+/* PLAYING / ROUND_RESULT chrome-free header: standalone leave button + info capsule
+   floating over the full-bleed background instead of a translucent bar. */
+.leave-fab {
+  position: absolute !important;
+  z-index: 20;
+  top: calc(1.2vmin + env(safe-area-inset-top));
+  left: calc(1.2vmin + env(safe-area-inset-left));
+  margin: 0 !important;
+  min-height: 5.6vmin !important;
+  height: 5.6vmin !important;
+  line-height: 5.6vmin !important;
+  padding: 0 2.2vmin !important;
+  font-size: 2.1vmin !important;
+  color: #fff !important;
+  background: color-mix(in srgb, #14180f 55%, transparent) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 18%);
+}
+
+.info-capsule {
+  position: absolute;
+  z-index: 20;
+  top: calc(1.2vmin + env(safe-area-inset-top));
+  right: calc(1.2vmin + env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 0.9vmin;
+  max-width: 62vw;
+  padding: 0.7vmin 1.6vmin;
+  border-radius: 999px;
+  background: color-mix(in srgb, #14180f 42%, transparent);
+  box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 18%);
+}
+
+.info-capsule__code {
+  flex-shrink: 0;
+  font-size: 2.2vmin;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.info-capsule__meta {
+  flex-shrink: 0;
+  font-size: 1.8vmin;
+  color: rgb(255 255 255 / 78%);
+  white-space: nowrap;
+}
+
+.info-capsule__meta--warn {
+  color: #ffcf94;
+}
+
+.info-capsule__btn {
+  flex-shrink: 0;
+  margin: 0 !important;
+  min-height: 4.2vmin !important;
+  height: 4.2vmin !important;
+  line-height: 4.2vmin !important;
+  padding: 0 1.6vmin !important;
+  font-size: 1.8vmin !important;
+  color: var(--ink, #272925) !important;
+  background: #fff !important;
+  border-radius: 999px !important;
+}
+
+.info-capsule__btn--danger {
+  color: #fff !important;
+  background: var(--danger, #7a4b45) !important;
 }
 
 /* Waiting lobby — horizontal 4 seats */
@@ -234,7 +324,7 @@
   padding: 0 1.8vmin !important;
   background: var(--surface, #dcece1) !important;
   color: var(--ink, #272925) !important;
-  border-radius: 0.6vmin !important;
+  border-radius: 999px !important;
   font-size: 2.2vmin !important;
 }
 
@@ -251,7 +341,7 @@
   padding: 0 2.4vmin !important;
   background: var(--accent, #2f6a4c) !important;
   color: var(--accent-ink, #f5fbf6) !important;
-  border-radius: 0.6vmin !important;
+  border-radius: 999px !important;
   font-size: 2.5vmin !important;
 }
 
@@ -264,7 +354,7 @@
   background: var(--surface, #dcece1) !important;
   color: var(--ink, #272925) !important;
   border: 1px solid var(--line-strong, #9cbfa9) !important;
-  border-radius: 0.6vmin !important;
+  border-radius: 999px !important;
   font-size: 2.3vmin !important;
 }
 
@@ -282,7 +372,7 @@
   position: absolute;
   z-index: 4;
   min-width: 18vmin;
-  max-width: 26vmin;
+  max-width: 30vmin;
   padding: 0.8vmin 1vmin;
   border: 1px solid var(--line, #cde0d3);
   border-radius: 0.7vmin;
@@ -313,10 +403,13 @@
   transform: translateY(-50%);
 }
 
-/* Self info sits above hand, left-ish like web bottom station */
+/* Self info sits above hand, left-ish like web bottom station.
+   Raised to clear the taller self-area (action buttons ~7.6vmin + gap
+   0.8vmin + hand ~11.8vmin + 0.8vmin outer offset ≈ 21vmin from the
+   bottom edge when action buttons are showing). */
 .player-station.pos-self {
   left: calc(1.2vmin + env(safe-area-inset-left));
-  bottom: 14.5vmin;
+  bottom: 24vmin;
   transform: none;
 }
 
@@ -340,18 +433,48 @@
 .player-station__melds {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3vmin;
+  gap: 0.6vmin;
   margin-top: 0.4vmin;
 }
 
-.meld-chip {
-  font-size: 1.5vmin;
-  padding: 0.1vmin 0.4vmin;
-  border-radius: 0.3vmin;
-  background: var(--surface, #dcece1);
+.meld-group {
+  display: flex;
+  gap: 0.15vmin;
+}
+
+/* Melds/released-wildcards use the same small tile size as the discard
+   piles — one consistent "small tile" scale everywhere that isn't the
+   player's own hand, instead of full compact size ballooning multi-meld
+   stations tall enough to crowd the discard rings above/beside them. */
+.player-station__melds .mj-tile--compact {
+  width: 3.6vmin;
+  height: 5vmin;
+  min-width: 20px;
+  min-height: 28px;
+  max-width: 26px;
+  max-height: 36px;
+}
+
+.released-wildcard-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.3vmin;
+  color: var(--tile-gold, #8a713f);
+}
+
+.released-wildcard-group__count {
+  padding-bottom: 0.2vmin;
+  font-size: 1.7vmin;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Center cluster */
+/* One unified frame for indicator / remaining-wall+countdown / wildcard —
+   previously only the main block had a border+background and the indicator
+   and wildcard blocks floated loose next to it, which read as "part of the
+   background" rather than a distinct info panel clearly set apart from the
+   discard rings around it. */
 .table-center {
   position: absolute;
   left: 50%;
@@ -361,7 +484,10 @@
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: 1.2vmin;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 1vmin;
+  background: color-mix(in srgb, var(--panel, #f8fbf6) 88%, transparent);
+  box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 16%);
 }
 
 .center-block {
@@ -371,26 +497,36 @@
   justify-content: center;
   gap: 0.5vmin;
   min-width: 8vmin;
+  padding: 0.8vmin 1vmin;
+}
+
+.center-block + .center-block {
+  border-left: 1px solid var(--line, #cde0d3);
 }
 
 .center-block--main {
   min-width: 14vmin;
-  padding: 1vmin 1.4vmin;
-  border-radius: 0.8vmin;
-  background: color-mix(in srgb, var(--panel, #f8fbf6) 82%, transparent);
-  border: 1px solid var(--line, #cde0d3);
+  padding: 0.8vmin 1.4vmin;
 }
 
 .center-label {
   font-size: 1.7vmin;
   color: var(--muted, #5f625b);
+  white-space: nowrap;
 }
 
+/* room.roundPhase/stage-derived text is short Chinese copy now (phaseLabel()
+   in index.tsx), but this is still a hard cap: table-center's footprint
+   must stay predictable since the discard rings above/below it are offset
+   assuming a fixed, single-line height. */
 .center-status {
+  max-width: 18vmin;
+  overflow: hidden;
   font-size: 2.2vmin;
   font-weight: 600;
   text-align: center;
-  max-width: 18vmin;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .center-empty {
@@ -398,62 +534,109 @@
   color: var(--muted, #5f625b);
 }
 
-/* Discards around center — web-like ring */
+.center-countdown {
+  min-width: 6vmin;
+  padding: 0.2vmin 1vmin;
+  border: 1px solid var(--line-strong, #9cbfa9);
+  border-radius: 999px;
+  color: var(--ink, #272925);
+  font-size: 2.2vmin;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.center-countdown.is-urgent {
+  border-color: var(--danger, #7a4b45);
+  color: var(--danger, #7a4b45);
+}
+
+.center-countdown__unit {
+  margin-left: 0.1vmin;
+  font-size: 1.5vmin;
+  font-weight: 500;
+}
+
+/* Discards ring — all four zones anchor off the same table-center origin
+   (top:46%/left:50%) that .table-center uses, so they read as radiating
+   out from the middle of the table instead of four independently-tuned
+   edge offsets. */
 .discard-zone {
   position: absolute;
+  top: 46%;
+  left: 50%;
   z-index: 2;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35vmin;
+  gap: 0.5vmin;
   pointer-events: none;
 }
 
+/* All four discard piles use the same tile size regardless of orientation
+   — top/bottom/left/right must read as one consistent set, not "big tiles
+   up top, small tiles on the sides". Smaller than the general compact size
+   (used by melds/indicator/wildcard) so a 6-tile row fits every direction,
+   including left/right where the pile also reads left-to-right now. */
+.discard-zone .mj-tile--compact {
+  width: 3.6vmin;
+  height: 5vmin;
+  min-width: 20px;
+  min-height: 28px;
+  max-width: 26px;
+  max-height: 36px;
+}
+
+/* table-center is now one unified framed panel (~10vmin tall incl. padding
+   +border) — half-height ~5vmin. 9.5vmin leaves a clear ~4.5vmin gap. */
 .discard-zone.pos-opposite {
-  top: 12vmin;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 36vmin;
+  transform: translate(-50%, calc(-100% - 9.5vmin));
+  width: 26vmin;
   justify-content: center;
 }
 
 .discard-zone.pos-self {
-  left: 50%;
-  bottom: 15.5vmin;
-  transform: translateX(-50%);
-  max-width: 40vmin;
+  transform: translate(-50%, 9.5vmin);
+  width: 26vmin;
   justify-content: center;
 }
 
+/* table-center is ~36vmin wide (two ~9.6vmin side blocks + a ~16.8vmin main
+   block, each with its own padding, no more inter-block gap since borders
+   sit between them) — half-width ~18vmin. 20vmin clears it with margin.
+   Left/right piles read left-to-right in a single row (not stacked top to
+   bottom), same tile size as every other direction. */
 .discard-zone.pos-left {
-  left: calc(22vmin + env(safe-area-inset-left));
-  top: 50%;
-  transform: translateY(-50%);
-  max-width: 12vmin;
+  transform: translate(calc(-100% - 20vmin), -50%);
+  width: 27vmin;
   flex-direction: row;
-  flex-wrap: wrap;
-}
-
-.discard-zone.pos-right {
-  right: calc(22vmin + env(safe-area-inset-right));
-  top: 50%;
-  transform: translateY(-50%);
-  max-width: 12vmin;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
-/* Hand strip — web self-area bottom */
+.discard-zone.pos-right {
+  transform: translate(20vmin, -50%);
+  width: 27vmin;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
+
+/* Self play area: action buttons float directly above the hand, both
+   stacked in one column so the button row only takes space when it has
+   buttons to show (ActionDock renders null when there's nothing legal). */
 .self-area {
   position: absolute;
   z-index: 5;
   left: 50%;
   bottom: 0.8vmin;
   transform: translateX(-50%);
-  width: min(92vw, 900px);
+  width: min(94vw, 900px);
   max-width: calc(100vw - 4vmin - env(safe-area-inset-left) - env(safe-area-inset-right));
-  padding: 0.4vmin 1vmin;
   box-sizing: border-box;
-  background: color-mix(in srgb, var(--game-chrome, rgb(238 246 240 / 32%)) 70%, transparent);
-  border-radius: 0.6vmin;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8vmin;
 }
 
 .self-hand {
@@ -464,14 +647,40 @@
   align-items: flex-end;
   overflow-x: auto;
   min-height: 11vmin;
-  padding: 0.4vmin 0;
+  width: 100%;
+  padding: 0.4vmin 1vmin;
+  box-sizing: border-box;
+  background: color-mix(in srgb, #14180f 22%, transparent);
+  border-radius: 999px;
 }
 
-.result-bar {
-  flex: 0 0 auto;
-  padding: 0.8vmin 1.6vmin;
+/* The just-drawn tile sits apart from the sorted hand (see `drawnTile` in
+   index.tsx) — a thin divider + a small "摸" label mark it as separate,
+   same idea as the web client's drawn-tile-slot. */
+.drawn-tile-slot {
+  position: relative;
   display: flex;
-  justify-content: center;
-  background: var(--game-chrome, rgb(238 246 240 / 32%));
-  border-top: 1px solid var(--game-chrome-line, rgb(77 116 91 / 24%));
+  flex-shrink: 0;
+  align-items: flex-end;
+  margin-left: 1.6vmin;
+}
+
+.drawn-tile-slot::before {
+  content: "";
+  position: absolute;
+  top: 0.8vmin;
+  bottom: 0.4vmin;
+  left: -0.8vmin;
+  border-left: 1px solid rgb(255 255 255 / 32%);
+}
+
+.drawn-tile-slot__label {
+  position: absolute;
+  top: -1.9vmin;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 1.6vmin;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
 }

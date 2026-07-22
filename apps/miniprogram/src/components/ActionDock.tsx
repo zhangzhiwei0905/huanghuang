@@ -10,13 +10,7 @@ type ActionDockProps = {
 };
 
 export function ActionDock({ buttons, disabled = false, onAction }: ActionDockProps) {
-  if (buttons.length === 0) {
-    return (
-      <View className="action-dock action-dock--empty">
-        <Text className="action-dock__hint">等待可执行操作</Text>
-      </View>
-    );
-  }
+  if (buttons.length === 0) return null;
 
   return (
     <View className="action-dock">
@@ -26,11 +20,16 @@ export function ActionDock({ buttons, disabled = false, onAction }: ActionDockPr
           <View
             key={button.action}
             className={`action-dock__btn${disabled ? " is-disabled" : ""}`}
+            hoverClass={disabled ? "" : "is-pressed"}
             onClick={() => {
               if (!disabled) onAction(button);
             }}
           >
-            <Image className="action-dock__img" src={ACTION_BUTTON_IMAGES[kind]} mode="aspectFit" />
+            <Image
+              className="action-dock__img"
+              src={ACTION_BUTTON_IMAGES[kind]}
+              mode="aspectFill"
+            />
             <Text className="action-dock__label">{button.label}</Text>
           </View>
         );

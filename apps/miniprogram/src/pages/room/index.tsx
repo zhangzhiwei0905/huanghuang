@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import type { BaseScore, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
 import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
+import { RoundSettlementModal } from "../../components/RoundSettlementModal";
 import { useRoom } from "../../hooks/useRoom";
 import {
   hasValidTileSelection,
@@ -14,10 +15,11 @@ import {
 import {
   deriveAddedKongPayload,
   deriveConcealedKongPayload,
+  handHighlightGroups,
 } from "../../lib/actionEligibility";
 import { decideTilePress } from "../../lib/handInteraction";
 import { isWildcardTile } from "../../lib/tileArt";
-import { sortHand, tileLabel } from "../../lib/tiles";
+import { sortHand } from "../../lib/tiles";
 import "./index.scss";
 
 const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
@@ -31,6 +33,23 @@ function relativePosition(seat: Seat, selfSeat: Seat): number {
 function selfPlayer(room: RoomProjection) {
   if (room.selfSeat === null) return null;
   return room.players[room.selfSeat] ?? null;
+}
+
+function deadlineSeconds(deadline: string | null): number | null {
+  return deadline === null
+    ? null
+    : Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000));
+}
+
+// room.roundPhase is a raw backend enum ("TURN_DECISION" / "DISCARD_RESPONSE" / ...),
+// not display copy — rendering it directly overflowed the table-center block and
+// pushed it into the discard rings above/below it.
+function phaseLabel(room: RoomProjection): string {
+  if (room.stage === "ROUND_RESULT") return "本局结束";
+  if (room.roundPhase === "DISCARD_RESPONSE") return "等待响应";
+  if (room.roundPhase === "TURN_DECISION") return "回合进行中";
+  if (room.roundPhase === "ROUND_OVER") return "本局结束";
+  return "等待中";
 }
 
 export default function RoomPage() {
@@ -49,13 +68,42 @@ export default function RoomPage() {
 
   const self = room === null ? null : selfPlayer(room);
   const selfSeat = room?.selfSeat ?? 0;
-  const hand = useMemo(() => sortHand(self?.hand ?? []), [self?.hand]);
+  const drawnTileId = room?.selfDrawnTileId ?? null;
+  // The freshly-drawn tile stays out of the sorted hand — and visually off to
+  // the right in a dedicated slot — until the player acts on it (discards it,
+  // melds it in, etc.), instead of jumping straight into its sorted position.
+  const hand = useMemo(
+    () => sortHand((self?.hand ?? []).filter((tile) => tile.id !== drawnTileId)),
+    [self?.hand, drawnTileId],
+  );
+  const drawnTile = useMemo(
+    () => self?.hand?.find((tile) => tile.id === drawnTileId) ?? null,
+    [self?.hand, drawnTileId],
+  );
   const selectedTile =
     hand.find((tile) => tile.id === selectedTileId) ??
-    (selectedTileId === null ? null : (hand[0] ?? null));
+    (drawnTile?.id === selectedTileId ? drawnTile : null);
+  const handHighlight = useMemo(
+    () =>
+      room === null || self === null
+        ? { pongTileIds: new Set<string>(), kongTileIds: new Set<string>() }
+        : handHighlightGroups(room, self),
+    [room, self],
+  );
   const buttons = primaryActionButtons(room?.legalActions ?? []);
   const canDiscard = room?.legalActions.includes("DISCARD_TILE") === true;
   const locked = roomCtrl.busy || roomCtrl.connectionStatus !== "connected";
+  const actionDeadlineAt = room?.actionDeadlineAt ?? null;
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(() =>
+    deadlineSeconds(actionDeadlineAt),
+  );
+
+  useEffect(() => {
+    setSecondsRemaining(deadlineSeconds(actionDeadlineAt));
+    if (actionDeadlineAt === null) return;
+    const timer = setInterval(() => setSecondsRemaining(deadlineSeconds(actionDeadlineAt)), 500);
+    return () => clearInterval(timer);
+  }, [actionDeadlineAt]);
 
   async function copyRoomCode() {
     if (room === null) return;
@@ -130,7 +178,11 @@ export default function RoomPage() {
         <View className="game-shell__overlay" />
         <View className="game-shell__content empty-shell-content">
           <Text className="empty-title">{roomCtrl.notice ?? "尚未进入房间"}</Text>
-          <Button className="btn-accent" onClick={() => void Taro.navigateBack()}>
+          <Button
+            className="btn-accent"
+            hoverClass="is-pressed"
+            onClick={() => void Taro.navigateBack()}
+          >
             返回大厅
           </Button>
         </View>
@@ -143,37 +195,96 @@ export default function RoomPage() {
       <Image className="game-shell__bg" src={tableBackground} mode="aspectFill" />
       <View className="game-shell__overlay" />
       <View className="game-shell__content">
-        <View className="game-header">
-          <Button className="header-btn" disabled={roomCtrl.busy} onClick={() => void roomCtrl.leaveRoom()}>
-            离开
-          </Button>
-          <View className="room-code">
-            <Text className="room-code__label">{room.mode === "BOT" ? "MODE" : "ROOM"}</Text>
-            <Text className="room-code__value">
-              {room.mode === "BOT" ? "人机对战" : room.roomCode}
-            </Text>
+        {room.stage === "WAITING" ? (
+          <View className="game-header">
+            <Button
+              className="header-btn"
+              hoverClass="is-pressed"
+              disabled={roomCtrl.busy}
+              onClick={() => void roomCtrl.leaveRoom()}
+            >
+              离开
+            </Button>
+            <View className="room-code">
+              <Text className="room-code__label">{room.mode === "BOT" ? "MODE" : "ROOM"}</Text>
+              <Text className="room-code__value">
+                {room.mode === "BOT" ? "人机对战" : room.roomCode}
+              </Text>
+            </View>
+            <View className="game-meta">
+              <Text className="game-header__meta">底分 {room.baseScore}</Text>
+              <Text className="game-header__meta">{roomCtrl.connectionStatus}</Text>
+              {room.mode === "FRIEND" ? (
+                <Button
+                  className="header-btn"
+                  hoverClass="is-pressed"
+                  onClick={() => void copyRoomCode()}
+                >
+                  {inviteStatus}
+                </Button>
+              ) : null}
+              {room.mode === "FRIEND" && room.isOwner ? (
+                <Button
+                  className="header-btn header-btn--danger"
+                  hoverClass="is-pressed"
+                  disabled={roomCtrl.busy}
+                  onClick={() => void roomCtrl.dissolve()}
+                >
+                  解散
+                </Button>
+              ) : null}
+            </View>
           </View>
-          <View className="game-meta">
-            <Text className="game-header__meta">底分 {room.baseScore}</Text>
-            <Text className="game-header__meta">{roomCtrl.connectionStatus}</Text>
-            {room.mode === "FRIEND" ? (
-              <Button className="header-btn" onClick={() => void copyRoomCode()}>
-                {inviteStatus}
-              </Button>
-            ) : null}
-            {room.mode === "FRIEND" && room.isOwner ? (
-              <Button
-                className="header-btn header-btn--danger"
-                disabled={roomCtrl.busy}
-                onClick={() => void roomCtrl.dissolve()}
-              >
-                解散
-              </Button>
-            ) : null}
-          </View>
-        </View>
+        ) : (
+          <>
+            <Button
+              className="leave-fab"
+              hoverClass="is-pressed"
+              disabled={roomCtrl.busy}
+              onClick={() => void roomCtrl.leaveRoom()}
+            >
+              离开
+            </Button>
+            <View className="info-capsule">
+              <Text className="info-capsule__code">
+                {room.mode === "BOT" ? "人机对战" : room.roomCode}
+              </Text>
+              <Text className="info-capsule__meta">底分{room.baseScore}</Text>
+              {roomCtrl.connectionStatus !== "connected" ? (
+                <Text className="info-capsule__meta info-capsule__meta--warn">
+                  {roomCtrl.connectionStatus}
+                </Text>
+              ) : null}
+              {room.mode === "FRIEND" ? (
+                <Button
+                  className="info-capsule__btn"
+                  hoverClass="is-pressed"
+                  onClick={() => void copyRoomCode()}
+                >
+                  {inviteStatus}
+                </Button>
+              ) : null}
+              {room.mode === "FRIEND" && room.isOwner ? (
+                <Button
+                  className="info-capsule__btn info-capsule__btn--danger"
+                  hoverClass="is-pressed"
+                  disabled={roomCtrl.busy}
+                  onClick={() => void roomCtrl.dissolve()}
+                >
+                  解散
+                </Button>
+              ) : null}
+            </View>
+          </>
+        )}
 
-        {roomCtrl.error !== null ? <Text className="banner-error">{roomCtrl.error}</Text> : null}
+        {roomCtrl.error !== null ? (
+          <Text
+            className={`banner-error${room.stage === "WAITING" ? "" : " banner-error--floating"}`}
+          >
+            {roomCtrl.error}
+          </Text>
+        ) : null}
 
         {room.stage === "WAITING" ? (
           <View className="waiting-panel">
@@ -181,7 +292,11 @@ export default function RoomPage() {
               <Text className="waiting-title">等待开局</Text>
               <View className="invite-row">
                 <Text className="invite-code">{room.roomCode}</Text>
-                <Button className="btn-accent" onClick={() => void copyRoomCode()}>
+                <Button
+                  className="btn-accent"
+                  hoverClass="is-pressed"
+                  onClick={() => void copyRoomCode()}
+                >
                   {inviteStatus}
                 </Button>
               </View>
@@ -193,7 +308,7 @@ export default function RoomPage() {
                     className={`lobby-seat${seat.isSelf ? " is-self" : ""}${seat.ready ? " is-ready" : ""}`}
                   >
                     <Text className="lobby-seat__name">
-                      {seat.occupied ? seat.nickname ?? "玩家" : "空位"}
+                      {seat.occupied ? (seat.nickname ?? "玩家") : "空位"}
                     </Text>
                     <Text className="lobby-seat__meta">
                       座{seat.seat}
@@ -210,6 +325,7 @@ export default function RoomPage() {
                     <Button
                       key={score}
                       className={`score-chip${room.baseScore === score ? " is-active" : ""}`}
+                      hoverClass="is-pressed"
                       disabled={roomCtrl.busy || room.baseScore === score}
                       onClick={() => void roomCtrl.updateBaseScore(score)}
                     >
@@ -219,10 +335,20 @@ export default function RoomPage() {
                 </View>
               ) : null}
               <View className="waiting-actions">
-                <Button className="btn-accent" disabled={roomCtrl.busy} onClick={() => void roomCtrl.ready()}>
+                <Button
+                  className="btn-accent"
+                  hoverClass="is-pressed"
+                  disabled={roomCtrl.busy}
+                  onClick={() => void roomCtrl.ready()}
+                >
                   {room.selfReady ? "取消准备" : "准备"}
                 </Button>
-                <Button className="btn-ghost" disabled={roomCtrl.busy} onClick={() => void roomCtrl.leaveRoom()}>
+                <Button
+                  className="btn-ghost"
+                  hoverClass="is-pressed"
+                  disabled={roomCtrl.busy}
+                  onClick={() => void roomCtrl.leaveRoom()}
+                >
                   离开房间
                 </Button>
               </View>
@@ -236,6 +362,7 @@ export default function RoomPage() {
                 if (player === undefined) return null;
                 const pos = POSITION_CLASS[relativePosition(seat, selfSeat)] ?? "pos-self";
                 const active = room.actingSeat === seat;
+                const latestReleasedWildcard = player.releasedWildcards.at(-1) ?? null;
                 return (
                   <View
                     key={seat}
@@ -251,14 +378,34 @@ export default function RoomPage() {
                       分{player.score} · 手{player.handCount} · 倍{player.personalMultiplier}
                       {player.connected ? "" : " · 离"}
                     </Text>
-                    <View className="player-station__melds">
-                      {player.melds.map((meld) => (
-                        <Text key={meld.id} className="meld-chip">
-                          {meld.kind === "PONG" ? "碰" : "杠"}
-                          {tileLabel(meld.tileKind)}
-                        </Text>
-                      ))}
-                    </View>
+                    {player.melds.length > 0 || latestReleasedWildcard !== null ? (
+                      <View className="player-station__melds">
+                        {player.melds.map((meld) => (
+                          <View key={meld.id} className="meld-group">
+                            {meld.tileIds.map((tileId) => (
+                              <MahjongTile
+                                key={tileId}
+                                compact
+                                tile={{ id: tileId, ...meld.tileKind }}
+                                wildcardKind={room.wildcardKind}
+                              />
+                            ))}
+                          </View>
+                        ))}
+                        {latestReleasedWildcard !== null ? (
+                          <View className="released-wildcard-group">
+                            <MahjongTile
+                              compact
+                              tile={latestReleasedWildcard}
+                              wildcardKind={room.wildcardKind}
+                            />
+                            <Text className="released-wildcard-group__count">
+                              ×{player.releasedWildcards.length}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    ) : null}
                   </View>
                 );
               })}
@@ -267,16 +414,29 @@ export default function RoomPage() {
                 <View className="center-block">
                   <Text className="center-label">亮牌</Text>
                   {room.indicatorTile !== null ? (
-                    <MahjongTile tile={room.indicatorTile} compact wildcardKind={room.wildcardKind} />
+                    <MahjongTile
+                      tile={room.indicatorTile}
+                      compact
+                      wildcardKind={room.wildcardKind}
+                    />
                   ) : (
                     <Text className="center-empty">—</Text>
                   )}
                 </View>
                 <View className="center-block center-block--main">
                   <Text className="center-label">余牌 {room.wallRemaining}</Text>
-                  <Text className="center-status">
-                    {room.stage === "ROUND_RESULT" ? "本局结束" : room.roundPhase ?? room.stage}
-                  </Text>
+                  <Text className="center-status">{phaseLabel(room)}</Text>
+                  {secondsRemaining !== null &&
+                  room.roundPhase !== "ROUND_OVER" &&
+                  roomCtrl.connectionStatus === "connected" &&
+                  roomCtrl.pendingAction === null ? (
+                    <Text
+                      className={`center-countdown${secondsRemaining <= 5 ? " is-urgent" : ""}`}
+                    >
+                      {secondsRemaining}
+                      <Text className="center-countdown__unit">秒</Text>
+                    </Text>
+                  ) : null}
                 </View>
                 <View className="center-block">
                   <Text className="center-label">赖子</Text>
@@ -296,17 +456,27 @@ export default function RoomPage() {
                 const player = room.players[seat];
                 if (player === undefined) return null;
                 const pos = POSITION_CLASS[relativePosition(seat, selfSeat)] ?? "pos-self";
-                const discards = player.discards.slice(-8);
+                const discards = player.discards.slice(-6);
                 return (
                   <View key={`d-${seat}`} className={`discard-zone ${pos}`}>
                     {discards.map((tile) => (
-                      <MahjongTile key={tile.id} tile={tile} compact wildcardKind={room.wildcardKind} />
+                      <MahjongTile
+                        key={tile.id}
+                        tile={tile}
+                        compact
+                        wildcardKind={room.wildcardKind}
+                      />
                     ))}
                   </View>
                 );
               })}
 
               <View className="self-area">
+                <ActionDock
+                  buttons={buttons}
+                  disabled={locked}
+                  onAction={(button) => void onAction(button)}
+                />
                 <View className="self-hand">
                   {hand.map((tile) => (
                     <MahjongTile
@@ -314,21 +484,56 @@ export default function RoomPage() {
                       tile={tile}
                       selected={tile.id === selectedTileId}
                       wildcardKind={room.wildcardKind}
+                      highlighted={
+                        handHighlight.kongTileIds.has(tile.id) ||
+                        handHighlight.pongTileIds.has(tile.id)
+                      }
+                      highlightHint={
+                        handHighlight.kongTileIds.has(tile.id)
+                          ? "可杠"
+                          : handHighlight.pongTileIds.has(tile.id)
+                            ? "可碰"
+                            : undefined
+                      }
                       onPress={onTilePress}
                     />
                   ))}
+                  {drawnTile !== null ? (
+                    <View className="drawn-tile-slot">
+                      <Text className="drawn-tile-slot__label">摸</Text>
+                      <MahjongTile
+                        tile={drawnTile}
+                        selected={drawnTile.id === selectedTileId}
+                        wildcardKind={room.wildcardKind}
+                        highlighted={
+                          handHighlight.kongTileIds.has(drawnTile.id) ||
+                          handHighlight.pongTileIds.has(drawnTile.id)
+                        }
+                        highlightHint={
+                          handHighlight.kongTileIds.has(drawnTile.id)
+                            ? "可杠"
+                            : handHighlight.pongTileIds.has(drawnTile.id)
+                              ? "可碰"
+                              : undefined
+                        }
+                        onPress={onTilePress}
+                      />
+                    </View>
+                  ) : null}
                 </View>
               </View>
             </View>
 
-            <ActionDock buttons={buttons} disabled={locked} onAction={(button) => void onAction(button)} />
-
-            {room.stage === "ROUND_RESULT" && room.mode === "BOT" ? (
-              <View className="result-bar">
-                <Button className="btn-accent" disabled={roomCtrl.busy} onClick={() => void roomCtrl.continueBot()}>
-                  再来一局
-                </Button>
-              </View>
+            {room.roundSettlement !== null ? (
+              <RoundSettlementModal
+                settlement={room.roundSettlement}
+                players={room.players}
+                wildcardKind={room.wildcardKind}
+                mode={room.mode}
+                busy={roomCtrl.busy}
+                onContinue={() => void roomCtrl.continueBot()}
+                onLeave={() => void roomCtrl.leaveRoom()}
+              />
             ) : null}
           </>
         )}

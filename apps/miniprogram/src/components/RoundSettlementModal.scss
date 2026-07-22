@@ -1,0 +1,193 @@
+.settlement-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3vmin;
+  background: rgb(20 24 22 / 62%);
+}
+
+.settlement-modal {
+  width: min(92vw, 130vmin);
+  max-height: calc(100vh - 6vmin);
+  overflow-y: auto;
+  box-sizing: border-box;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 1.4vmin;
+  padding: 2.4vmin 2.8vmin;
+  background: var(--panel, #f8fbf6);
+  color: var(--ink, #272925);
+  box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 30%);
+}
+
+.settlement-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2vmin;
+  margin-bottom: 1.2vmin;
+  border-bottom: 1px solid var(--line, #cde0d3);
+  padding-bottom: 1.6vmin;
+}
+
+.settlement-eyebrow {
+  display: block;
+  color: var(--muted, #5f625b);
+  font-size: 1.6vmin;
+  letter-spacing: 0.12em;
+}
+
+.settlement-outcome {
+  display: block;
+  margin-top: 0.4vmin;
+  font-size: 3.2vmin;
+  font-weight: 700;
+}
+
+.settlement-modal.is-hard-win .settlement-outcome {
+  color: var(--accent, #2f6a4c);
+}
+
+.settlement-modal.is-draw .settlement-outcome {
+  color: var(--muted, #5f625b);
+}
+
+.settlement-meta {
+  flex-shrink: 0;
+  color: var(--muted, #5f625b);
+  font-size: 1.9vmin;
+  white-space: nowrap;
+}
+
+.settlement-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.settlement-row {
+  display: grid;
+  grid-template-columns: minmax(14vmin, 18vmin) minmax(0, 1fr) 8vmin 13vmin;
+  align-items: center;
+  gap: 1.4vmin;
+  border-top: 1px solid var(--line, #cde0d3);
+  padding: 1.2vmin 0.6vmin;
+}
+
+.settlement-row:first-child {
+  border-top: none;
+}
+
+.settlement-row.is-winner {
+  border-radius: 0.6vmin;
+  background: color-mix(in srgb, var(--accent, #2f6a4c) 8%, transparent);
+}
+
+.settlement-identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2vmin;
+}
+
+.settlement-name {
+  overflow: hidden;
+  font-size: 2.1vmin;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settlement-role {
+  color: var(--muted, #5f625b);
+  font-size: 1.6vmin;
+  white-space: nowrap;
+}
+
+.settlement-hand {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  overflow-x: auto;
+}
+
+/* A full hand (13-14 tiles) at the general compact size doesn't fit this
+   column without scrolling. Shrink further and fan the tiles with a small
+   negative overlap (same technique as the web settlement modal) so the
+   whole hand is visible at a glance instead of needing a scrollbar. */
+.settlement-hand .mj-tile--compact {
+  width: 3.2vmin;
+  height: 4.5vmin;
+  min-width: 18px;
+  min-height: 25px;
+  max-width: 24px;
+  max-height: 33px;
+  margin-left: -0.9vmin;
+}
+
+.settlement-hand .mj-tile--compact:first-child {
+  margin-left: 0;
+}
+
+.settlement-multiplier {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2vmin;
+}
+
+.settlement-multiplier__label {
+  color: var(--muted, #5f625b);
+  font-size: 1.5vmin;
+}
+
+.settlement-multiplier__value {
+  font-variant-numeric: tabular-nums;
+  font-size: 2.2vmin;
+  font-weight: 700;
+}
+
+.settlement-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3vmin;
+}
+
+.settlement-score__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5vmin;
+}
+
+.settlement-score__label {
+  color: var(--muted, #5f625b);
+  font-size: 1.5vmin;
+}
+
+.settlement-score__value {
+  font-variant-numeric: tabular-nums;
+  font-size: 2.2vmin;
+  font-weight: 700;
+}
+
+.settlement-score__value--total {
+  color: var(--muted, #5f625b);
+  font-size: 1.8vmin;
+  font-weight: 600;
+}
+
+.settlement-row.is-gain .settlement-score__value:not(.settlement-score__value--total) {
+  color: var(--accent, #2f6a4c);
+}
+
+.settlement-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1.4vmin;
+  margin-top: 1.6vmin;
+  border-top: 1px solid var(--line, #cde0d3);
+  padding-top: 1.4vmin;
+}

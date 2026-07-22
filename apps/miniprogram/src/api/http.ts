@@ -27,16 +27,23 @@ function captureSessionToken(header: Record<string, unknown> | undefined): void 
   }
 }
 
-async function request<T>(path: string, init?: {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
-  data?: unknown;
-}): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: {
+    method?: "GET" | "POST" | "PATCH" | "DELETE";
+    data?: unknown;
+  },
+): Promise<T> {
   const response = await Taro.request({
     url: `${API_BASE}${path}`,
     method: init?.method ?? "GET",
     data: init?.data,
     header: {
-      "Content-Type": "application/json",
+      // Fastify's default JSON body parser rejects a request that declares
+      // this content type but sends no body (FST_ERR_CTP_EMPTY_JSON_BODY,
+      // HTTP 400) — e.g. DELETE /api/rooms/:code (leave room) never sends a
+      // body. Only advertise JSON when there's actually a body to describe.
+      ...(init?.data !== undefined ? { "Content-Type": "application/json" } : {}),
       ...authHeaders(),
     },
   });
@@ -87,18 +94,31 @@ export const roomApi = {
   },
 };
 
+// WeChat Mini Program's JS runtime has no `crypto.randomUUID` (no Web Crypto
+// API at all), so the previous fallback produced a `req_<timestamp>_<random>`
+// string. The server's commandEnvelopeSchema requires `requestId` to be a
+// real RFC 4122 UUID (`z.uuid()`) and rejects anything else with
+// INVALID_COMMAND — which silently failed every single game:command sent
+// from the mini program, regardless of game state or selection.
+function randomUUIDv4(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/gu, (char) => {
+    const random = (Math.random() * 16) | 0;
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 export function createCommand(
   room: RoomProjection,
   type: CommandEnvelope["type"],
   payload: Record<string, unknown> = {},
 ): CommandEnvelope {
-  const requestId =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   return {
     type,
-    requestId,
+    requestId: randomUUIDv4(),
     roomId: room.roomId,
     roundId: null,
     expectedVersion: room.version,

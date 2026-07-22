@@ -1,12 +1,7 @@
 import type { BaseScore, CommandEnvelope, RoomProjection } from "@huanghuang/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-mp";
-import {
-  ApiError,
-  createCommand,
-  roomApi,
-  type CommandAcknowledge,
-} from "../api/http";
+import { ApiError, createCommand, roomApi, type CommandAcknowledge } from "../api/http";
 import { getStoredSessionToken } from "../api/session";
 import { API_BASE } from "../config";
 import { errorLabel } from "../lib/errors";

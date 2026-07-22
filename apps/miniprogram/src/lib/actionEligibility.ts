@@ -3,6 +3,13 @@ import type { Meld, PlayerProjection, RoomProjection, Tile, TileKind } from "@hu
 export type ConcealedKongPayload = { suit: TileKind["suit"]; rank: TileKind["rank"] };
 export type AddedKongPayload = { meldId: string; tileId: string };
 
+export type HandHighlight = {
+  /** Hand tiles eligible as a pong / indicator-pong-kong source (2-tile match). */
+  pongTileIds: Set<string>;
+  /** Hand tiles eligible as an exposed-kong / concealed-kong / added-kong source. */
+  kongTileIds: Set<string>;
+};
+
 function sameKind(tile: { suit: string; rank: number }, kind: TileKind | null): boolean {
   return kind !== null && tile.suit === kind.suit && tile.rank === kind.rank;
 }
@@ -34,6 +41,21 @@ export function concealedKongGroups(hand: Tile[], wildcardKind: TileKind | null)
     .map((tiles) => tiles.slice(0, 4));
 }
 
+/**
+ * Hand tiles matching an existing self PONG meld's suit/rank, excluding the
+ * wildcard kind — these are the candidate source tiles for an added kong.
+ */
+export function addedKongSourceTiles(
+  hand: Tile[],
+  melds: Meld[],
+  wildcardKind: TileKind | null,
+): Tile[] {
+  const pongKinds = melds.filter((meld) => meld.kind === "PONG").map((meld) => meld.tileKind);
+  return hand.filter(
+    (tile) => !sameKind(tile, wildcardKind) && pongKinds.some((kind) => sameKind(tile, kind)),
+  );
+}
+
 export function findAddedKongMeld(
   melds: Meld[],
   tile: { suit: string; rank: number },
@@ -62,6 +84,49 @@ export function deriveConcealedKongPayload(
       : (groups.find((group) => group.some((tile) => tile.id === selectedTile.id)) ?? groups[0]);
   if (preferred === undefined || preferred[0] === undefined) return null;
   return { suit: preferred[0].suit, rank: preferred[0].rank };
+}
+
+/**
+ * Derives which hand tiles should be highlighted as legal pong/kong source
+ * tiles, based purely on `room.legalActions` and the player's own hand.
+ * Only computes the branch(es) relevant to whichever actions are currently
+ * legal, so nothing is highlighted when the matching action isn't legal.
+ */
+export function handHighlightGroups(room: RoomProjection, self: PlayerProjection): HandHighlight {
+  const pongTileIds = new Set<string>();
+  const kongTileIds = new Set<string>();
+  const hand = self.hand ?? [];
+  const legal = room.legalActions;
+  const pendingTile = pendingResponseTile(room);
+
+  if (pendingTile !== null) {
+    if (legal.includes("CLAIM_EXPOSED_KONG")) {
+      hand
+        .filter((tile) => sameKind(tile, pendingTile))
+        .slice(0, 3)
+        .forEach((tile) => kongTileIds.add(tile.id));
+    }
+    if (legal.includes("CLAIM_PONG") || legal.includes("CLAIM_INDICATOR_PONG_KONG")) {
+      hand
+        .filter((tile) => sameKind(tile, pendingTile))
+        .slice(0, 2)
+        .forEach((tile) => pongTileIds.add(tile.id));
+    }
+  }
+
+  if (legal.includes("DECLARE_CONCEALED_KONG")) {
+    for (const group of concealedKongGroups(hand, room.wildcardKind)) {
+      for (const tile of group) kongTileIds.add(tile.id);
+    }
+  }
+
+  if (legal.includes("DECLARE_ADDED_KONG")) {
+    for (const tile of addedKongSourceTiles(hand, self.melds, room.wildcardKind)) {
+      kongTileIds.add(tile.id);
+    }
+  }
+
+  return { pongTileIds, kongTileIds };
 }
 
 export function deriveAddedKongPayload(
