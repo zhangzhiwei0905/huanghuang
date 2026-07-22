@@ -415,3 +415,44 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - Optional: UI closer to web, real-device on LAN, deploy miniprogram branch server + 合法域名
+
+
+## Session 10: 小程序横屏体验优化：玉石风格重设计 + 生产部署
+
+**Date**: 2026-07-22
+**Task**: 小程序横屏体验优化：玉石风格重设计 + 生产部署
+**Branch**: `miniprogram`
+
+### Summary
+
+完成结算弹层/倒计时/弃牌高亮等玩法信息补全，修复 color-mix() 兼容性和碰杠高亮悬空 bug；主页与牌桌整体重设计为玉石麻将牌质感风格并加入分阶段入场动效；出牌/碰等操作按钮裁掉素材内置白边、加入按压反馈；定位并修复小程序 DELETE 请求 400（wx.request 强制 Content-Type，需服务端容错空 body）；将后端部署到阿里云生产服务器（huanghuang.amazingzz.xyz，与 easyspeak 等项目共存），验证域名/证书/反代/socket.io 全链路；排查真机预览报错（测试号无法配置服务器域名白名单，需注册正式 AppID）并切换到真实 AppID 完成端到端验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cfcf535` | (see git log) |
+| `923ea52` | (see git log) |
+| `9daa1f4` | (see git log) |
+| `78d41b0` | (see git log) |
+| `8b94d0c` | (see git log) |
+| `c1a47de` | (see git log) |
+| `0abb468` | (see git log) |
+| `a1cbe49` | (see git log) |
+| `5961ef6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
