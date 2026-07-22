@@ -434,13 +434,6 @@ export default function RoomPage() {
                       分{player.score} · 手{player.handCount} · 倍{player.personalMultiplier}
                       {player.connected ? "" : " · 离"}
                     </Text>
-                    {seat !== room.selfSeat && player.handCount > 0 ? (
-                      <View className="hand-backs">
-                        {Array.from({ length: Math.min(player.handCount, 14) }, (_, index) => (
-                          <View key={index} className="hand-back" />
-                        ))}
-                      </View>
-                    ) : null}
                     {player.melds.length > 0 || latestReleasedWildcard !== null ? (
                       <View className="player-station__melds">
                         {player.melds.map((meld) => (

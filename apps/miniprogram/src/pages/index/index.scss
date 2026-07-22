@@ -1,24 +1,18 @@
-/* Landscape home — brand left, actions right, web-like quiet palette */
+/* Landscape game-style home: full-bleed table art, mahjong-tile logo,
+   chunky jade menu buttons with a staggered entrance. */
 
 .mp-home {
   position: relative;
   height: 100vh;
   width: 100vw;
   box-sizing: border-box;
-  padding: 3.5vmin 5vmin;
-  padding-left: calc(5vmin + env(safe-area-inset-left));
-  padding-right: calc(5vmin + env(safe-area-inset-right));
   display: flex;
-  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: clamp(24px, 6vw, 80px);
   background: var(--page, #eef6f0);
   overflow: hidden;
 }
 
-/* Same table art as the room page — one continuous world instead of a bare
-   settings form next to a fully-dressed game table. */
 .mp-home__bg {
   position: absolute;
   inset: 0;
@@ -31,70 +25,199 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: rgb(238 246 240 / 18%);
+  background: rgb(238 246 240 / 14%);
   pointer-events: none;
 }
 
-.mp-home__brand,
+/* ---- HOME menu stage ---- */
+
+.mp-home__stage {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.6vmin;
+  padding-bottom: 2vmin;
+}
+
+.mp-home__logo {
+  display: flex;
+  gap: 1.6vmin;
+  animation: home-rise 420ms ease-out backwards;
+}
+
+/* Two oversized mahjong tiles carry the brand characters. */
+.mp-home__logo-tile {
+  width: 15vmin;
+  height: 19vmin;
+  min-width: 76px;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1.6vmin;
+  background: linear-gradient(175deg, #fdfcf6 0%, #f0ecdd 100%);
+  border: 1px solid var(--tile-edge, #c8c6bc);
+  box-shadow:
+    0 1vmin 0 rgb(154 148 128 / 55%),
+    0 1.6vmin 3vmin rgb(0 0 0 / 20%);
+}
+
+.mp-home__logo-tile--a {
+  transform: rotate(-7deg) translateY(0.6vmin);
+  animation: tile-bob-a 3.4s ease-in-out infinite;
+}
+
+.mp-home__logo-tile--b {
+  transform: rotate(6deg);
+  animation: tile-bob-b 3.4s ease-in-out 1.7s infinite;
+}
+
+@keyframes tile-bob-a {
+  0%,
+  100% {
+    transform: rotate(-7deg) translateY(0.6vmin);
+  }
+
+  50% {
+    transform: rotate(-8.5deg) translateY(-0.4vmin);
+  }
+}
+
+@keyframes tile-bob-b {
+  0%,
+  100% {
+    transform: rotate(6deg);
+  }
+
+  50% {
+    transform: rotate(7.5deg) translateY(-0.8vmin);
+  }
+}
+
+.mp-home__logo-char {
+  font-size: 11vmin;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent, #2f6a4c);
+  text-shadow: 0 2px 0 rgb(255 255 255 / 80%);
+}
+
+.mp-home__tagline {
+  padding: 0.7vmin 2.4vmin;
+  border-radius: 999px;
+  background: rgb(20 24 15 / 45%);
+  color: #fff;
+  font-size: 2.2vmin;
+  letter-spacing: 0.14em;
+  animation: home-rise 420ms ease-out 90ms backwards;
+}
+
+.mp-home__menu {
+  display: flex;
+  align-items: center;
+  gap: 2.4vmin;
+  margin-top: 1vmin;
+}
+
+.mp-home__menu .mp-btn {
+  animation: home-rise 380ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+.mp-home__menu .mp-btn:nth-child(1) {
+  animation-delay: 160ms;
+}
+
+.mp-home__menu .mp-btn:nth-child(2) {
+  animation-delay: 240ms;
+}
+
+.mp-home__menu .mp-btn:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(3vmin);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Chunky jade buttons (shared by menu and forms) ---- */
+
+.mp-btn {
+  margin: 0 !important;
+  min-width: 22vmin;
+  min-height: 9vmin !important;
+  height: 9vmin !important;
+  padding: 0 3.6vmin !important;
+  line-height: 9vmin !important;
+  font-size: 3vmin !important;
+  font-weight: 700 !important;
+  border-radius: 2.2vmin !important;
+  border: 1px solid var(--line-strong, #9cbfa9) !important;
+  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%) !important;
+  color: var(--ink, #272925) !important;
+  box-shadow:
+    0 0.7vmin 0 rgb(122 148 130 / 70%),
+    0 1.2vmin 2vmin rgb(0 0 0 / 14%);
+  transition:
+    transform 110ms ease,
+    box-shadow 110ms ease;
+}
+
+.mp-btn--primary {
+  border-color: #1f4834 !important;
+  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%) !important;
+  color: var(--accent-ink, #f5fbf6) !important;
+  box-shadow:
+    0 0.7vmin 0 #1f4834,
+    0 1.2vmin 2vmin rgb(0 0 0 / 18%);
+}
+
+/* Physical press: the button sinks onto its base edge. */
+.mp-btn.is-pressed {
+  transform: translateY(0.5vmin);
+  box-shadow:
+    0 0.2vmin 0 rgb(122 148 130 / 70%),
+    0 0.4vmin 1vmin rgb(0 0 0 / 12%);
+  opacity: 1;
+}
+
+.mp-btn--primary.is-pressed {
+  box-shadow:
+    0 0.2vmin 0 #1f4834,
+    0 0.4vmin 1vmin rgb(0 0 0 / 14%);
+}
+
+/* ---- CREATE / JOIN / BOT form panel ---- */
+
 .mp-home__panel {
   position: relative;
   z-index: 2;
-}
-
-.mp-home__brand {
-  flex: 0 1 34%;
-  max-width: 360px;
+  width: min(72vw, 460px);
   display: flex;
   flex-direction: column;
-  gap: 1.2vmin;
-  border-radius: 1.2vmin;
-  background: rgb(248 251 246 / 82%);
-  box-shadow: 0 0.6vmin 2vmin rgb(0 0 0 / 10%);
-  padding: 3vmin 2.4vmin;
-}
-
-.mp-home__eyebrow {
-  font-size: 2vmin;
-  letter-spacing: 0.14em;
-  color: var(--muted, #5f625b);
-}
-
-.mp-home__title {
-  font-size: clamp(40px, 9vmin, 72px);
-  font-weight: 520;
-  letter-spacing: -0.05em;
-  line-height: 0.95;
-  color: var(--ink, #272925);
-}
-
-.mp-home__sub {
-  font-size: 2.4vmin;
-  color: var(--muted, #5f625b);
-  line-height: 1.4;
-}
-
-.mp-home__panel {
-  flex: 0 1 48%;
-  min-width: 280px;
-  max-width: 480px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
   gap: 1.6vmin;
-  border-radius: 1.2vmin;
-  background: rgb(248 251 246 / 82%);
-  box-shadow: 0 0.6vmin 2vmin rgb(0 0 0 / 10%);
-  padding: 2.4vmin;
+  border-radius: 2vmin;
+  background: rgb(248 251 246 / 90%);
+  border: 1px solid var(--line, #cde0d3);
+  box-shadow: 0 1.2vmin 3vmin rgb(0 0 0 / 16%);
+  padding: 2.6vmin 3vmin;
   box-sizing: border-box;
+  animation: home-rise 320ms ease-out backwards;
 }
 
-.mp-home__actions,
-.mp-home__form-actions {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1.4vmin;
+.mp-home__panel-title {
+  font-size: 3.2vmin;
+  font-weight: 700;
+  color: var(--ink, #272925);
 }
 
 .mp-home__form {
@@ -104,24 +227,21 @@
   gap: 1.4vmin;
 }
 
-.mp-btn {
-  margin: 0 !important;
-  min-width: 16vmin;
-  min-height: 7.5vmin !important;
-  height: 7.5vmin !important;
-  padding: 0 3vmin !important;
-  line-height: 7.5vmin !important;
-  font-size: 2.8vmin !important;
-  border-radius: 0.7vmin !important;
-  border: 1px solid var(--line, #cde0d3) !important;
-  background: var(--panel, #f8fbf6) !important;
-  color: var(--ink, #272925) !important;
+.mp-home__form-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.4vmin;
+  margin-top: 0.6vmin;
 }
 
-.mp-btn--primary {
-  border-color: var(--accent, #2f6a4c) !important;
-  background: var(--accent, #2f6a4c) !important;
-  color: var(--accent-ink, #f5fbf6) !important;
+.mp-home__form-actions .mp-btn {
+  min-width: 18vmin;
+  min-height: 7.5vmin !important;
+  height: 7.5vmin !important;
+  line-height: 7.5vmin !important;
+  font-size: 2.6vmin !important;
 }
 
 .mp-field {
@@ -143,7 +263,7 @@
   min-height: 7vmin;
   height: 7vmin;
   padding: 0 1.6vmin;
-  border-radius: 0.6vmin;
+  border-radius: 1.2vmin;
   border: 1px solid var(--line, #cde0d3);
   background: #fff;
   color: var(--ink, #272925);
@@ -164,17 +284,23 @@
   height: 6.5vmin !important;
   line-height: 6.5vmin !important;
   padding: 0 1.6vmin !important;
-  border-radius: 0.6vmin !important;
+  border-radius: 1.2vmin !important;
   font-size: 2.4vmin !important;
+  font-weight: 600 !important;
   background: var(--surface, #dcece1) !important;
   color: var(--ink, #272925) !important;
   border: 1px solid var(--line, #cde0d3) !important;
+  transition: transform 110ms ease;
 }
 
 .mp-score.is-on {
   background: var(--accent, #2f6a4c) !important;
   color: var(--accent-ink, #f5fbf6) !important;
   border-color: var(--accent, #2f6a4c) !important;
+}
+
+.mp-score.is-pressed {
+  transform: scale(0.94);
 }
 
 .mp-error {

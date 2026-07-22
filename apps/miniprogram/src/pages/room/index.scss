@@ -452,26 +452,6 @@
   color: var(--muted, #5f625b);
 }
 
-/* Opponents' concealed hands as a row of mini tile-backs — reads as "a hand
-   of N tiles" at a glance instead of the bare 手N counter. */
-.hand-backs {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.25vmin;
-  margin-top: 0.5vmin;
-}
-
-.hand-back {
-  width: 1.3vmin;
-  height: 2vmin;
-  min-width: 7px;
-  min-height: 11px;
-  border-radius: 2px;
-  background: linear-gradient(#3a7d5c, #2f6a4c);
-  border: 1px solid #245239;
-  box-shadow: 0 1px 0 rgb(0 0 0 / 20%);
-}
-
 .player-station__melds {
   display: flex;
   flex-wrap: wrap;
@@ -625,22 +605,22 @@
    (used by melds/indicator/wildcard) so a 6-tile row fits every direction,
    including left/right where the pile also reads left-to-right now. */
 .discard-zone .mj-tile--compact {
-  width: 3.6vmin;
-  height: 5vmin;
-  min-width: 20px;
-  min-height: 28px;
-  max-width: 26px;
-  max-height: 36px;
+  width: 3vmin;
+  height: 4.2vmin;
+  min-width: 16px;
+  min-height: 22px;
+  max-width: 22px;
+  max-height: 30px;
 }
 
 /* table-center is now one unified framed panel (~10vmin tall incl. padding
    +border) — half-height ~5vmin. 9.5vmin leaves a clear ~4.5vmin gap. */
-/* Tile min-width floors (20px) beat the 3.6vmin size on real phones, so pile
-   widths need px floors too or 12 tiles wrap into 3+ rows. 152px fits 6
+/* Tile min-width floors (16px) beat the 3vmin size on real phones, so pile
+   widths need px floors too or 12 tiles wrap into 3+ rows. 118px fits 6
    min-sized tiles per row → 12 visible tiles stay within 2 rows. */
 .discard-zone.pos-opposite {
   transform: translate(-50%, calc(-100% - 9.5vmin));
-  width: max(26vmin, 152px);
+  width: max(24vmin, 118px);
   justify-content: center;
 }
 
@@ -648,7 +628,7 @@
    nowrap, showing the last few discards (see SELF_VISIBLE_DISCARDS). */
 .discard-zone.pos-self {
   transform: translate(-50%, 9.5vmin);
-  width: max(60vmin, 210px);
+  width: max(40vmin, 150px);
   flex-wrap: nowrap;
   justify-content: center;
 }
@@ -660,14 +640,14 @@
    bottom), same tile size as every other direction. */
 .discard-zone.pos-left {
   transform: translate(calc(-100% - 20vmin), -50%);
-  width: max(25vmin, 100px);
+  width: max(24vmin, 118px);
   flex-direction: row;
   justify-content: flex-end;
 }
 
 .discard-zone.pos-right {
   transform: translate(20vmin, -50%);
-  width: max(25vmin, 100px);
+  width: max(24vmin, 118px);
   flex-direction: row;
   justify-content: flex-start;
 }
@@ -715,6 +695,9 @@
   gap: 0.8vmin;
 }
 
+/* No tray chrome — tiles sit directly on the table art. The top headroom
+   stays: a selected tile rises 1.2vmin and the drawn-tile marker sits above
+   tile tops; without the padding the overflow-x:auto container clips both. */
 .self-hand {
   display: flex;
   flex-wrap: nowrap;
@@ -724,22 +707,8 @@
   overflow-x: auto;
   min-height: 11vmin;
   width: 100%;
-  /* Top headroom: a selected tile rises 1.2vmin and the drawn-tile "摸" label
-     sits ~1.9vmin above tile tops — without this padding the overflow-x:auto
-     container clips both. */
   padding: 2.6vmin 1.6vmin 0.6vmin;
   box-sizing: border-box;
-  background: rgb(20 24 15 / 32%);
-  border-radius: 1.8vmin;
-  border: 1px solid transparent;
-}
-
-/* It's this player's turn — light the whole hand tray up so "you can act now"
-   is impossible to miss (class set on .game-shell in index.tsx). */
-.game-shell.is-self-turn .self-hand {
-  border-color: rgb(122 185 151 / 75%);
-  background: rgb(20 24 15 / 42%);
-  box-shadow: 0 0 2.6vmin rgb(47 106 76 / 50%);
 }
 
 /* The just-drawn tile sits apart from the sorted hand (see `drawnTile` in
@@ -759,16 +728,20 @@
   top: 0.4vmin;
   bottom: 0.4vmin;
   left: -0.8vmin;
-  border-left: 1px solid rgb(255 255 255 / 55%);
+  border-left: 1px solid rgb(20 24 15 / 30%);
 }
 
+/* Dark mini-pill so the marker stays readable directly on the light table
+   art (the hand no longer has a dark tray behind it). */
 .drawn-tile-slot__label {
   position: absolute;
-  top: -1.9vmin;
+  top: -2.2vmin;
   left: 50%;
   transform: translateX(-50%);
+  padding: 0.1vmin 0.7vmin;
+  border-radius: 999px;
+  background: rgb(20 24 15 / 55%);
   color: #fff;
-  font-size: 1.6vmin;
-  line-height: 1;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
+  font-size: 1.5vmin;
+  line-height: 1.5;
 }

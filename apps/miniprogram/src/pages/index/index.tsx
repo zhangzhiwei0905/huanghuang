@@ -72,18 +72,29 @@ export default function IndexPage() {
     <View className="mp-home">
       <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
       <View className="mp-home__overlay" />
-      <View className="mp-home__brand">
-        <Text className="mp-home__eyebrow">PRIVATE TABLE · 横屏</Text>
-        <Text className="mp-home__title">{heading}</Text>
-        <Text className="mp-home__sub">四人数字麻将 · 好友房 / 人机</Text>
-      </View>
-
-      <View className="mp-home__panel">
-        {mode === "HOME" ? (
-          <View className="mp-home__actions">
+      {mode === "HOME" ? (
+        <View className="mp-home__stage">
+          <View className="mp-home__logo">
+            <View className="mp-home__logo-tile mp-home__logo-tile--a">
+              <Text className="mp-home__logo-char">晃</Text>
+            </View>
+            <View className="mp-home__logo-tile mp-home__logo-tile--b">
+              <Text className="mp-home__logo-char">晃</Text>
+            </View>
+          </View>
+          <Text className="mp-home__tagline">四人数字麻将 · 好友房 / 人机对战</Text>
+          <View className="mp-home__menu">
             <Button
               hoverClass="is-pressed"
               className="mp-btn mp-btn--primary"
+              disabled={busy}
+              onClick={() => setMode("BOT")}
+            >
+              人机对战
+            </Button>
+            <Button
+              hoverClass="is-pressed"
+              className="mp-btn"
               disabled={busy}
               onClick={() => setMode("CREATE")}
             >
@@ -97,16 +108,11 @@ export default function IndexPage() {
             >
               加入房间
             </Button>
-            <Button
-              hoverClass="is-pressed"
-              className="mp-btn"
-              disabled={busy}
-              onClick={() => setMode("BOT")}
-            >
-              人机对战
-            </Button>
           </View>
-        ) : (
+        </View>
+      ) : (
+        <View className="mp-home__panel">
+          <Text className="mp-home__panel-title">{heading}</Text>
           <View className="mp-home__form">
             <View className="mp-field">
               <Text className="mp-field__label">昵称</Text>
@@ -173,8 +179,8 @@ export default function IndexPage() {
               </Button>
             </View>
           </View>
-        )}
-      </View>
+        </View>
+      )}
     </View>
   );
 }
