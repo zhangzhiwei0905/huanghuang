@@ -109,10 +109,12 @@
   height: 5.8vmin !important;
   line-height: 5.8vmin !important;
   font-size: 2.2vmin !important;
-  background: var(--panel, #f8fbf6) !important;
+  font-weight: 600 !important;
+  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%) !important;
   color: var(--ink, #272925) !important;
-  border: 1px solid var(--line, #cde0d3) !important;
-  border-radius: 999px !important;
+  border: 1px solid var(--line-strong, #9cbfa9) !important;
+  border-radius: 1.2vmin !important;
+  box-shadow: 0 0.35vmin 0 rgb(122 148 130 / 60%);
 }
 
 .header-btn--danger {
@@ -251,10 +253,14 @@
   display: flex;
   flex-direction: column;
   gap: 1.4vmin;
-  background: rgb(248 251 246 / 92%);
-  border: 1px solid var(--line, #cde0d3);
-  border-radius: 1vmin;
+  background: linear-gradient(175deg, rgb(253 252 246 / 96%) 0%, rgb(240 236 221 / 96%) 100%);
+  border: 1px solid #d8d4c4;
+  border-radius: 2vmin;
+  box-shadow:
+    0 0.5vmin 0 rgb(154 148 128 / 40%),
+    0 1.2vmin 2.4vmin rgb(0 0 0 / 14%);
   padding: 2vmin 2.4vmin;
+  animation: station-in 320ms ease-out backwards;
 }
 
 .waiting-title {
@@ -288,10 +294,11 @@
 }
 
 .lobby-seat {
-  border: 1px solid var(--line, #cde0d3);
-  border-radius: 0.8vmin;
+  border: 1px solid #d8d4c4;
+  border-radius: 1.4vmin;
   padding: 1.2vmin;
-  background: rgb(248 251 246 / 90%);
+  background: rgb(253 252 246 / 92%);
+  box-shadow: 0 0.35vmin 0 rgb(154 148 128 / 30%);
   min-height: 10vmin;
 }
 
@@ -332,15 +339,23 @@
   height: 6vmin !important;
   line-height: 6vmin !important;
   padding: 0 1.8vmin !important;
-  background: var(--surface, #dcece1) !important;
+  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%) !important;
   color: var(--ink, #272925) !important;
-  border-radius: 999px !important;
+  border: 1px solid var(--line, #cde0d3) !important;
+  border-radius: 1.2vmin !important;
   font-size: 2.2vmin !important;
+  font-weight: 600 !important;
+  transition: transform 110ms ease;
+}
+
+.score-chip.is-pressed {
+  transform: scale(0.94);
 }
 
 .score-chip.is-active {
-  background: var(--accent, #2f6a4c) !important;
+  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%) !important;
   color: var(--accent-ink, #f5fbf6) !important;
+  border-color: #1f4834 !important;
 }
 
 .btn-accent {
@@ -378,16 +393,31 @@
 }
 
 /* Seats: mirror web top / left / right / bottom */
+/* Cream mahjong-tile card, same family as the home logo tiles. */
 .player-station {
   position: absolute;
   z-index: 4;
   min-width: 18vmin;
   max-width: 30vmin;
-  padding: 0.8vmin 1vmin;
-  border: 1px solid var(--line, #cde0d3);
-  border-radius: 0.7vmin;
-  background: rgb(248 251 246 / 90%);
+  padding: 0.8vmin 1.2vmin;
+  border: 1px solid #d8d4c4;
+  border-radius: 1.4vmin;
+  background: linear-gradient(175deg, rgb(253 252 246 / 96%) 0%, rgb(240 236 221 / 96%) 100%);
+  box-shadow:
+    0 0.45vmin 0 rgb(154 148 128 / 40%),
+    0 0.8vmin 1.6vmin rgb(0 0 0 / 10%);
   box-sizing: border-box;
+  animation: station-in 320ms ease-out backwards;
+}
+
+@keyframes station-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .player-station.is-active {
@@ -506,10 +536,25 @@
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  border: 1px solid var(--line, #cde0d3);
-  border-radius: 1vmin;
-  background: rgb(248 251 246 / 90%);
-  box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 16%);
+  border: 1px solid #d8d4c4;
+  border-radius: 1.8vmin;
+  background: linear-gradient(175deg, rgb(253 252 246 / 96%) 0%, rgb(240 236 221 / 96%) 100%);
+  box-shadow:
+    0 0.5vmin 0 rgb(154 148 128 / 40%),
+    0 1vmin 2vmin rgb(0 0 0 / 14%);
+  animation: center-in 380ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+@keyframes center-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
 }
 
 .center-block {
@@ -523,7 +568,7 @@
 }
 
 .center-block + .center-block {
-  border-left: 1px solid var(--line, #cde0d3);
+  border-left: 1px solid rgb(154 148 128 / 30%);
 }
 
 .center-block--main {
@@ -561,11 +606,13 @@
   padding: 0.2vmin 1vmin;
   border: 1px solid var(--line-strong, #9cbfa9);
   border-radius: 999px;
+  background: #fff;
   color: var(--ink, #272925);
   font-size: 2.2vmin;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: center;
+  box-shadow: 0 0.25vmin 0 rgb(122 148 130 / 45%);
 }
 
 .center-countdown.is-urgent {

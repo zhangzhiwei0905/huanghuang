@@ -26,10 +26,10 @@
   max-height: calc(100vh - 6vmin);
   overflow-y: auto;
   box-sizing: border-box;
-  border: 1px solid var(--line, #cde0d3);
-  border-radius: 1.4vmin;
+  border: 1px solid #d8d4c4;
+  border-radius: 2vmin;
   padding: 2.4vmin 2.8vmin;
-  background: var(--panel, #f8fbf6);
+  background: linear-gradient(175deg, #fdfcf6 0%, #f0ecdd 100%);
   color: var(--ink, #272925);
   box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 30%);
   animation: settlement-rise 260ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards;

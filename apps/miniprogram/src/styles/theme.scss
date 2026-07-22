@@ -97,27 +97,65 @@ page[data-theme="premium"] {
   box-shadow: none;
 }
 
+/* Chunky "jade" buttons matching the home menu: gradient face, solid bottom
+   edge, and a physical sink on press. */
 .btn-accent {
-  background: var(--accent);
+  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%);
   color: var(--accent-ink);
-  border-radius: 999px;
+  border-radius: 1.6vmin;
   font-size: 28px;
+  font-weight: 700;
   margin: 0;
+  box-shadow:
+    0 0.5vmin 0 #1f4834,
+    0 0.9vmin 1.6vmin rgb(0 0 0 / 16%);
+  transition:
+    transform 110ms ease,
+    box-shadow 110ms ease;
 }
 
 .btn-ghost {
-  background: var(--surface);
+  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%);
   color: var(--ink);
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: 1.6vmin;
   font-size: 26px;
+  font-weight: 600;
   margin: 0;
+  box-shadow:
+    0 0.5vmin 0 rgb(122 148 130 / 70%),
+    0 0.9vmin 1.6vmin rgb(0 0 0 / 12%);
+  transition:
+    transform 110ms ease,
+    box-shadow 110ms ease;
+}
+
+.btn-accent.is-pressed,
+.btn-ghost.is-pressed {
+  transform: translateY(0.4vmin);
+  opacity: 1;
+}
+
+.btn-accent.is-pressed {
+  box-shadow:
+    0 0.1vmin 0 #1f4834,
+    0 0.3vmin 0.8vmin rgb(0 0 0 / 14%);
+}
+
+.btn-ghost.is-pressed {
+  box-shadow:
+    0 0.1vmin 0 rgb(122 148 130 / 70%),
+    0 0.3vmin 0.8vmin rgb(0 0 0 / 10%);
 }
 
 .btn-danger {
-  background: var(--danger);
+  background: linear-gradient(180deg, #96625a 0%, #7a4b45 100%);
   color: #fff;
-  border-radius: 999px;
+  border-radius: 1.6vmin;
   font-size: 26px;
+  font-weight: 600;
   margin: 0;
+  box-shadow:
+    0 0.5vmin 0 #55322d,
+    0 0.9vmin 1.6vmin rgb(0 0 0 / 16%);
 }
