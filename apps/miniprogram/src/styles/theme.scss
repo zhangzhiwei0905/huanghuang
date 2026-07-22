@@ -89,7 +89,8 @@ page[data-theme="premium"] {
    420px min-height that fought the full-bleed landscape layout.) */
 
 .panel-card {
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  /* color-mix() unsupported in devtools/low-end WebView; use static rgb(). */
+  background: rgb(248 251 246 / 92%);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 20px;

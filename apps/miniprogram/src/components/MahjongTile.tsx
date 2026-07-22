@@ -11,6 +11,8 @@ type MahjongTileProps = {
   wildcardKind?: TileKind | null;
   /** Marks this tile as a legal pong/kong source given the current room state. */
   highlighted?: boolean;
+  /** Marks the most recent discard on the table (drop-in emphasis). */
+  recent?: boolean;
   /** Short label shown on a highlighted tile, e.g. "可碰" / "可杠". */
   highlightHint?: string;
   onPress?: (tile: Tile) => void;
@@ -23,6 +25,7 @@ export function MahjongTile({
   compact = false,
   wildcardKind = null,
   highlighted = false,
+  recent = false,
   highlightHint,
   onPress,
 }: MahjongTileProps) {
@@ -34,6 +37,7 @@ export function MahjongTile({
     dimmed ? "mj-tile--dimmed" : "",
     wildcard ? "mj-tile--wildcard" : "",
     highlighted ? "mj-tile--highlighted" : "",
+    recent ? "mj-tile--recent" : "",
   ]
     .filter(Boolean)
     .join(" ");

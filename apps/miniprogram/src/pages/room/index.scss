@@ -163,9 +163,19 @@
   height: 5.6vmin !important;
   line-height: 5.6vmin !important;
   padding: 0 2.2vmin !important;
+  /* WeChat native <button> collapses width:auto here (renders as a circle
+     with the two characters stacked) — force a pill wide enough for 2 CJK
+     characters + padding instead. */
+  min-width: 12vmin !important;
+  width: 12vmin !important;
+  text-align: center;
+  white-space: nowrap !important;
   font-size: 2.1vmin !important;
   color: #fff !important;
-  background: color-mix(in srgb, #14180f 55%, transparent) !important;
+  /* color-mix() is unsupported in the devtools/low-end WebView — it silently
+     drops the whole declaration, leaving white text on the light table art.
+     All chrome translucency in this file uses static rgb()/rgba() instead. */
+  background: rgb(20 24 15 / 62%) !important;
   border-radius: 999px !important;
   box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 18%);
 }
@@ -181,7 +191,7 @@
   max-width: 62vw;
   padding: 0.7vmin 1.6vmin;
   border-radius: 999px;
-  background: color-mix(in srgb, #14180f 42%, transparent);
+  background: rgb(20 24 15 / 55%);
   box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 18%);
 }
 
@@ -241,7 +251,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.4vmin;
-  background: color-mix(in srgb, var(--panel, #f8fbf6) 92%, transparent);
+  background: rgb(248 251 246 / 92%);
   border: 1px solid var(--line, #cde0d3);
   border-radius: 1vmin;
   padding: 2vmin 2.4vmin;
@@ -281,7 +291,7 @@
   border: 1px solid var(--line, #cde0d3);
   border-radius: 0.8vmin;
   padding: 1.2vmin;
-  background: color-mix(in srgb, var(--panel, #f8fbf6) 88%, transparent);
+  background: rgb(248 251 246 / 90%);
   min-height: 10vmin;
 }
 
@@ -290,7 +300,7 @@
 }
 
 .lobby-seat.is-ready {
-  background: color-mix(in srgb, var(--accent, #2f6a4c) 12%, var(--panel, #f8fbf6));
+  background: #e0eae2;
 }
 
 .lobby-seat__name {
@@ -376,13 +386,25 @@
   padding: 0.8vmin 1vmin;
   border: 1px solid var(--line, #cde0d3);
   border-radius: 0.7vmin;
-  background: color-mix(in srgb, var(--panel, #f8fbf6) 88%, transparent);
+  background: rgb(248 251 246 / 90%);
   box-sizing: border-box;
 }
 
 .player-station.is-active {
   border-color: var(--accent, #2f6a4c);
-  outline: 2px solid color-mix(in srgb, var(--accent, #2f6a4c) 30%, transparent);
+  outline: 2px solid rgb(47 106 76 / 30%);
+  animation: station-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes station-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(47 106 76 / 35%);
+  }
+
+  50% {
+    box-shadow: 0 0 0 0.9vmin rgb(47 106 76 / 12%);
+  }
 }
 
 .player-station.pos-opposite {
@@ -409,7 +431,7 @@
    bottom edge when action buttons are showing). */
 .player-station.pos-self {
   left: calc(1.2vmin + env(safe-area-inset-left));
-  bottom: 24vmin;
+  bottom: 26vmin;
   transform: none;
 }
 
@@ -428,6 +450,26 @@
   margin-top: 0.2vmin;
   font-size: 1.7vmin;
   color: var(--muted, #5f625b);
+}
+
+/* Opponents' concealed hands as a row of mini tile-backs — reads as "a hand
+   of N tiles" at a glance instead of the bare 手N counter. */
+.hand-backs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.25vmin;
+  margin-top: 0.5vmin;
+}
+
+.hand-back {
+  width: 1.3vmin;
+  height: 2vmin;
+  min-width: 7px;
+  min-height: 11px;
+  border-radius: 2px;
+  background: linear-gradient(#3a7d5c, #2f6a4c);
+  border: 1px solid #245239;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 20%);
 }
 
 .player-station__melds {
@@ -486,7 +528,7 @@
   align-items: stretch;
   border: 1px solid var(--line, #cde0d3);
   border-radius: 1vmin;
-  background: color-mix(in srgb, var(--panel, #f8fbf6) 88%, transparent);
+  background: rgb(248 251 246 / 90%);
   box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 16%);
 }
 
@@ -551,6 +593,11 @@
   color: var(--danger, #7a4b45);
 }
 
+/* Rendered but idle — keeps the panel height stable (see index.tsx). */
+.center-countdown.is-hidden {
+  visibility: hidden;
+}
+
 .center-countdown__unit {
   margin-left: 0.1vmin;
   font-size: 1.5vmin;
@@ -588,15 +635,21 @@
 
 /* table-center is now one unified framed panel (~10vmin tall incl. padding
    +border) — half-height ~5vmin. 9.5vmin leaves a clear ~4.5vmin gap. */
+/* Tile min-width floors (20px) beat the 3.6vmin size on real phones, so pile
+   widths need px floors too or 12 tiles wrap into 3+ rows. 152px fits 6
+   min-sized tiles per row → 12 visible tiles stay within 2 rows. */
 .discard-zone.pos-opposite {
   transform: translate(-50%, calc(-100% - 9.5vmin));
-  width: 26vmin;
+  width: max(26vmin, 152px);
   justify-content: center;
 }
 
+/* Only a single row fits between table-center and the action dock — wide,
+   nowrap, showing the last few discards (see SELF_VISIBLE_DISCARDS). */
 .discard-zone.pos-self {
   transform: translate(-50%, 9.5vmin);
-  width: 26vmin;
+  width: max(60vmin, 210px);
+  flex-wrap: nowrap;
   justify-content: center;
 }
 
@@ -607,18 +660,41 @@
    bottom), same tile size as every other direction. */
 .discard-zone.pos-left {
   transform: translate(calc(-100% - 20vmin), -50%);
-  width: 27vmin;
+  width: max(25vmin, 100px);
   flex-direction: row;
-  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
 .discard-zone.pos-right {
   transform: translate(20vmin, -50%);
-  width: 27vmin;
+  width: max(25vmin, 100px);
   flex-direction: row;
-  flex-wrap: nowrap;
   justify-content: flex-start;
+}
+
+/* Total-count chip shown once a pile is truncated to the visible window —
+   flows as the last item of the pile so it needs no per-direction anchors. */
+.discard-zone__count {
+  align-self: flex-end;
+  margin-left: 0.4vmin;
+  padding: 0.2vmin 0.9vmin;
+  border-radius: 999px;
+  background: rgb(20 24 15 / 55%);
+  color: #fff;
+  font-size: 1.6vmin;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* First tap selects, second tap discards — spell that out the first time a
+   tile is selected, floating just above the action row. */
+.discard-tip {
+  padding: 0.4vmin 1.6vmin;
+  border-radius: 999px;
+  background: rgb(20 24 15 / 62%);
+  color: #fff;
+  font-size: 1.9vmin;
+  white-space: nowrap;
 }
 
 /* Self play area: action buttons float directly above the hand, both
@@ -648,10 +724,22 @@
   overflow-x: auto;
   min-height: 11vmin;
   width: 100%;
-  padding: 0.4vmin 1vmin;
+  /* Top headroom: a selected tile rises 1.2vmin and the drawn-tile "摸" label
+     sits ~1.9vmin above tile tops — without this padding the overflow-x:auto
+     container clips both. */
+  padding: 2.6vmin 1.6vmin 0.6vmin;
   box-sizing: border-box;
-  background: color-mix(in srgb, #14180f 22%, transparent);
-  border-radius: 999px;
+  background: rgb(20 24 15 / 32%);
+  border-radius: 1.8vmin;
+  border: 1px solid transparent;
+}
+
+/* It's this player's turn — light the whole hand tray up so "you can act now"
+   is impossible to miss (class set on .game-shell in index.tsx). */
+.game-shell.is-self-turn .self-hand {
+  border-color: rgb(122 185 151 / 75%);
+  background: rgb(20 24 15 / 42%);
+  box-shadow: 0 0 2.6vmin rgb(47 106 76 / 50%);
 }
 
 /* The just-drawn tile sits apart from the sorted hand (see `drawnTile` in
@@ -668,10 +756,10 @@
 .drawn-tile-slot::before {
   content: "";
   position: absolute;
-  top: 0.8vmin;
+  top: 0.4vmin;
   bottom: 0.4vmin;
   left: -0.8vmin;
-  border-left: 1px solid rgb(255 255 255 / 32%);
+  border-left: 1px solid rgb(255 255 255 / 55%);
 }
 
 .drawn-tile-slot__label {

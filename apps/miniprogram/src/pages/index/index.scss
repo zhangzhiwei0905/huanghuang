@@ -1,7 +1,7 @@
-
 /* Landscape home — brand left, actions right, web-like quiet palette */
 
 .mp-home {
+  position: relative;
   height: 100vh;
   width: 100vw;
   box-sizing: border-box;
@@ -17,15 +17,40 @@
   overflow: hidden;
 }
 
+/* Same table art as the room page — one continuous world instead of a bare
+   settings form next to a fully-dressed game table. */
+.mp-home__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.mp-home__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgb(238 246 240 / 18%);
+  pointer-events: none;
+}
+
+.mp-home__brand,
+.mp-home__panel {
+  position: relative;
+  z-index: 2;
+}
+
 .mp-home__brand {
   flex: 0 1 34%;
   max-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 1.2vmin;
-  border-top: 1px solid var(--line-strong, #9cbfa9);
-  border-bottom: 1px solid var(--line, #cde0d3);
-  padding: 3vmin 0.5vmin;
+  border-radius: 1.2vmin;
+  background: rgb(248 251 246 / 82%);
+  box-shadow: 0 0.6vmin 2vmin rgb(0 0 0 / 10%);
+  padding: 3vmin 2.4vmin;
 }
 
 .mp-home__eyebrow {
@@ -56,6 +81,11 @@
   flex-direction: column;
   justify-content: center;
   gap: 1.6vmin;
+  border-radius: 1.2vmin;
+  background: rgb(248 251 246 / 82%);
+  box-shadow: 0 0.6vmin 2vmin rgb(0 0 0 / 10%);
+  padding: 2.4vmin;
+  box-sizing: border-box;
 }
 
 .mp-home__actions,

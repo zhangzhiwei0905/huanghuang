@@ -15,6 +15,9 @@
   justify-content: center;
   overflow: hidden;
   flex-shrink: 0;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .mj-tile--compact {
@@ -29,7 +32,7 @@
 .mj-tile--selected {
   transform: translateY(-1.2vmin);
   border-color: var(--accent, #2f6a4c);
-  box-shadow: 0 0.9vmin 0 color-mix(in srgb, var(--accent, #2f6a4c) 55%, transparent);
+  box-shadow: 0 0.9vmin 0 rgb(47 106 76 / 55%);
 }
 
 .mj-tile--dimmed {
@@ -47,6 +50,27 @@
   border-color: var(--accent, #2f6a4c);
   outline: 2px solid var(--accent, #2f6a4c);
   outline-offset: 1px;
+}
+
+/* Most recent discard on the table — accent ring + one-shot drop-in pop so
+   the eye lands on it during pong/kong response windows. */
+.mj-tile--recent {
+  z-index: 1;
+  border-color: var(--accent, #2f6a4c);
+  outline: 2px solid var(--accent, #2f6a4c);
+  outline-offset: 1px;
+  box-shadow: 0 0 1.2vmin rgb(47 106 76 / 55%);
+  animation: mj-tile-drop 260ms ease-out;
+}
+
+@keyframes mj-tile-drop {
+  from {
+    transform: translateY(-1.2vmin) scale(1.15);
+  }
+
+  to {
+    transform: none;
+  }
 }
 
 .mj-tile__face {

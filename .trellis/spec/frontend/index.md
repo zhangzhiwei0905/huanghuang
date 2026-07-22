@@ -18,6 +18,7 @@ Document **what this repo actually does**. The web app is a projection renderer:
 | [State Management](./state-management.md) | Projection versioning, local vs server state | Active |
 | [Quality Guidelines](./quality-guidelines.md) | Checks, tests, a11y, forbidden client rules | Active |
 | [Type Safety](./type-safety.md) | Protocol ownership and TS strictness | Active |
+| [Mini-Program](./miniprogram.md) | Taro/WeChat WXSS compatibility, automation testing recipe | Active |
 
 ## Pre-Development Checklist
 

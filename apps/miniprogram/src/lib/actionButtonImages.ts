@@ -8,13 +8,7 @@ import passImage from "../assets/buttons/pass.png";
 import type { ActionButtonModel } from "../lib/actionButtons";
 
 export type ActionButtonKind =
-  | "discard"
-  | "wildcard"
-  | "pong"
-  | "kong"
-  | "added-kong"
-  | "win"
-  | "pass";
+  "discard" | "wildcard" | "pong" | "kong" | "added-kong" | "win" | "pass";
 
 export const ACTION_BUTTON_IMAGES: Record<ActionButtonKind, string> = {
   discard: discardImage,

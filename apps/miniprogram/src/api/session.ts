@@ -1,9 +1,5 @@
 import Taro from "@tarojs/taro";
-import {
-  API_BASE,
-  SESSION_TOKEN_HEADER,
-  SESSION_TOKEN_STORAGE_KEY,
-} from "../config";
+import { API_BASE, SESSION_TOKEN_HEADER, SESSION_TOKEN_STORAGE_KEY } from "../config";
 
 export type SessionIssueResponse = {
   sessionId: string;
@@ -32,7 +28,9 @@ export function clearStoredSessionToken(): void {
   }
 }
 
-export function authHeaders(token: string | null = getStoredSessionToken()): Record<string, string> {
+export function authHeaders(
+  token: string | null = getStoredSessionToken(),
+): Record<string, string> {
   if (token === null) return {};
   return {
     Authorization: `Bearer ${token}`,
@@ -68,8 +66,8 @@ export async function issueSession(nickname: string): Promise<SessionIssueRespon
   const data = response.data as SessionIssueResponse;
   const headerToken =
     typeof response.header === "object" && response.header !== null
-      ? (response.header[SESSION_TOKEN_HEADER] as string | undefined) ??
-        (response.header[SESSION_TOKEN_HEADER.toLowerCase()] as string | undefined)
+      ? ((response.header[SESSION_TOKEN_HEADER] as string | undefined) ??
+        (response.header[SESSION_TOKEN_HEADER.toLowerCase()] as string | undefined))
       : undefined;
   const sessionToken = pickSessionToken(headerToken, data.sessionToken);
   if (sessionToken !== null) {

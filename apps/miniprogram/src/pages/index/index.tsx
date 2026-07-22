@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { Button, Input, Text, View } from "@tarojs/components";
+import { Button, Image, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import type { BaseScore, RoomMode, RoomProjection } from "@huanghuang/protocol";
+import tableBackground from "../../assets/background.optimized.jpg";
 import { ApiError, roomApi } from "../../api/http";
 import { issueSession } from "../../api/session";
 import { errorLabel } from "../../lib/errors";
@@ -69,6 +70,8 @@ export default function IndexPage() {
 
   return (
     <View className="mp-home">
+      <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
+      <View className="mp-home__overlay" />
       <View className="mp-home__brand">
         <Text className="mp-home__eyebrow">PRIVATE TABLE · 横屏</Text>
         <Text className="mp-home__title">{heading}</Text>
@@ -78,13 +81,28 @@ export default function IndexPage() {
       <View className="mp-home__panel">
         {mode === "HOME" ? (
           <View className="mp-home__actions">
-            <Button className="mp-btn mp-btn--primary" disabled={busy} onClick={() => setMode("CREATE")}>
+            <Button
+              hoverClass="is-pressed"
+              className="mp-btn mp-btn--primary"
+              disabled={busy}
+              onClick={() => setMode("CREATE")}
+            >
               创建房间
             </Button>
-            <Button className="mp-btn" disabled={busy} onClick={() => setMode("JOIN")}>
+            <Button
+              hoverClass="is-pressed"
+              className="mp-btn"
+              disabled={busy}
+              onClick={() => setMode("JOIN")}
+            >
               加入房间
             </Button>
-            <Button className="mp-btn" disabled={busy} onClick={() => setMode("BOT")}>
+            <Button
+              hoverClass="is-pressed"
+              className="mp-btn"
+              disabled={busy}
+              onClick={() => setMode("BOT")}
+            >
               人机对战
             </Button>
           </View>
@@ -119,6 +137,7 @@ export default function IndexPage() {
                 <View className="mp-score-row">
                   {BASE_SCORES.map((score) => (
                     <Button
+                      hoverClass="is-pressed"
                       key={score}
                       className={`mp-score${baseScore === score ? " is-on" : ""}`}
                       disabled={busy}
@@ -135,6 +154,7 @@ export default function IndexPage() {
 
             <View className="mp-home__form-actions">
               <Button
+                hoverClass="is-pressed"
                 className="mp-btn mp-btn--primary"
                 disabled={busy}
                 onClick={() =>
@@ -143,7 +163,12 @@ export default function IndexPage() {
               >
                 {mode === "JOIN" ? "进入" : mode === "BOT" ? "开始" : "创建"}
               </Button>
-              <Button className="mp-btn" disabled={busy} onClick={() => setMode("HOME")}>
+              <Button
+                hoverClass="is-pressed"
+                className="mp-btn"
+                disabled={busy}
+                onClick={() => setMode("HOME")}
+              >
                 返回
               </Button>
             </View>

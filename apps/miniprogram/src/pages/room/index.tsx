@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import type { BaseScore, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
@@ -6,7 +6,7 @@ import tableBackground from "../../assets/background.optimized.jpg";
 import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
 import { RoundSettlementModal } from "../../components/RoundSettlementModal";
-import { useRoom } from "../../hooks/useRoom";
+import { useRoom, type ConnectionStatus } from "../../hooks/useRoom";
 import {
   hasValidTileSelection,
   primaryActionButtons,
@@ -25,6 +25,17 @@ import "./index.scss";
 const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
 const SEATS: readonly Seat[] = [0, 1, 2, 3];
 const POSITION_CLASS = ["pos-self", "pos-right", "pos-opposite", "pos-left"] as const;
+const VISIBLE_DISCARDS = 12;
+/* The self pile sits in the narrow strip between table-center and the action
+   dock — only a single wide row fits there, so it shows fewer tiles (players
+   know their own discards; the count chip carries the total). */
+const SELF_VISIBLE_DISCARDS = 6;
+
+const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
+  connecting: "连接中",
+  connected: "已连接",
+  reconnecting: "重连中",
+};
 
 function relativePosition(seat: Seat, selfSeat: Seat): number {
   return ((seat - selfSeat + 4) % 4) as 0 | 1 | 2 | 3;
@@ -33,6 +44,48 @@ function relativePosition(seat: Seat, selfSeat: Seat): number {
 function selfPlayer(room: RoomProjection) {
   if (room.selfSeat === null) return null;
   return room.players[room.selfSeat] ?? null;
+}
+
+/* The projection has no "who just discarded" field — diff each seat's discard
+   pile across updates (same approach as the web client) so the single most
+   recent discard on the table can be highlighted for pong/kong decisions.
+   Pile *length* is tracked alongside the tail id: a tail change only marks a
+   new "recent" tile when the pile grew (a fresh discard). A pong/kong claim
+   shrinks the pile instead — the older tile that becomes the new tail must
+   not light up, and a highlight pointing at the claimed (now removed) tile
+   is cleared rather than left dangling. */
+function useRecentDiscardId(room: RoomProjection | null): string | null {
+  const pilesRef = useRef<Map<Seat, { length: number; tailId: string | null }>>(new Map());
+  const recentRef = useRef<string | null>(null);
+  if (room === null) {
+    if (pilesRef.current.size > 0) {
+      pilesRef.current = new Map();
+      recentRef.current = null;
+    }
+    return null;
+  }
+  let pileShrank = false;
+  for (const player of room.players) {
+    const previous = pilesRef.current.get(player.seat) ?? { length: 0, tailId: null };
+    const length = player.discards.length;
+    const tailId = player.discards.at(-1)?.id ?? null;
+    if (length > previous.length && tailId !== null) {
+      recentRef.current = tailId;
+    } else if (length < previous.length) {
+      pileShrank = true;
+    }
+    if (length !== previous.length || tailId !== previous.tailId) {
+      pilesRef.current.set(player.seat, { length, tailId });
+    }
+  }
+  if (pileShrank && recentRef.current !== null) {
+    const recentId = recentRef.current;
+    const stillOnTable = room.players.some((player) =>
+      player.discards.some((tile) => tile.id === recentId),
+    );
+    if (!stillOnTable) recentRef.current = null;
+  }
+  return recentRef.current;
 }
 
 function deadlineSeconds(deadline: string | null): number | null {
@@ -92,6 +145,7 @@ export default function RoomPage() {
   );
   const buttons = primaryActionButtons(room?.legalActions ?? []);
   const canDiscard = room?.legalActions.includes("DISCARD_TILE") === true;
+  const recentDiscardId = useRecentDiscardId(room);
   const locked = roomCtrl.busy || roomCtrl.connectionStatus !== "connected";
   const actionDeadlineAt = room?.actionDeadlineAt ?? null;
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(() =>
@@ -213,7 +267,9 @@ export default function RoomPage() {
             </View>
             <View className="game-meta">
               <Text className="game-header__meta">底分 {room.baseScore}</Text>
-              <Text className="game-header__meta">{roomCtrl.connectionStatus}</Text>
+              <Text className="game-header__meta">
+                {CONNECTION_LABELS[roomCtrl.connectionStatus]}
+              </Text>
               {room.mode === "FRIEND" ? (
                 <Button
                   className="header-btn"
@@ -252,7 +308,7 @@ export default function RoomPage() {
               <Text className="info-capsule__meta">底分{room.baseScore}</Text>
               {roomCtrl.connectionStatus !== "connected" ? (
                 <Text className="info-capsule__meta info-capsule__meta--warn">
-                  {roomCtrl.connectionStatus}
+                  {CONNECTION_LABELS[roomCtrl.connectionStatus]}
                 </Text>
               ) : null}
               {room.mode === "FRIEND" ? (
@@ -378,6 +434,13 @@ export default function RoomPage() {
                       分{player.score} · 手{player.handCount} · 倍{player.personalMultiplier}
                       {player.connected ? "" : " · 离"}
                     </Text>
+                    {seat !== room.selfSeat && player.handCount > 0 ? (
+                      <View className="hand-backs">
+                        {Array.from({ length: Math.min(player.handCount, 14) }, (_, index) => (
+                          <View key={index} className="hand-back" />
+                        ))}
+                      </View>
+                    ) : null}
                     {player.melds.length > 0 || latestReleasedWildcard !== null ? (
                       <View className="player-station__melds">
                         {player.melds.map((meld) => (
@@ -426,17 +489,24 @@ export default function RoomPage() {
                 <View className="center-block center-block--main">
                   <Text className="center-label">余牌 {room.wallRemaining}</Text>
                   <Text className="center-status">{phaseLabel(room)}</Text>
-                  {secondsRemaining !== null &&
-                  room.roundPhase !== "ROUND_OVER" &&
-                  roomCtrl.connectionStatus === "connected" &&
-                  roomCtrl.pendingAction === null ? (
-                    <Text
-                      className={`center-countdown${secondsRemaining <= 5 ? " is-urgent" : ""}`}
-                    >
-                      {secondsRemaining}
-                      <Text className="center-countdown__unit">秒</Text>
-                    </Text>
-                  ) : null}
+                  {/* Always rendered (visibility-hidden when idle) so the center
+                      panel keeps a fixed height — the discard rings are offset
+                      from it and would jump if it grew/shrank. */}
+                  <Text
+                    className={`center-countdown${
+                      secondsRemaining !== null && secondsRemaining <= 5 ? " is-urgent" : ""
+                    }${
+                      secondsRemaining !== null &&
+                      room.roundPhase !== "ROUND_OVER" &&
+                      roomCtrl.connectionStatus === "connected" &&
+                      roomCtrl.pendingAction === null
+                        ? ""
+                        : " is-hidden"
+                    }`}
+                  >
+                    {secondsRemaining ?? "—"}
+                    <Text className="center-countdown__unit">秒</Text>
+                  </Text>
                 </View>
                 <View className="center-block">
                   <Text className="center-label">赖子</Text>
@@ -456,7 +526,8 @@ export default function RoomPage() {
                 const player = room.players[seat];
                 if (player === undefined) return null;
                 const pos = POSITION_CLASS[relativePosition(seat, selfSeat)] ?? "pos-self";
-                const discards = player.discards.slice(-6);
+                const visibleLimit = pos === "pos-self" ? SELF_VISIBLE_DISCARDS : VISIBLE_DISCARDS;
+                const discards = player.discards.slice(-visibleLimit);
                 return (
                   <View key={`d-${seat}`} className={`discard-zone ${pos}`}>
                     {discards.map((tile) => (
@@ -464,14 +535,21 @@ export default function RoomPage() {
                         key={tile.id}
                         tile={tile}
                         compact
+                        recent={tile.id === recentDiscardId}
                         wildcardKind={room.wildcardKind}
                       />
                     ))}
+                    {player.discards.length > visibleLimit ? (
+                      <Text className="discard-zone__count">{player.discards.length}张</Text>
+                    ) : null}
                   </View>
                 );
               })}
 
               <View className="self-area">
+                {canDiscard && selectedTile !== null ? (
+                  <Text className="discard-tip">再点一次选中的牌即可打出</Text>
+                ) : null}
                 <ActionDock
                   buttons={buttons}
                   disabled={locked}
