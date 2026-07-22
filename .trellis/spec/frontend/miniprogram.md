@@ -117,6 +117,72 @@ room). Finish all builds before starting a capture run.
 
 ---
 
+## Production Rollout (real device, not devtools)
+
+### AppID: test accounts (测试号) cannot whitelist server domains
+
+`project.config.json`'s `appid` must be a **properly registered** mini-program
+(individual or enterprise registration via `mp.weixin.qq.com`'s normal
+signup), not a 测试号 (sandbox test account obtained from the "sandbox" quick-
+start flow). Test accounts either lack the "服务器域名" (server domain)
+settings page entirely or don't enforce it — either way, `wx.request` /
+`wx.connectSocket` from a real device fail with `request:fail url not in
+domain list` regardless of what you configure, while the devtools simulator
+keeps working fine (`urlCheck: false` in `project.config.json` bypasses
+domain validation there, masking the problem). If devtools works but a real
+device doesn't, check the appid type before anything else.
+
+Individual registration doesn't require the paid "认证" step — that only
+unlocks payment/advanced APIs, unrelated to server domain whitelisting.
+
+### Required mp.weixin.qq.com config once you have a real AppID
+
+开发管理 → 开发设置 → 服务器域名: add the production origin to **both**
+lists — `https://<domain>` under request合法域名, `wss://<domain>` under
+socket合法域名 (this project uses `socket.io-mp`, which is a WebSocket
+client; missing the socket entry breaks realtime even if REST calls work).
+Changes take a few minutes to propagate to a real device; a full app restart
+(not just backgrounding) is sometimes needed to pick them up.
+
+### Building for production
+
+```bash
+TARO_APP_API_BASE=https://<domain> pnpm --filter @huanghuang/miniprogram build:weapp
+```
+
+Verify the URL actually landed before shipping — it ends up in
+`dist/common.js`, not `dist/app.js`:
+
+```bash
+grep -o '"https://<domain>"' apps/miniprogram/dist/common.js
+```
+
+### Gotcha: swallowed network errors mask domain-whitelist failures
+
+`Taro.request` rejects with a plain `{ errMsg: string }` when the platform
+blocks the request before it reaches the server (wrong domain, DNS, TLS,
+timeout) — this is not an `Error` instance and not an `ApiError`. Any catch
+block that does `cause instanceof ApiError ? cause.code : "UNKNOWN"` and maps
+to a generic label (e.g. `src/pages/index/index.tsx`'s `submit()`) throws
+away the one piece of information that tells you whether it's a server bug
+or a client/platform-level block. Always surface `cause.errMsg` (or
+`cause.message`) as a fallback instead of a fixed generic string.
+
+### Ignorable noise: `routeDone with a webviewId ... is not found`
+
+A `SystemError (appServiceSDKScriptError)` specifically during **真机调试**
+(devtools attached to a real device over the debug bridge), triggered by
+`Taro.navigateTo` page transitions, often worse with `compileHotReLoad: true`
+in `project.private.config.json`. This is a known instability in the debug
+bridge's own webview-lifecycle tracking, not an application bug — confirmed
+by testing plain 预览 (scan-code preview, no debug bridge attached), which
+completes the same navigation cleanly. Don't chase this in application code;
+if navigation genuinely fails (not just a console error) even under plain
+预览, that's a real bug — but real 真机调试-bridge noise should be dismissed
+once 预览 is confirmed clean.
+
+---
+
 ## Verification Commands
 
 ```bash
