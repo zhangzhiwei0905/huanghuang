@@ -32,57 +32,65 @@ function sharedRoomCode(code: string | undefined): string | null {
 // `{ errMsg: string }`). Swallowing the latter into one generic "操作没有
 //成功" string makes real-device domain-whitelist failures indistinguishable
 // from an actual server error — surface whatever detail is available.
-function LoginGate({
-  onDone,
-  onError,
-}: {
-  onDone: (identity: Identity) => void;
-  onError: (message: string | null) => void;
-}) {
+function LoginGate({ onDone }: { onDone: (identity: Identity) => void }) {
   const [avatarTempPath, setAvatarTempPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    kind: "status" | "error";
+    message: string;
+  } | null>(null);
 
   function onChooseAvatar(event: { detail: { avatarUrl: string } }) {
     if (typeof event.detail.avatarUrl !== "string" || event.detail.avatarUrl.length === 0) {
-      onError("没有读取到所选头像，请重新选择");
+      setFeedback({ kind: "error", message: "没有读取到所选头像，请重新选择" });
       return;
     }
     // chooseAvatar returns a local temp path. Preview it immediately so a
     // slow or blocked upload cannot look like the selection did nothing.
     setAvatarTempPath(event.detail.avatarUrl);
-    onError(null);
+    setFeedback(null);
   }
 
   async function submit(event: { detail: { value?: Record<string, unknown> } }) {
     const rawNickname = event.detail.value?.nickname;
     const nickname = typeof rawNickname === "string" ? rawNickname.trim() : "";
     if (avatarTempPath === null) {
-      onError("请先选择微信头像");
+      setFeedback({ kind: "error", message: "请先选择微信头像" });
       return;
     }
     if (nickname.trim().length === 0) {
-      onError("请选择微信昵称或手动输入名字");
+      setFeedback({
+        kind: "error",
+        message: "请点击昵称框，选择微信昵称或手动输入名字",
+      });
       return;
     }
     setBusy(true);
-    onError(null);
+    setFeedback({ kind: "status", message: "正在处理并上传头像…" });
     try {
       let uploadedAvatarUrl: string;
       try {
         uploadedAvatarUrl = await uploadAvatar(avatarTempPath);
       } catch (cause) {
         const detail = requestFailureDetail(cause);
-        onError(`头像上传失败${detail.length > 0 ? `：${detail}` : ""}，请重试`);
+        setFeedback({
+          kind: "error",
+          message: `头像上传失败${detail.length > 0 ? `：${detail}` : ""}，请重试`,
+        });
         return;
       }
       // wx.login()'s code expires in minutes — fetch it right before the
       // submit, not earlier while the user is still picking an avatar/typing.
       try {
+        setFeedback({ kind: "status", message: "头像已上传，正在登录微信…" });
         const identity = await wechatLogin(nickname, uploadedAvatarUrl);
         onDone(identity);
       } catch (cause) {
         const detail = requestFailureDetail(cause);
-        onError(`登录没有成功${detail.length > 0 ? `：${detail}` : ""}，请再试一次`);
+        setFeedback({
+          kind: "error",
+          message: `登录没有成功${detail.length > 0 ? `：${detail}` : ""}，请再试一次`,
+        });
       }
     } finally {
       setBusy(false);
@@ -109,8 +117,16 @@ function LoginGate({
         type="nickname"
         name="nickname"
         maxlength={12}
-        placeholder="微信昵称（可手动修改）"
+        placeholder="点击选择微信昵称"
       />
+      <Text className="mp-login__nickname-hint">
+        点击昵称框，在微信键盘中选择“使用微信昵称”，选中后仍可修改
+      </Text>
+      {feedback !== null ? (
+        <Text className={`mp-login__feedback${feedback.kind === "error" ? " is-error" : ""}`}>
+          {feedback.message}
+        </Text>
+      ) : null}
       <View className="mp-home__form-actions">
         <Button
           formType="submit"
@@ -118,7 +134,7 @@ function LoginGate({
           className="mp-btn mp-btn--primary"
           disabled={busy}
         >
-          进入晃晃
+          {busy ? "正在进入…" : "进入晃晃"}
         </Button>
       </View>
     </Form>
@@ -220,9 +236,7 @@ export default function IndexPage() {
             setIdentity(resolved);
             setIdentityState("loggedIn");
           }}
-          onError={setError}
         />
-        {error !== null ? <Text className="mp-error mp-login__error">{error}</Text> : null}
       </View>
     );
   }

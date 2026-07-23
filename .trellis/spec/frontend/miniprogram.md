@@ -100,6 +100,15 @@ nickname. The supported flow requires explicit user interaction:
 - The submitted nickname remains user-editable. Validate the form value at
   submit time and keep the selected local avatar path after upload/auth
   failures so the user can retry.
+- Production experience builds can enforce `uploadFile` separately from
+  `request`, while devtools and real-device debug may bypass that difference.
+  The current login flow therefore compresses the chosen avatar, reads it as
+  base64, and sends it to `/api/upload/avatar-data` with `Taro.request`. Keep
+  release-critical profile capture on this request-domain path unless the
+  product intentionally restores and verifies a separate upload-file domain.
+- Render upload/login progress and failures inside the login card. A page-level
+  error outside the card can fall outside the visible landscape area and make
+  a rejected submit look like a dead button.
 
 Do not replace this with a controlled React value whose only synchronization
 path is `onInput`/`onBlur`; that can display a native nickname while submitting
@@ -165,19 +174,15 @@ unlocks payment/advanced APIs, unrelated to server domain whitelisting.
 
 ### Required mp.weixin.qq.com config once you have a real AppID
 
-开发管理 → 开发设置 → 服务器域名: add the production origin to **three**
-lists — `https://<domain>` under request合法域名, `wss://<domain>` under
-socket合法域名 (this project uses `socket.io-mp`, which is a WebSocket
-client; missing the socket entry breaks realtime even if REST calls work),
-and `https://<domain>` under **uploadFile合法域名** (a separate whitelist
-from request合法域名 — `Taro.uploadFile`/`wx.uploadFile`, e.g. the
-`chooseAvatar` → `/api/upload/avatar` flow, checks this list specifically;
-missing it fails with the same `request:fail url not in domain list` shape
-as the other two, and the devtools simulator masks it the same way
-(`urlCheck: false` bypasses domain validation there) — same failure class
-as the appid/domain gotcha above, just a third list to remember). Changes
-take a few minutes to propagate to a real device; a full app restart (not
-just backgrounding) is sometimes needed to pick them up.
+开发管理 → 开发设置 → 服务器域名: add the production origin to request合法域名
+(`https://<domain>`) and socket合法域名 (`wss://<domain>`; this project uses
+`socket.io-mp`). The current avatar flow also uses the request domain via
+`/api/upload/avatar-data`. If any future client uses `Taro.uploadFile` /
+`wx.uploadFile` or the legacy `/api/upload/avatar` path, the same HTTPS origin
+must additionally be configured under **uploadFile合法域名**. It is a separate
+allowlist, and devtools with `urlCheck: false` can mask a missing entry. Changes
+take a few minutes to propagate to a real device; a full app restart (not just
+backgrounding) is sometimes needed to pick them up.
 
 ### Building for production
 

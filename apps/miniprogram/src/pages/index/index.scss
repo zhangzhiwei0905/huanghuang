@@ -312,6 +312,7 @@
 
 .mp-login {
   align-items: center;
+  gap: 1.2vmin;
 }
 
 .mp-login__avatar-btn {
@@ -342,8 +343,25 @@
   color: var(--muted, #5f625b);
 }
 
-.mp-login__error {
-  margin-top: 0.8vmin;
+.mp-login__nickname-hint {
+  max-width: 100%;
+  font-size: clamp(10px, 2vmin, 13px);
+  line-height: 1.35;
+  color: var(--muted, #5f625b);
+  text-align: center;
+}
+
+.mp-login__feedback {
+  max-width: 100%;
+  font-size: clamp(10px, 2.1vmin, 13px);
+  line-height: 1.35;
+  color: var(--accent, #2f6a4c);
+  text-align: center;
+  word-break: break-all;
+}
+
+.mp-login__feedback.is-error {
+  color: var(--danger, #7a4b45);
 }
 
 .mp-field__avatar {

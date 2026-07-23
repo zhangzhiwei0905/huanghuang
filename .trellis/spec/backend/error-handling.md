@@ -29,6 +29,22 @@ Typical status usage today:
 | Domain conflict / not available | 409 | `{ error: "<CODE>" }` |
 | Missing room / auth as used by route | 404 / 401 as implemented on that route | `{ error: "<CODE>" }` |
 
+### Avatar data upload (`POST /api/upload/avatar-data`)
+
+The mini-program sends a compressed PNG/JPEG as base64 JSON so experience
+builds can use the normal request-domain allowlist. Decode and validate through
+`apps/server/src/avatar-upload.ts`; do not write request bytes directly.
+
+| Situation | HTTP | Body |
+|-----------|------|------|
+| Missing/malformed base64 or unsupported file signature | 400 | `{ error: "INVALID_AVATAR" }` |
+| Encoded or decoded payload exceeds 2 MiB | 413 | `{ error: "AVATAR_TOO_LARGE" }` |
+| Filesystem or unexpected failure | 500 | `{ error: "AVATAR_UPLOAD_FAILED" }` |
+
+Keep infrastructure details in server logs only. The legacy multipart
+`/api/upload/avatar` route remains for older clients, but the current
+mini-program must use `/api/upload/avatar-data`.
+
 ### Socket game commands and chat
 
 Commands are acknowledged with the shared `CommandResult` (or a thin `{ accepted: false, errorCode }` for pre-execute failures):

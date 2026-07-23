@@ -130,18 +130,64 @@ export async function wechatLogin(nickname: string, avatarUrl: string | null): P
   return { nickname: data.nickname, avatarUrl: data.avatarUrl };
 }
 
-/** Upload a chooseAvatar temp file path, returning a durable server-hosted URL. */
+function readFileAsBase64(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    Taro.getFileSystemManager().readFile({
+      filePath,
+      encoding: "base64",
+      success: (result) => {
+        if (typeof result.data === "string" && result.data.length > 0) {
+          resolve(result.data);
+        } else {
+          reject(new Error("AVATAR_FILE_EMPTY"));
+        }
+      },
+      fail: reject,
+    });
+  });
+}
+
+async function compressAvatar(tempFilePath: string): Promise<string> {
+  try {
+    const result = await Taro.compressImage({
+      src: tempFilePath,
+      quality: 82,
+      compressedWidth: 256,
+      compressedHeight: 256,
+    });
+    return result.tempFilePath;
+  } catch {
+    // Some older runtimes cannot compress every image format. Reading the
+    // original path still gives the server a chance to accept a small image.
+    return tempFilePath;
+  }
+}
+
+/** Upload a chooseAvatar temp file path through the normal request domain. */
 export async function uploadAvatar(tempFilePath: string): Promise<string> {
-  const response = await Taro.uploadFile({
-    url: `${API_BASE}/api/upload/avatar`,
-    filePath: tempFilePath,
-    name: "file",
+  const compressedPath = await compressAvatar(tempFilePath);
+  const data = await readFileAsBase64(compressedPath);
+  const response = await Taro.request({
+    url: `${API_BASE}/api/upload/avatar-data`,
+    method: "POST",
+    data: { data },
+    header: { "Content-Type": "application/json" },
   });
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(`AVATAR_UPLOAD_HTTP_${String(response.statusCode)}`);
+    const error =
+      typeof response.data === "object" &&
+      response.data !== null &&
+      "error" in response.data &&
+      typeof response.data.error === "string"
+        ? response.data.error
+        : `HTTP_${String(response.statusCode)}`;
+    throw new Error(`AVATAR_UPLOAD_${error}`);
   }
-  const data = JSON.parse(response.data) as { avatarUrl: string };
-  return data.avatarUrl;
+  const payload = response.data as { avatarUrl?: unknown };
+  if (typeof payload.avatarUrl !== "string" || !payload.avatarUrl.startsWith("/avatars/")) {
+    throw new Error("AVATAR_UPLOAD_INVALID_RESPONSE");
+  }
+  return payload.avatarUrl;
 }
 
 export async function pingHealth(): Promise<{ status: string }> {

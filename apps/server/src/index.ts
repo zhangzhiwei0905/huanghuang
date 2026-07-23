@@ -12,9 +12,11 @@ import {
 import Fastify from "fastify";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Server } from "socket.io";
+import { AvatarUploadError, decodeAvatarData, MAX_AVATAR_BASE64_LENGTH } from "./avatar-upload.js";
 import { GameDatabase } from "./database.js";
 import { RoomService } from "./room-service.js";
 import { SessionService, SESSION_TOKEN_HEADER } from "./session-service.js";
@@ -205,6 +207,33 @@ app.post("/api/upload/avatar", async (request, reply) => {
   await pipeline(file.file, createWriteStream(join(avatarDir, filename)));
   return { avatarUrl: `/avatars/${filename}` };
 });
+
+/**
+ * Experience builds enforce uploadFile and request domain allowlists
+ * separately. This JSON transport lets the mini-program send a small,
+ * compressed avatar through its already-required request domain while the
+ * multipart route above remains available for older clients.
+ */
+app.post(
+  "/api/upload/avatar-data",
+  { bodyLimit: MAX_AVATAR_BASE64_LENGTH + 64 },
+  async (request, reply) => {
+    try {
+      const body = (request.body ?? {}) as { data?: unknown };
+      const avatar = decodeAvatarData(body.data);
+      const filename = `${randomUUID()}.${avatar.extension}`;
+      await writeFile(join(avatarDir, filename), avatar.bytes);
+      return { avatarUrl: `/avatars/${filename}` };
+    } catch (cause) {
+      if (cause instanceof AvatarUploadError) {
+        const statusCode = cause.code === "AVATAR_TOO_LARGE" ? 413 : 400;
+        return reply.code(statusCode).send({ error: cause.code });
+      }
+      request.log.error({ err: cause }, "avatar data upload failed");
+      return reply.code(500).send({ error: "AVATAR_UPLOAD_FAILED" });
+    }
+  },
+);
 
 app.post("/api/rooms", (request, reply) => {
   const parsed = createRoomSchema.safeParse(request.body);
