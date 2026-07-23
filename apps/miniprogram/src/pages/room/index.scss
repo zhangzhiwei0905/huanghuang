@@ -443,16 +443,22 @@
   transform: translateX(-50%);
 }
 
+/* Left/right stations no longer center via translateY(-50%): when meld
+   groups push the card taller, centering grows it both up (into the
+   opposite station/discard ring) and down (into self-area). Anchoring the
+   top edge instead means growth only ever pushes downward. top:39% (vs the
+   old top:42% + -50% transform) keeps the empty/few-meld card at roughly
+   the same visual position as before — only tall multi-meld cards differ. */
 .player-station.pos-left {
-  top: 42%;
+  top: 39%;
   left: calc(1vmin + env(safe-area-inset-left));
-  transform: translateY(-50%);
+  max-width: 46vmin;
 }
 
 .player-station.pos-right {
-  top: 42%;
+  top: 39%;
   right: calc(1vmin + env(safe-area-inset-right));
-  transform: translateY(-50%);
+  max-width: 46vmin;
 }
 
 /* Self info sits above hand, left-ish like web bottom station.
@@ -494,17 +500,19 @@
   gap: 0.15vmin;
 }
 
-/* Melds/released-wildcards use the same small tile size as the discard
-   piles — one consistent "small tile" scale everywhere that isn't the
-   player's own hand, instead of full compact size ballooning multi-meld
-   stations tall enough to crowd the discard rings above/beside them. */
+/* Smaller than the discard-pile tile size: melds/released-wildcards need
+   their own scale so 3-4 exposed groups (max hand structure: 4 sets, no
+   concealed pair once all are exposed) stay on one row inside the widened
+   pos-left/pos-right card instead of wrapping and growing the station
+   tall. Wrap is still allowed as a fallback for the rare 4-kong case, but
+   only ever adds height downward now (see pos-left/pos-right top-anchor). */
 .player-station__melds .mj-tile--compact {
-  width: 3.6vmin;
-  height: 5vmin;
-  min-width: 20px;
-  min-height: 28px;
-  max-width: 26px;
-  max-height: 36px;
+  width: 2.6vmin;
+  height: 3.6vmin;
+  min-width: 15px;
+  min-height: 21px;
+  max-width: 19px;
+  max-height: 26px;
 }
 
 .released-wildcard-group {

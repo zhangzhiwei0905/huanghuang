@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
-import Taro, { useDidShow } from "@tarojs/taro";
+import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
 import type { BaseScore, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
 import { ActionDock } from "../../components/ActionDock";
@@ -118,6 +118,14 @@ export default function RoomPage() {
       Taro.removeStorageSync("huanghuang_open_room");
     }
   });
+
+  // Share target is the home page, not this page: RoomPage.useDidShow reads
+  // room state from wx storage set by the create/join flow, so a cold-start
+  // deep link straight into /pages/room/index has nothing to hydrate from.
+  useShareAppMessage(() => ({
+    title: room !== null ? `晃晃麻将 · 房间 ${room.roomCode}` : "晃晃麻将 · 一起来打牌",
+    path: room !== null ? `/pages/index/index?code=${room.roomCode}` : "/pages/index/index",
+  }));
 
   const self = room === null ? null : selfPlayer(room);
   const selfSeat = room?.selfSeat ?? 0;
@@ -279,6 +287,11 @@ export default function RoomPage() {
                   {inviteStatus}
                 </Button>
               ) : null}
+              {room.mode === "FRIEND" ? (
+                <Button className="header-btn" hoverClass="is-pressed" openType="share">
+                  分享邀请
+                </Button>
+              ) : null}
               {room.mode === "FRIEND" && room.isOwner ? (
                 <Button
                   className="header-btn header-btn--danger"
@@ -320,6 +333,11 @@ export default function RoomPage() {
                   {inviteStatus}
                 </Button>
               ) : null}
+              {room.mode === "FRIEND" ? (
+                <Button className="info-capsule__btn" hoverClass="is-pressed" openType="share">
+                  分享
+                </Button>
+              ) : null}
               {room.mode === "FRIEND" && room.isOwner ? (
                 <Button
                   className="info-capsule__btn info-capsule__btn--danger"
@@ -354,6 +372,9 @@ export default function RoomPage() {
                   onClick={() => void copyRoomCode()}
                 >
                   {inviteStatus}
+                </Button>
+                <Button className="btn-accent" hoverClass="is-pressed" openType="share">
+                  分享邀请
                 </Button>
               </View>
               <Text className="waiting-hint">把 6 位房号发给好友，在小程序「加入房间」</Text>

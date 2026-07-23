@@ -109,7 +109,7 @@
   border-radius: 999px;
   background: rgb(20 24 15 / 45%);
   color: #fff;
-  font-size: 2.2vmin;
+  font-size: clamp(11px, 2.5vmin, 15px);
   letter-spacing: 0.14em;
   animation: home-rise 420ms ease-out 90ms backwards;
 }
@@ -154,11 +154,11 @@
 .mp-btn {
   margin: 0 !important;
   min-width: 22vmin;
-  min-height: 9vmin !important;
-  height: 9vmin !important;
+  min-height: max(10.5vmin, 42px) !important;
+  height: max(10.5vmin, 42px) !important;
   padding: 0 3.6vmin !important;
-  line-height: 9vmin !important;
-  font-size: 3vmin !important;
+  line-height: max(10.5vmin, 42px) !important;
+  font-size: clamp(14px, 3.6vmin, 20px) !important;
   font-weight: 700 !important;
   border-radius: 2.2vmin !important;
   border: 1px solid var(--line-strong, #9cbfa9) !important;
@@ -238,10 +238,10 @@
 
 .mp-home__form-actions .mp-btn {
   min-width: 18vmin;
-  min-height: 7.5vmin !important;
-  height: 7.5vmin !important;
-  line-height: 7.5vmin !important;
-  font-size: 2.6vmin !important;
+  min-height: max(8.8vmin, 36px) !important;
+  height: max(8.8vmin, 36px) !important;
+  line-height: max(8.8vmin, 36px) !important;
+  font-size: clamp(13px, 3.1vmin, 18px) !important;
 }
 
 .mp-field {
@@ -254,20 +254,20 @@
 .mp-field__label {
   width: 8vmin;
   flex-shrink: 0;
-  font-size: 2.3vmin;
+  font-size: clamp(12px, 2.7vmin, 16px);
   color: var(--muted, #5f625b);
 }
 
 .mp-field__input {
   flex: 1;
-  min-height: 7vmin;
-  height: 7vmin;
+  min-height: max(7vmin, 28px);
+  height: max(7vmin, 28px);
   padding: 0 1.6vmin;
   border-radius: 1.2vmin;
   border: 1px solid var(--line, #cde0d3);
   background: #fff;
   color: var(--ink, #272925);
-  font-size: 2.6vmin;
+  font-size: clamp(13px, 3vmin, 17px);
 }
 
 .mp-score-row {
@@ -280,12 +280,12 @@
 .mp-score {
   margin: 0 !important;
   min-width: 8vmin;
-  min-height: 6.5vmin !important;
-  height: 6.5vmin !important;
-  line-height: 6.5vmin !important;
+  min-height: max(6.5vmin, 26px) !important;
+  height: max(6.5vmin, 26px) !important;
+  line-height: max(6.5vmin, 26px) !important;
   padding: 0 1.6vmin !important;
   border-radius: 1.2vmin !important;
-  font-size: 2.4vmin !important;
+  font-size: clamp(12px, 2.8vmin, 16px) !important;
   font-weight: 600 !important;
   background: var(--surface, #dcece1) !important;
   color: var(--ink, #272925) !important;

@@ -13,6 +13,10 @@ const NICK_KEY = "huanghuang-nickname";
 
 type Mode = "HOME" | "CREATE" | "JOIN" | "BOT";
 
+function sharedRoomCode(code: string | undefined): string | null {
+  return code !== undefined && /^\d{6}$/u.test(code) ? code : null;
+}
+
 // A rejection here can come from two very different layers: our own API
 // (ApiError, with a known error code) or wx.request/Taro.request itself
 // failing before it ever reached the server (wrong/unwhitelisted domain,
@@ -36,7 +40,12 @@ function describeSubmitError(cause: unknown): string {
 }
 
 export default function IndexPage() {
-  const [mode, setMode] = useState<Mode>("HOME");
+  // A friend opening a shared invite card lands here with ?code=123456
+  // (see RoomPage's useShareAppMessage) — deep-linking straight to
+  // /pages/room/index isn't possible, that page hydrates from wx storage
+  // set by the create/join flow below, not from a cold-start route param.
+  const sharedCode = sharedRoomCode(Taro.useRouter().params.code);
+  const [mode, setMode] = useState<Mode>(sharedCode !== null ? "JOIN" : "HOME");
   const [nickname, setNickname] = useState(() => {
     try {
       const value = Taro.getStorageSync(NICK_KEY);
@@ -45,7 +54,7 @@ export default function IndexPage() {
       return "";
     }
   });
-  const [roomCode, setRoomCode] = useState("");
+  const [roomCode, setRoomCode] = useState(sharedCode ?? "");
   const [baseScore, setBaseScore] = useState<BaseScore>(2);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
