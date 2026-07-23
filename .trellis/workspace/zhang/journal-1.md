@@ -456,3 +456,38 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 微信登录持久化 + 好友房大厅牌桌化 + 生产部署
+
+**Date**: 2026-07-23
+**Task**: 微信登录持久化 + 好友房大厅牌桌化 + 生产部署
+**Branch**: `miniprogram`
+
+### Summary
+
+两个任务:(1) 首页按钮/字体放大、对局碰杠遮挡重设计(牌面缩小+卡片加宽+仅向下扩张)、好友房分享卡片(useShareAppMessage+房号预填);(2) 真实微信登录——补全服务端已有的半成品 /api/auth/wechat(从丢弃 openid 改为按 openid 持久化建档)、新增头像上传接口、protocol 加 avatarUrl、好友房大厅从卡片列表改十字形围坐布局。调试过程发现并修复:本地服务器忘记重启导致的假性'输入框失效'排查弯路、wechatLinked 标记区分微信登录 session 与旧匿名 session(否则老设备旧 token 永久跳过登录页)、uploadFile 合法域名是独立于 request/socket 的第三个白名单。已用 automator 连接开发者工具做过运行时诊断,并通过 SSH 手动完成了生产环境部署(tar 传输+备份+镜像重建+容器切换+健康检查+manifest,复刻已有的部署规范)。用户真机测试仍在排查头像/昵称未正确回填的问题,可能是小程序包未用最新代码重新上传,或 mp.weixin.qq.com 隐私保护指引未配置,尚待用户下一步确认。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cbeeef6` | (see git log) |
+| `827185e` | (see git log) |
+| `987002e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
