@@ -1,5 +1,6 @@
 export default {
   pages: ["pages/index/index", "pages/room/index"],
+  lazyCodeLoading: "requiredComponents",
   window: {
     backgroundTextStyle: "light",
     navigationBarBackgroundColor: "#eef6f0",
