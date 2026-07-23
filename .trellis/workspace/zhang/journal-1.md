@@ -524,3 +524,36 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 小程序候场与牌桌重设计
+
+**Date**: 2026-07-23
+**Task**: 小程序候场与牌桌重设计
+**Branch**: `miniprogram`
+
+### Summary
+
+完成横屏单屏候场与牌桌重构；四方位展示头像、昵称和积分；自己方位支持准备/取消准备；全员准备后显示 3/2/1 开局过渡并自动消失；通过正式服务器和微信开发者工具 11352 完成四人流程验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6db44fb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
