@@ -19,6 +19,7 @@ function player(seat: Seat, overrides?: Partial<PlayerProjection>): PlayerProjec
   return {
     seat,
     nickname: `玩家${seat + 1}`,
+    avatarUrl: null,
     controller: "HUMAN",
     connected: true,
     handCount: overrides?.hand?.length ?? 0,

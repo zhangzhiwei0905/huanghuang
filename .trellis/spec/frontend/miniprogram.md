@@ -137,12 +137,19 @@ unlocks payment/advanced APIs, unrelated to server domain whitelisting.
 
 ### Required mp.weixin.qq.com config once you have a real AppID
 
-开发管理 → 开发设置 → 服务器域名: add the production origin to **both**
+开发管理 → 开发设置 → 服务器域名: add the production origin to **three**
 lists — `https://<domain>` under request合法域名, `wss://<domain>` under
 socket合法域名 (this project uses `socket.io-mp`, which is a WebSocket
-client; missing the socket entry breaks realtime even if REST calls work).
-Changes take a few minutes to propagate to a real device; a full app restart
-(not just backgrounding) is sometimes needed to pick them up.
+client; missing the socket entry breaks realtime even if REST calls work),
+and `https://<domain>` under **uploadFile合法域名** (a separate whitelist
+from request合法域名 — `Taro.uploadFile`/`wx.uploadFile`, e.g. the
+`chooseAvatar` → `/api/upload/avatar` flow, checks this list specifically;
+missing it fails with the same `request:fail url not in domain list` shape
+as the other two, and the devtools simulator masks it the same way
+(`urlCheck: false` bypasses domain validation there) — same failure class
+as the appid/domain gotcha above, just a third list to remember). Changes
+take a few minutes to propagate to a real device; a full app restart (not
+just backgrounding) is sometimes needed to pick them up.
 
 ### Building for production
 

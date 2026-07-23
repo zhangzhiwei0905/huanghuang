@@ -4,7 +4,13 @@ import { API_BASE, SESSION_TOKEN_HEADER, SESSION_TOKEN_STORAGE_KEY } from "../co
 export type SessionIssueResponse = {
   sessionId: string;
   nickname: string;
+  avatarUrl: string | null;
   sessionToken: string | null;
+};
+
+export type Identity = {
+  nickname: string;
+  avatarUrl: string | null;
 };
 
 export function getStoredSessionToken(): string | null {
@@ -77,8 +83,65 @@ export async function issueSession(nickname: string): Promise<SessionIssueRespon
   return {
     sessionId: data.sessionId,
     nickname: data.nickname,
+    avatarUrl: data.avatarUrl,
     sessionToken,
   };
+}
+
+/** Resolve the identity behind an already-stored session token, if any (app relaunch). */
+export async function resolveIdentity(): Promise<Identity | null> {
+  const token = getStoredSessionToken();
+  if (token === null) return null;
+  const response = await Taro.request({
+    url: `${API_BASE}/api/session`,
+    method: "GET",
+    header: authHeaders(token),
+  });
+  if (response.statusCode !== 200) return null;
+  const data = response.data as {
+    nickname: string;
+    avatarUrl: string | null;
+    wechatLinked: boolean;
+  };
+  // A device that used the app before the WeChat-login feature shipped may
+  // still carry a valid plain anonymous session token — that must not
+  // count as "already logged in" here, or it silently skips the login
+  // gate forever with its old nickname and no avatar.
+  if (!data.wechatLinked) return null;
+  return { nickname: data.nickname, avatarUrl: data.avatarUrl };
+}
+
+/** Exchange a fresh wx.login() code (+ optional uploaded avatar) for a persistent WeChat identity. */
+export async function wechatLogin(nickname: string, avatarUrl: string | null): Promise<Identity> {
+  const { code } = await Taro.login();
+  const response = await Taro.request({
+    url: `${API_BASE}/api/auth/wechat`,
+    method: "POST",
+    data: { code, nickname, avatarUrl },
+    header: { "Content-Type": "application/json" },
+  });
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`WECHAT_AUTH_HTTP_${String(response.statusCode)}`);
+  }
+  const data = response.data as SessionIssueResponse;
+  if (data.sessionToken !== null) {
+    setStoredSessionToken(data.sessionToken);
+  }
+  return { nickname: data.nickname, avatarUrl: data.avatarUrl };
+}
+
+/** Upload a chooseAvatar temp file path, returning a durable server-hosted URL. */
+export async function uploadAvatar(tempFilePath: string): Promise<string> {
+  const response = await Taro.uploadFile({
+    url: `${API_BASE}/api/upload/avatar`,
+    filePath: tempFilePath,
+    name: "file",
+  });
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`AVATAR_UPLOAD_HTTP_${String(response.statusCode)}`);
+  }
+  const data = JSON.parse(response.data) as { avatarUrl: string };
+  return data.avatarUrl;
 }
 
 export async function pingHealth(): Promise<{ status: string }> {

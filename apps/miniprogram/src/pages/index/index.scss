@@ -307,3 +307,64 @@
   font-size: 2.2vmin;
   color: var(--danger, #7a4b45);
 }
+
+/* ---- WeChat login gate (first launch only) ---- */
+
+.mp-login {
+  align-items: center;
+}
+
+.mp-login__avatar-btn {
+  margin: 0 !important;
+  width: 20vmin !important;
+  height: 20vmin !important;
+  min-width: 72px !important;
+  min-height: 72px !important;
+  max-width: 96px !important;
+  max-height: 96px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  border: 1px solid var(--line, #cde0d3) !important;
+  background: #fff !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.mp-login__avatar-img {
+  width: 100%;
+  height: 100%;
+}
+
+.mp-login__avatar-fallback {
+  font-size: clamp(12px, 2.6vmin, 16px);
+  color: var(--muted, #5f625b);
+}
+
+.mp-login__error {
+  margin-top: 0.8vmin;
+}
+
+.mp-field__avatar {
+  width: 6vmin;
+  height: 6vmin;
+  min-width: 26px;
+  min-height: 26px;
+  max-width: 34px;
+  max-height: 34px;
+  border-radius: 50%;
+  margin-right: 1vmin;
+}
+
+.mp-field__value {
+  flex: 1;
+  font-size: clamp(13px, 3vmin, 17px);
+  color: var(--ink, #272925);
+}
+
+.mp-field__relogin {
+  font-size: clamp(11px, 2.2vmin, 14px);
+  color: var(--accent, #2f6a4c);
+  text-decoration: underline;
+}

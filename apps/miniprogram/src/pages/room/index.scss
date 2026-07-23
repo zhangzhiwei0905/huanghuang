@@ -287,42 +287,106 @@
   color: var(--muted, #5f625b);
 }
 
-.lobby-grid {
+/* Waiting-lobby seating, laid out as a cross so it reads as "sitting around
+   the table" the same way the in-game .player-station ring does — but the
+   in-game ring's absolute top/left percentages are tuned against the
+   full-bleed .table-surface felt, not this much smaller centered card, so
+   this reuses the same pos-* naming (via POSITION_CLASS/relativePosition)
+   without reusing its positioning math: a 3x3 grid with named areas gets
+   the same visual arrangement without fragile cross-context percentages. */
+.lobby-table {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-areas:
+    ".       opposite ."
+    "left    .        right"
+    ".       self     .";
   gap: 1.2vmin;
+  align-items: center;
+  justify-items: center;
+  padding: 1.2vmin 0;
 }
 
-.lobby-seat {
+.lobby-station.pos-opposite {
+  grid-area: opposite;
+}
+
+.lobby-station.pos-left {
+  grid-area: left;
+}
+
+.lobby-station.pos-right {
+  grid-area: right;
+}
+
+.lobby-station.pos-self {
+  grid-area: self;
+}
+
+.lobby-station {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4vmin;
+  width: 100%;
+  max-width: 22vmin;
+  padding: 1vmin;
   border: 1px solid #d8d4c4;
   border-radius: 1.4vmin;
-  padding: 1.2vmin;
   background: rgb(253 252 246 / 92%);
   box-shadow: 0 0.35vmin 0 rgb(154 148 128 / 30%);
-  min-height: 10vmin;
+  box-sizing: border-box;
 }
 
-.lobby-seat.is-self {
+.lobby-station.is-self {
   border-color: var(--accent, #2f6a4c);
 }
 
-.lobby-seat.is-ready {
+.lobby-station.is-ready {
   background: #e0eae2;
 }
 
-.lobby-seat__name {
+.lobby-station__avatar {
+  width: 9vmin;
+  height: 9vmin;
+  min-width: 40px;
+  min-height: 40px;
+  max-width: 56px;
+  max-height: 56px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--line, #cde0d3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.lobby-station__avatar-img {
+  width: 100%;
+  height: 100%;
+}
+
+.lobby-station__avatar-fallback {
+  font-size: clamp(14px, 3.4vmin, 20px);
+  font-weight: 700;
+  color: var(--muted, #5f625b);
+}
+
+.lobby-station__name {
   display: block;
-  font-size: 2.6vmin;
+  max-width: 100%;
+  font-size: 2.4vmin;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.lobby-seat__meta {
+.lobby-station__meta {
   display: block;
-  margin-top: 0.4vmin;
-  font-size: 1.9vmin;
+  font-size: 1.8vmin;
   color: var(--muted, #5f625b);
 }
 

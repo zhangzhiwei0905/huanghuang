@@ -30,6 +30,7 @@ function player(seat: Seat): PlayerProjection {
   return {
     seat,
     nickname: `玩家${seat + 1}`,
+    avatarUrl: null,
     controller: seat === 0 ? "HUMAN" : "BOT",
     connected: true,
     handCount: finalHand(seat).length,
@@ -114,6 +115,7 @@ function resultRoom(): RoomProjection {
     lobbySeats: ([0, 1, 2, 3] as const).map((seat) => ({
       seat,
       nickname: `玩家${seat + 1}`,
+      avatarUrl: null,
       occupied: true,
       ready: false,
       connected: true,

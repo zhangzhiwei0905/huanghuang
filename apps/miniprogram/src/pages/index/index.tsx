@@ -1,17 +1,24 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Image, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import type { BaseScore, RoomMode, RoomProjection } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
 import { ApiError, roomApi } from "../../api/http";
-import { issueSession } from "../../api/session";
+import { API_BASE } from "../../config";
+import {
+  clearStoredSessionToken,
+  type Identity,
+  resolveIdentity,
+  uploadAvatar,
+  wechatLogin,
+} from "../../api/session";
 import { errorLabel } from "../../lib/errors";
 import "./index.scss";
 
 const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
-const NICK_KEY = "huanghuang-nickname";
 
 type Mode = "HOME" | "CREATE" | "JOIN" | "BOT";
+type IdentityState = "checking" | "loggedOut" | "loggedIn";
 
 function sharedRoomCode(code: string | undefined): string | null {
   return code !== undefined && /^\d{6}$/u.test(code) ? code : null;
@@ -25,6 +32,100 @@ function sharedRoomCode(code: string | undefined): string | null {
 // `{ errMsg: string }`). Swallowing the latter into one generic "操作没有
 //成功" string makes real-device domain-whitelist failures indistinguishable
 // from an actual server error — surface whatever detail is available.
+function LoginGate({
+  onDone,
+  onError,
+}: {
+  onDone: (identity: Identity) => void;
+  onError: (message: string) => void;
+}) {
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [nickname, setNickname] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function onChooseAvatar(event: { detail: { avatarUrl: string } }) {
+    setBusy(true);
+    try {
+      const uploaded = await uploadAvatar(event.detail.avatarUrl);
+      setAvatarUrl(uploaded);
+    } catch (cause) {
+      // Same lesson as describeSubmitError below: a swallowed generic message
+      // makes an unwhitelisted uploadFile domain (a real, previously-hit
+      // failure mode in this project — request/socket domains were added
+      // before, uploadFile is a separate whitelist entry) indistinguishable
+      // from any other failure. Surface whatever detail is available.
+      const detail =
+        cause instanceof Error
+          ? cause.message
+          : typeof cause === "object" && cause !== null && "errMsg" in cause
+            ? String((cause as { errMsg?: unknown }).errMsg)
+            : "";
+      onError(`头像上传失败${detail.length > 0 ? `：${detail}` : ""}，可以先跳过，进去之后再试`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submit() {
+    if (nickname.trim().length === 0) {
+      onError("先给自己起个名字");
+      return;
+    }
+    setBusy(true);
+    try {
+      // wx.login()'s code expires in minutes — fetch it right before the
+      // submit, not earlier while the user is still picking an avatar/typing.
+      const identity = await wechatLogin(nickname.trim(), avatarUrl);
+      onDone(identity);
+    } catch {
+      onError("登录没有成功，请再试一次");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View className="mp-home__panel mp-login">
+      <Text className="mp-home__panel-title">欢迎来晃晃</Text>
+      <Button
+        openType="chooseAvatar"
+        onChooseAvatar={(event) => void onChooseAvatar(event)}
+        className="mp-login__avatar-btn"
+        disabled={busy}
+      >
+        {avatarUrl !== null ? (
+          <Image src={`${API_BASE}${avatarUrl}`} className="mp-login__avatar-img" />
+        ) : (
+          <Text className="mp-login__avatar-fallback">选头像</Text>
+        )}
+      </Button>
+      <Input
+        className="mp-field__input"
+        type="nickname"
+        value={nickname}
+        maxlength={12}
+        placeholder="给自己起个名字"
+        onInput={(event) => setNickname(event.detail.value)}
+        // type="nickname" is the official "default to the user's real WeChat
+        // nickname, still editable" mechanism — its suggestion bar doesn't
+        // always fire bindinput when tapped, so bindblur carries the value
+        // as a fallback.
+        onBlur={(event) => setNickname(event.detail.value)}
+      />
+      <View className="mp-home__form-actions">
+        <Button
+          hoverClass="is-pressed"
+          className="mp-btn mp-btn--primary"
+          disabled={busy}
+          onClick={() => void submit()}
+        >
+          进入晃晃
+        </Button>
+      </View>
+    </View>
+  );
+}
+
 function describeSubmitError(cause: unknown): string {
   if (cause instanceof ApiError) return errorLabel(cause.code);
   if (cause instanceof Error && cause.message.length > 0) {
@@ -46,18 +147,25 @@ export default function IndexPage() {
   // set by the create/join flow below, not from a cold-start route param.
   const sharedCode = sharedRoomCode(Taro.useRouter().params.code);
   const [mode, setMode] = useState<Mode>(sharedCode !== null ? "JOIN" : "HOME");
-  const [nickname, setNickname] = useState(() => {
-    try {
-      const value = Taro.getStorageSync(NICK_KEY);
-      return typeof value === "string" ? value : "";
-    } catch {
-      return "";
-    }
-  });
+  const [identityState, setIdentityState] = useState<IdentityState>("checking");
+  const [identity, setIdentity] = useState<Identity | null>(null);
   const [roomCode, setRoomCode] = useState(sharedCode ?? "");
   const [baseScore, setBaseScore] = useState<BaseScore>(2);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    resolveIdentity()
+      .then((resolved) => {
+        if (resolved !== null) {
+          setIdentity(resolved);
+          setIdentityState("loggedIn");
+        } else {
+          setIdentityState("loggedOut");
+        }
+      })
+      .catch(() => setIdentityState("loggedOut"));
+  }, []);
 
   const heading = useMemo(() => {
     if (mode === "CREATE") return "创建好友房";
@@ -67,11 +175,7 @@ export default function IndexPage() {
   }, [mode]);
 
   async function submit(kind: "CREATE" | "JOIN" | "BOT") {
-    const name = nickname.trim();
-    if (name.length === 0) {
-      setError("先填一个牌桌昵称");
-      return;
-    }
+    if (identity === null) return;
     if (kind === "JOIN" && !/^\d{6}$/u.test(roomCode)) {
       setError("房间号需要是 6 位数字");
       return;
@@ -79,16 +183,14 @@ export default function IndexPage() {
     setBusy(true);
     setError(null);
     try {
-      await issueSession(name);
       const room: RoomProjection =
         kind === "JOIN"
-          ? await roomApi.join(name, roomCode)
+          ? await roomApi.join(identity.nickname, roomCode)
           : await roomApi.create(
-              name,
+              identity.nickname,
               baseScore,
               (kind === "BOT" ? "BOT" : "FRIEND") satisfies RoomMode,
             );
-      Taro.setStorageSync(NICK_KEY, name);
       Taro.setStorageSync("huanghuang_open_room", room);
       await Taro.navigateTo({ url: "/pages/room/index" });
     } catch (cause) {
@@ -97,6 +199,34 @@ export default function IndexPage() {
       setBusy(false);
     }
   }
+
+  if (identityState === "checking") {
+    return (
+      <View className="mp-home">
+        <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
+        <View className="mp-home__overlay" />
+      </View>
+    );
+  }
+
+  if (identityState === "loggedOut") {
+    return (
+      <View className="mp-home">
+        <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
+        <View className="mp-home__overlay" />
+        <LoginGate
+          onDone={(resolved) => {
+            setIdentity(resolved);
+            setIdentityState("loggedIn");
+          }}
+          onError={setError}
+        />
+        {error !== null ? <Text className="mp-error mp-login__error">{error}</Text> : null}
+      </View>
+    );
+  }
+
+  if (identity === null) return null; // unreachable: loggedIn is only set alongside identity
 
   return (
     <View className="mp-home">
@@ -145,14 +275,21 @@ export default function IndexPage() {
           <Text className="mp-home__panel-title">{heading}</Text>
           <View className="mp-home__form">
             <View className="mp-field">
-              <Text className="mp-field__label">昵称</Text>
-              <Input
-                className="mp-field__input"
-                value={nickname}
-                maxlength={12}
-                placeholder="怎么称呼你"
-                onInput={(event) => setNickname(event.detail.value)}
-              />
+              <Text className="mp-field__label">身份</Text>
+              {identity.avatarUrl !== null ? (
+                <Image src={`${API_BASE}${identity.avatarUrl}`} className="mp-field__avatar" />
+              ) : null}
+              <Text className="mp-field__value">{identity.nickname}</Text>
+              <Text
+                className="mp-field__relogin"
+                onClick={() => {
+                  clearStoredSessionToken();
+                  setIdentity(null);
+                  setIdentityState("loggedOut");
+                }}
+              >
+                重新登录
+              </Text>
             </View>
 
             {mode === "JOIN" ? (

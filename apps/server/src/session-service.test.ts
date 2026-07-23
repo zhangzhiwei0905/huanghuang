@@ -67,7 +67,12 @@ describe("SessionService", () => {
     expect(headers[SESSION_TOKEN_HEADER]).toBe(issued.rawToken);
 
     const viaBearer = sessions.resolveFromRawToken(issued.rawToken);
-    expect(viaBearer).toEqual({ id: issued.session.id, nickname: "牌友" });
+    expect(viaBearer).toEqual({
+      id: issued.session.id,
+      nickname: "牌友",
+      wechatOpenId: null,
+      avatarUrl: null,
+    });
 
     const viaSocket = sessions.resolveSocketHandshake({
       auth: { token: issued.rawToken },

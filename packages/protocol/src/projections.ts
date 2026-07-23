@@ -6,6 +6,7 @@ export type PlayerController = "HUMAN" | "BOT" | "TRUSTEE";
 export type PlayerProjection = {
   seat: Seat;
   nickname: string;
+  avatarUrl: string | null;
   controller: PlayerController;
   connected: boolean;
   handCount: number;
@@ -32,6 +33,7 @@ export type ChatMessageProjection = {
 export type LobbySeatProjection = {
   seat: Seat;
   nickname: string | null;
+  avatarUrl: string | null;
   occupied: boolean;
   ready: boolean;
   connected: boolean;

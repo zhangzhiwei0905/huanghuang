@@ -1,10 +1,17 @@
 import Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type AnonymousSession = {
   id: string;
   nickname: string;
+  // Optional so pre-existing call sites constructing a plain
+  // nickname-only session (bot rooms, tests, the legacy anonymous
+  // /api/session flow) don't all need updating for a field that's only
+  // ever populated by the WeChat login path.
+  wechatOpenId?: string | null;
+  avatarUrl?: string | null;
 };
 
 export class GameDatabase {
@@ -58,12 +65,44 @@ export class GameDatabase {
         created_at TEXT NOT NULL
       );
     `);
+    // Additive columns for WeChat login — wrapped so re-running on a database
+    // that already has them (every startup after the first) doesn't throw.
+    for (const statement of [
+      "ALTER TABLE anonymous_sessions ADD COLUMN wechat_open_id TEXT",
+      "ALTER TABLE anonymous_sessions ADD COLUMN avatar_url TEXT",
+    ]) {
+      try {
+        this.connection.exec(statement);
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column")) throw error;
+      }
+    }
+    // SQLite treats every NULL as distinct under UNIQUE, so pre-existing
+    // nickname-only rows (wechat_open_id IS NULL) never collide with each
+    // other or with real openids.
+    this.connection.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_anonymous_sessions_open_id ON anonymous_sessions (wechat_open_id)",
+    );
   }
+
+  private static readonly SESSION_COLUMNS =
+    "id, nickname, wechat_open_id AS wechatOpenId, avatar_url AS avatarUrl";
 
   findSessionByTokenHash(tokenHash: string): AnonymousSession | null {
     const row = this.connection
-      .prepare("SELECT id, nickname FROM anonymous_sessions WHERE token_hash = ?")
+      .prepare(
+        `SELECT ${GameDatabase.SESSION_COLUMNS} FROM anonymous_sessions WHERE token_hash = ?`,
+      )
       .get(tokenHash) as AnonymousSession | undefined;
+    return row ?? null;
+  }
+
+  findSessionByOpenId(openId: string): AnonymousSession | null {
+    const row = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.SESSION_COLUMNS} FROM anonymous_sessions WHERE wechat_open_id = ?`,
+      )
+      .get(openId) as AnonymousSession | undefined;
     return row ?? null;
   }
 
@@ -72,16 +111,57 @@ export class GameDatabase {
     this.connection
       .prepare(
         `INSERT INTO anonymous_sessions
-         (id, token_hash, nickname, created_at, last_seen_at)
-         VALUES (?, ?, ?, ?, ?)`,
+         (id, token_hash, nickname, wechat_open_id, avatar_url, created_at, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(session.id, tokenHash, session.nickname, now, now);
+      .run(
+        session.id,
+        tokenHash,
+        session.nickname,
+        session.wechatOpenId ?? null,
+        session.avatarUrl ?? null,
+        now,
+        now,
+      );
   }
 
   updateSession(session: AnonymousSession): void {
     this.connection
       .prepare("UPDATE anonymous_sessions SET nickname = ?, last_seen_at = ? WHERE id = ?")
       .run(session.nickname, new Date().toISOString(), session.id);
+  }
+
+  /**
+   * First login for an openid creates a fresh row; a returning openid gets
+   * its existing row's nickname/avatar/token refreshed in place instead of
+   * spawning a duplicate anonymous session per login (see
+   * `/api/auth/wechat` — previously every call discarded the openid and
+   * issued a brand new session, never recognizing a returning player).
+   */
+  upsertWechatSession(
+    params: { openId: string; nickname: string; avatarUrl: string | null },
+    tokenHash: string,
+  ): AnonymousSession {
+    const now = new Date().toISOString();
+    const existing = this.findSessionByOpenId(params.openId);
+    if (existing !== null) {
+      this.connection
+        .prepare(
+          `UPDATE anonymous_sessions
+           SET nickname = ?, avatar_url = ?, token_hash = ?, last_seen_at = ?
+           WHERE wechat_open_id = ?`,
+        )
+        .run(params.nickname, params.avatarUrl, tokenHash, now, params.openId);
+      return { ...existing, nickname: params.nickname, avatarUrl: params.avatarUrl };
+    }
+    const session: AnonymousSession = {
+      id: randomUUID(),
+      nickname: params.nickname,
+      wechatOpenId: params.openId,
+      avatarUrl: params.avatarUrl,
+    };
+    this.createSession(session, tokenHash);
+    return session;
   }
 
   saveRoom(

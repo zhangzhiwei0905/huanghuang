@@ -9,6 +9,7 @@ function player(
   return {
     seat,
     nickname: `玩家${seat + 1}`,
+    avatarUrl: null,
     controller: "HUMAN",
     connected: true,
     handCount: 0,

@@ -3,6 +3,7 @@ import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
 import type { BaseScore, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
+import { API_BASE } from "../../config";
 import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
 import { RoundSettlementModal } from "../../components/RoundSettlementModal";
@@ -378,23 +379,42 @@ export default function RoomPage() {
                 </Button>
               </View>
               <Text className="waiting-hint">把 6 位房号发给好友，在小程序「加入房间」</Text>
-              <View className="lobby-grid">
-                {room.lobbySeats.map((seat) => (
-                  <View
-                    key={seat.seat}
-                    className={`lobby-seat${seat.isSelf ? " is-self" : ""}${seat.ready ? " is-ready" : ""}`}
-                  >
-                    <Text className="lobby-seat__name">
-                      {seat.occupied ? (seat.nickname ?? "玩家") : "空位"}
-                    </Text>
-                    <Text className="lobby-seat__meta">
-                      座{seat.seat}
-                      {seat.isOwner ? " · 房主" : ""}
-                      {seat.occupied ? (seat.connected ? " · 在线" : " · 离线") : ""}
-                      {seat.ready ? " · 已准备" : seat.occupied ? " · 未准备" : ""}
-                    </Text>
-                  </View>
-                ))}
+              <View className="lobby-table">
+                {room.lobbySeats.map((seat) => {
+                  const pos = POSITION_CLASS[relativePosition(seat.seat, selfSeat)] ?? "pos-self";
+                  return (
+                    <View
+                      key={seat.seat}
+                      className={`lobby-station ${pos}${seat.isSelf ? " is-self" : ""}${seat.ready ? " is-ready" : ""}`}
+                    >
+                      <View className="lobby-station__avatar">
+                        {seat.avatarUrl !== null ? (
+                          <Image
+                            src={`${API_BASE}${seat.avatarUrl}`}
+                            className="lobby-station__avatar-img"
+                          />
+                        ) : (
+                          <Text className="lobby-station__avatar-fallback">
+                            {seat.occupied ? (seat.nickname?.slice(0, 1) ?? "?") : ""}
+                          </Text>
+                        )}
+                      </View>
+                      <Text className="lobby-station__name">
+                        {seat.occupied ? (seat.nickname ?? "玩家") : "空位"}
+                      </Text>
+                      <Text className="lobby-station__meta">
+                        {seat.isOwner ? "房主 · " : ""}
+                        {seat.occupied
+                          ? seat.connected
+                            ? seat.ready
+                              ? "已准备"
+                              : "未准备"
+                            : "离线"
+                          : "等待中"}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
               {room.isOwner ? (
                 <View className="score-row">

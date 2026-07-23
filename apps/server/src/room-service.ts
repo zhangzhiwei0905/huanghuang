@@ -40,6 +40,7 @@ type SeatController = {
   seat: Seat;
   sessionId: string | null;
   nickname: string;
+  avatarUrl: string | null;
   controller: PlayerController | "EMPTY";
   connected: boolean;
 };
@@ -120,6 +121,7 @@ function emptySeat(seat: Seat): SeatController {
     seat,
     sessionId: null,
     nickname: "等待加入",
+    avatarUrl: null,
     controller: "EMPTY",
     connected: false,
   };
@@ -130,6 +132,7 @@ function botSeat(seat: Seat): SeatController {
     seat,
     sessionId: null,
     nickname: `机器人 ${seat}`,
+    avatarUrl: null,
     controller: "BOT",
     connected: true,
   };
@@ -137,13 +140,14 @@ function botSeat(seat: Seat): SeatController {
 
 function humanSeat(
   seat: Seat,
-  session: Pick<AnonymousSession, "id" | "nickname">,
+  session: Pick<AnonymousSession, "id" | "nickname" | "avatarUrl">,
   connected = true,
 ): SeatController {
   return {
     seat,
     sessionId: session.id,
     nickname: session.nickname,
+    avatarUrl: session.avatarUrl ?? null,
     controller: "HUMAN",
     connected,
   };
@@ -787,6 +791,7 @@ export class RoomService {
             return {
               seat,
               nickname: controller.nickname,
+              avatarUrl: controller.avatarUrl,
               controller: playerController,
               connected: controller.connected,
               handCount: roundPlayer.hand.length,
@@ -892,6 +897,7 @@ export class RoomService {
         return {
           seat,
           nickname: occupied ? controller.nickname : null,
+          avatarUrl: occupied ? controller.avatarUrl : null,
           occupied,
           ready:
             controller.sessionId !== null && room.readySessionIds.includes(controller.sessionId),

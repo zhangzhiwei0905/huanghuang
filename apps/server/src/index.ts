@@ -1,4 +1,5 @@
 import cookie from "@fastify/cookie";
+import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import {
   chatMessageInputSchema,
@@ -9,8 +10,10 @@ import {
   updateRoomSettingsSchema,
 } from "@huanghuang/protocol";
 import Fastify from "fastify";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { Server } from "socket.io";
 import { GameDatabase } from "./database.js";
 import { RoomService } from "./room-service.js";
@@ -42,6 +45,22 @@ app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, b
 const database = new GameDatabase(process.env.DATABASE_PATH ?? ":memory:");
 const sessions = new SessionService(database);
 const rooms = new RoomService(database);
+
+// Avatars uploaded via chooseAvatar land next to the sqlite file so the
+// existing `game_data` deploy volume already persists them — no new deploy
+// topology needed. AVATAR_DIR overrides for tests/local setups that don't
+// want files next to a real DATABASE_PATH.
+const avatarDir =
+  process.env.AVATAR_DIR ??
+  resolve(dirname(process.env.DATABASE_PATH ?? "./data/huanghuang.sqlite"), "avatars");
+mkdirSync(avatarDir, { recursive: true });
+await app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 } });
+// decorateReply:false — this app registers fastifyStatic a second time below
+// for the web build's webRoot, and only one registration may decorate
+// `reply.sendFile` or Fastify throws on the duplicate decoration. Neither
+// handler here needs reply.sendFile (avatars are served by prefix routing
+// alone), so it's safe for this one to skip the decoration.
+await app.register(fastifyStatic, { root: avatarDir, prefix: "/avatars/", decorateReply: false });
 const sockets = new Server(app.server, {
   cors: { origin: true, credentials: true },
   connectionStateRecovery: {
@@ -98,13 +117,26 @@ app.post("/api/session", (request, reply) => {
 app.get("/api/session", (request, reply) => {
   const session = sessions.resolve(request);
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
-  return { sessionId: session.id, nickname: session.nickname };
+  return {
+    sessionId: session.id,
+    nickname: session.nickname,
+    avatarUrl: session.avatarUrl ?? null,
+    // Distinguishes a real WeChat-linked account from a pre-existing plain
+    // anonymous session (issued by the old nickname-only /api/session POST
+    // flow, still valid and resolvable here) — the mini-program's login
+    // gate must not treat the latter as "already logged in" or a device
+    // that tested before this feature shipped skips the login screen
+    // forever with its old nickname/no avatar.
+    wechatLinked: session.wechatOpenId !== null && session.wechatOpenId !== undefined,
+  };
 });
 
 /**
- * Optional WeChat code exchange. Enabled only when WECHAT_APP_ID + WECHAT_APP_SECRET are set.
- * MVP binds by issuing a fresh anonymous session after verifying the code; openId persistence
- * can land later without changing the client token shape.
+ * WeChat code exchange, enabled only when WECHAT_APP_ID + WECHAT_APP_SECRET are set.
+ * The openid returned by jscode2session persistently identifies the player: a returning
+ * openid updates its existing anonymous_sessions row (nickname/avatar/token refreshed)
+ * instead of spawning a new session every login, so the client can recognize the same
+ * player across app launches without re-prompting for identity each time.
  */
 app.post("/api/auth/wechat", async (request, reply) => {
   const appId = process.env.WECHAT_APP_ID;
@@ -117,7 +149,7 @@ app.post("/api/auth/wechat", async (request, reply) => {
   ) {
     return reply.code(501).send({ error: "WECHAT_AUTH_DISABLED" });
   }
-  const body = (request.body ?? {}) as { code?: unknown; nickname?: unknown };
+  const body = (request.body ?? {}) as { code?: unknown; nickname?: unknown; avatarUrl?: unknown };
   if (typeof body.code !== "string" || body.code.length === 0) {
     return reply.code(400).send({ error: "INVALID_INPUT" });
   }
@@ -125,12 +157,14 @@ app.post("/api/auth/wechat", async (request, reply) => {
     typeof body.nickname === "string" && body.nickname.trim().length > 0
       ? body.nickname.trim().slice(0, 12)
       : "微信玩家";
+  const avatarUrl =
+    typeof body.avatarUrl === "string" && body.avatarUrl.length > 0 ? body.avatarUrl : null;
   const url = new URL("https://api.weixin.qq.com/sns/jscode2session");
   url.searchParams.set("appid", appId);
   url.searchParams.set("secret", appSecret);
   url.searchParams.set("js_code", body.code);
   url.searchParams.set("grant_type", "authorization_code");
-  let openId: string | undefined;
+  let openId: string;
   try {
     const response = await fetch(url);
     const payload = (await response.json()) as { openid?: string; errcode?: number };
@@ -143,14 +177,33 @@ app.post("/api/auth/wechat", async (request, reply) => {
     request.log.error({ err: error }, "wechat jscode2session network error");
     return await reply.code(502).send({ error: "WECHAT_AUTH_UNAVAILABLE" });
   }
-  // Token-only binding for MVP: issue a normal anonymous session. openId is not logged.
-  void openId;
-  const issued = sessions.issue(nickname, reply);
+  const token = randomBytes(32).toString("base64url");
+  const session = database.upsertWechatSession(
+    { openId, nickname, avatarUrl },
+    createHash("sha256").update(token).digest("hex"),
+  );
+  sessions.attachSessionTokenHeader(reply, token);
   return {
-    sessionId: issued.session.id,
-    nickname: issued.session.nickname,
-    sessionToken: issued.rawToken,
+    sessionId: session.id,
+    nickname: session.nickname,
+    avatarUrl: session.avatarUrl ?? null,
+    sessionToken: token,
   };
+});
+
+/**
+ * chooseAvatar's callback only gives a local temp file path — this uploads
+ * it to a durable, publicly-fetchable URL so other seats in a room can
+ * actually load the image (a temp path on one player's device means
+ * nothing to anyone else's client).
+ */
+app.post("/api/upload/avatar", async (request, reply) => {
+  const file = await request.file();
+  if (file === undefined) return reply.code(400).send({ error: "NO_FILE" });
+  const ext = file.mimetype === "image/png" ? "png" : "jpg";
+  const filename = `${randomUUID()}.${ext}`;
+  await pipeline(file.file, createWriteStream(join(avatarDir, filename)));
+  return { avatarUrl: `/avatars/${filename}` };
 });
 
 app.post("/api/rooms", (request, reply) => {

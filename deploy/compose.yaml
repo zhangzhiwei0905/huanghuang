@@ -9,6 +9,8 @@ services:
       NODE_ENV: production
       PORT: 3000
       DATABASE_PATH: /data/huanghuang.sqlite
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
     restart: unless-stopped
     volumes:
       - game_data:/data
