@@ -491,3 +491,36 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 小程序头像昵称与牌桌身份优化
+
+**Date**: 2026-07-23
+**Task**: 小程序头像昵称与牌桌身份优化
+**Branch**: `miniprogram`
+
+### Summary
+
+修复微信昵称原生表单取值与头像延迟上传预览；牌桌和大厅统一显示头像、昵称、积分及对局元数据；通过生产构建、线上健康检查、106 个测试和开发者工具 11352 横屏截图验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `42be66d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

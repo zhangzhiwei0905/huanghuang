@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-07-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~493 | Active |
+| `journal-1.md` | ~526 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-07-23 | 小程序头像昵称与牌桌身份优化 | `42be66d` | `miniprogram` |
 | 11 | 2026-07-23 | 微信登录持久化 + 好友房大厅牌桌化 + 生产部署 | `cbeeef6`, `827185e`, `987002e` | `miniprogram` |
 | 10 | 2026-07-22 | 小程序横屏体验优化：玉石风格重设计 + 生产部署 | `cfcf535`, `923ea52`, `9daa1f4`, `78d41b0`, `8b94d0c`, `c1a47de`, `0abb468`, `a1cbe49`, `5961ef6` | `miniprogram` |
 | 9 | 2026-07-20 | 优化移动端按钮与全屏牌桌 | `6b80a4c` | `main` |
