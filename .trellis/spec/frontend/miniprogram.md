@@ -46,6 +46,33 @@ landscape (height ≤ ~555 CSS px) the **min-px floor wins**. Any container
 capacity calculation ("6 tiles per row") must be done in px, not vmin, and the
 container needs its own floor: `width: max(26vmin, 152px)`.
 
+### Landscape viewport: use `100vh`, not a pure percentage chain
+
+Taro's generated page wrappers do not reliably propagate a `page { height:
+100% }` chain to the React page root. In WeChat DevTools this can collapse a
+full-screen scene to zero height even though every authored ancestor declares
+`height: 100%`.
+
+For a landscape game page, keep `disableScroll: true`, set the scene root to
+`height: 100vh; max-height: 100vh; overflow: hidden`, and keep the global page
+overflow hidden. Reserve component-level overflow only where it is genuinely
+needed, such as the hand tray's horizontal fallback.
+
+### Landscape notch: safe-area env values need a visual floor
+
+In the DevTools landscape simulator, the black left notch can still be drawn
+while `env(safe-area-inset-left)` resolves to `0`. Edge-aligned player cards
+and controls therefore need both the platform inset and a phone-height-based
+floor:
+
+```scss
+left: max(10vmin, calc(1.2vmin + env(safe-area-inset-left)));
+```
+
+Apply this to critical left-edge content, then verify it against a screenshot
+that includes the native navigation bar and simulator notch. Do not assume the
+safe-area environment value alone proves the content is visible.
+
 ### Clipping: `overflow-x: auto` clips vertically too
 
 The hand tray scrolls horizontally; anything drawn above tile tops (selection

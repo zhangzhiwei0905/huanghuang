@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
-import type { BaseScore, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
+import type {
+  BaseScore,
+  LobbySeatProjection,
+  RoomProjection,
+  RoomStage,
+  Seat,
+  Tile,
+} from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
 import { API_BASE } from "../../config";
 import { ActionDock } from "../../components/ActionDock";
@@ -19,6 +26,7 @@ import {
   handHighlightGroups,
 } from "../../lib/actionEligibility";
 import { decideTilePress } from "../../lib/handInteraction";
+import { ROUND_START_COUNTDOWN_SECONDS, shouldShowRoundStart } from "../../lib/roomTransitions";
 import { isWildcardTile } from "../../lib/tileArt";
 import { sortHand } from "../../lib/tiles";
 import "./index.scss";
@@ -63,6 +71,81 @@ function SeatAvatar({
 
 function relativePosition(seat: Seat, selfSeat: Seat): number {
   return ((seat - selfSeat + 4) % 4) as 0 | 1 | 2 | 3;
+}
+
+function LobbySeat({
+  seat,
+  positionClass,
+  busy,
+  onToggleReady,
+}: {
+  seat: LobbySeatProjection;
+  positionClass: (typeof POSITION_CLASS)[number];
+  busy: boolean;
+  onToggleReady: () => void;
+}) {
+  const displayName = seat.occupied ? (seat.nickname ?? "玩家") : "等待加入";
+  const status = !seat.occupied
+    ? "空位"
+    : !seat.connected
+      ? "离线"
+      : seat.ready
+        ? "已准备"
+        : "未准备";
+
+  return (
+    <View
+      className={`lobby-seat ${positionClass}${seat.isSelf ? " is-self" : ""}${
+        seat.ready ? " is-ready" : ""
+      }${seat.occupied ? "" : " is-empty"}${seat.connected || !seat.occupied ? "" : " is-offline"}`}
+    >
+      <View className="lobby-seat__identity">
+        <SeatAvatar
+          avatarUrl={seat.avatarUrl}
+          nickname={seat.occupied ? seat.nickname : "空"}
+          variant="lobby"
+        />
+        <View className="lobby-seat__copy">
+          <View className="lobby-seat__name-row">
+            <Text className="lobby-seat__name">{displayName}</Text>
+            {seat.isOwner ? <Text className="lobby-seat__owner">房主</Text> : null}
+            {seat.isSelf ? <Text className="lobby-seat__self-tag">我</Text> : null}
+          </View>
+          <Text className="lobby-seat__meta">
+            {seat.occupied ? `积分 ${seat.score}` : "分享房号邀请好友"}
+          </Text>
+        </View>
+      </View>
+      <View className="lobby-seat__state-row">
+        <Text className={`lobby-seat__state${seat.ready ? " is-ready" : ""}`}>{status}</Text>
+        {seat.isSelf ? (
+          <Button
+            className={`lobby-ready-button${seat.ready ? " is-cancel" : ""}`}
+            hoverClass="is-pressed"
+            disabled={busy}
+            onClick={onToggleReady}
+          >
+            {busy ? "处理中" : seat.ready ? "取消准备" : "准备"}
+          </Button>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function RoundStartOverlay({ countdown }: { countdown: number }) {
+  return (
+    <View className="round-start-overlay">
+      <View className="round-start-overlay__halo" />
+      <View className="round-start-overlay__content">
+        <Text className="round-start-overlay__eyebrow">全员已准备</Text>
+        <Text className="round-start-overlay__title">游戏开始</Text>
+        <Text key={countdown} className="round-start-overlay__count">
+          {countdown}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 function selfPlayer(room: RoomProjection) {
@@ -133,6 +216,9 @@ export default function RoomPage() {
   const roomCtrl = useRoom();
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [inviteStatus, setInviteStatus] = useState("复制房号");
+  const [roundStartCountdown, setRoundStartCountdown] = useState<number | null>(null);
+  const previousStageRef = useRef<RoomStage | null>(null);
+  const previousRoomIdRef = useRef<string | null>(null);
   const room = roomCtrl.room;
 
   useDidShow(() => {
@@ -177,6 +263,8 @@ export default function RoomPage() {
   );
   const buttons = primaryActionButtons(room?.legalActions ?? []);
   const canDiscard = room?.legalActions.includes("DISCARD_TILE") === true;
+  const lobbyOccupiedCount = room?.lobbySeats.filter((candidate) => candidate.occupied).length ?? 0;
+  const lobbyReadyCount = room?.lobbySeats.filter((candidate) => candidate.ready).length ?? 0;
   const recentDiscardId = useRecentDiscardId(room);
   const locked = roomCtrl.busy || roomCtrl.connectionStatus !== "connected";
   const actionDeadlineAt = room?.actionDeadlineAt ?? null;
@@ -190,6 +278,39 @@ export default function RoomPage() {
     const timer = setInterval(() => setSecondsRemaining(deadlineSeconds(actionDeadlineAt)), 500);
     return () => clearInterval(timer);
   }, [actionDeadlineAt]);
+
+  useEffect(() => {
+    if (room === null) {
+      previousRoomIdRef.current = null;
+      previousStageRef.current = null;
+      setRoundStartCountdown(null);
+      return;
+    }
+
+    if (previousRoomIdRef.current !== room.roomId) {
+      previousRoomIdRef.current = room.roomId;
+      previousStageRef.current = room.stage;
+      setRoundStartCountdown(null);
+      return;
+    }
+
+    if (shouldShowRoundStart(previousStageRef.current, room.stage)) {
+      setRoundStartCountdown(ROUND_START_COUNTDOWN_SECONDS);
+    }
+    previousStageRef.current = room.stage;
+  }, [room?.roomId, room?.stage]);
+
+  useEffect(() => {
+    if (roundStartCountdown === null) return;
+    const timer = setTimeout(
+      () =>
+        setRoundStartCountdown((current) =>
+          current === null || current <= 1 ? null : current - 1,
+        ),
+      1000,
+    );
+    return () => clearTimeout(timer);
+  }, [roundStartCountdown]);
 
   async function copyRoomCode() {
     if (room === null) return;
@@ -282,43 +403,46 @@ export default function RoomPage() {
       <View className="game-shell__overlay" />
       <View className="game-shell__content">
         {room.stage === "WAITING" ? (
-          <View className="game-header">
+          <View className="lobby-toolbar">
             <Button
-              className="header-btn"
+              className="lobby-toolbar__button"
               hoverClass="is-pressed"
               disabled={roomCtrl.busy}
               onClick={() => void roomCtrl.leaveRoom()}
             >
               离开
             </Button>
-            <View className="room-code">
-              <Text className="room-code__label">{room.mode === "BOT" ? "MODE" : "ROOM"}</Text>
-              <Text className="room-code__value">
-                {room.mode === "BOT" ? "人机对战" : room.roomCode}
-              </Text>
-            </View>
-            <View className="game-meta">
-              <Text className="game-header__meta">底分 {room.baseScore}</Text>
-              <Text className="game-header__meta">
+            <View className="lobby-toolbar__room">
+              <Text className="lobby-toolbar__label">好友房</Text>
+              <Text className="lobby-toolbar__code">{room.roomCode}</Text>
+              <Text className="lobby-toolbar__divider">·</Text>
+              <Text className="lobby-toolbar__meta">底分 {room.baseScore}</Text>
+              <Text
+                className={`lobby-toolbar__connection${
+                  roomCtrl.connectionStatus === "connected" ? " is-online" : ""
+                }`}
+              >
                 {CONNECTION_LABELS[roomCtrl.connectionStatus]}
               </Text>
-              {room.mode === "FRIEND" ? (
+            </View>
+            <View className="lobby-toolbar__actions">
+              <Button
+                className="lobby-toolbar__button"
+                hoverClass="is-pressed"
+                onClick={() => void copyRoomCode()}
+              >
+                {inviteStatus}
+              </Button>
+              <Button
+                className="lobby-toolbar__button lobby-toolbar__button--share"
+                hoverClass="is-pressed"
+                openType="share"
+              >
+                分享
+              </Button>
+              {room.isOwner ? (
                 <Button
-                  className="header-btn"
-                  hoverClass="is-pressed"
-                  onClick={() => void copyRoomCode()}
-                >
-                  {inviteStatus}
-                </Button>
-              ) : null}
-              {room.mode === "FRIEND" ? (
-                <Button className="header-btn" hoverClass="is-pressed" openType="share">
-                  分享邀请
-                </Button>
-              ) : null}
-              {room.mode === "FRIEND" && room.isOwner ? (
-                <Button
-                  className="header-btn header-btn--danger"
+                  className="lobby-toolbar__button lobby-toolbar__button--danger"
                   hoverClass="is-pressed"
                   disabled={roomCtrl.busy}
                   onClick={() => void roomCtrl.dissolve()}
@@ -385,84 +509,55 @@ export default function RoomPage() {
         ) : null}
 
         {room.stage === "WAITING" ? (
-          <View className="waiting-panel">
-            <View className="panel-card">
-              <Text className="waiting-title">等待开局</Text>
-              <View className="invite-row">
-                <Text className="invite-code">{room.roomCode}</Text>
-                <Button
-                  className="btn-accent"
-                  hoverClass="is-pressed"
-                  onClick={() => void copyRoomCode()}
-                >
-                  {inviteStatus}
-                </Button>
-                <Button className="btn-accent" hoverClass="is-pressed" openType="share">
-                  分享邀请
-                </Button>
-              </View>
-              <Text className="waiting-hint">把 6 位房号发给好友，在小程序「加入房间」</Text>
-              <View className="lobby-table">
-                {room.lobbySeats.map((seat) => {
-                  const pos = POSITION_CLASS[relativePosition(seat.seat, selfSeat)] ?? "pos-self";
-                  return (
-                    <View
-                      key={seat.seat}
-                      className={`lobby-station ${pos}${seat.isSelf ? " is-self" : ""}${seat.ready ? " is-ready" : ""}`}
-                    >
-                      <SeatAvatar
-                        avatarUrl={seat.avatarUrl}
-                        nickname={seat.occupied ? seat.nickname : null}
-                        variant="lobby"
-                      />
-                      <Text className="lobby-station__name">
-                        {seat.occupied ? (seat.nickname ?? "玩家") : "空位"}
-                      </Text>
-                      <Text className="lobby-station__meta">
-                        {seat.isOwner ? "房主 · " : ""}
-                        {seat.occupied
-                          ? `积分 ${seat.score} · ${
-                              seat.connected ? (seat.ready ? "已准备" : "未准备") : "离线"
-                            }`
-                          : "等待中"}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
+          <View className="lobby-stage">
+            <View className="lobby-stage__felt-ring" />
+            {room.lobbySeats.map((seat) => {
+              const pos = POSITION_CLASS[relativePosition(seat.seat, selfSeat)] ?? "pos-self";
+              return (
+                <LobbySeat
+                  key={seat.seat}
+                  seat={seat}
+                  positionClass={pos}
+                  busy={roomCtrl.busy}
+                  onToggleReady={() => void roomCtrl.ready()}
+                />
+              );
+            })}
+            <View className="lobby-center">
+              <Text className="lobby-center__eyebrow">等待开局</Text>
+              <Text className="lobby-center__status">
+                {lobbyOccupiedCount < 4
+                  ? `还差 ${4 - lobbyOccupiedCount} 位玩家`
+                  : `${lobbyReadyCount}/4 已准备`}
+              </Text>
+              <Text className="lobby-center__hint">
+                {lobbyOccupiedCount < 4 ? "复制房号或分享给好友" : "全员准备后自动开始"}
+              </Text>
               {room.isOwner ? (
-                <View className="score-row">
+                <View className="lobby-score-picker">
+                  <Text className="lobby-score-picker__label">底分</Text>
                   {BASE_SCORES.map((score) => (
                     <Button
                       key={score}
-                      className={`score-chip${room.baseScore === score ? " is-active" : ""}`}
+                      className={`lobby-score-picker__button${
+                        room.baseScore === score ? " is-active" : ""
+                      }`}
                       hoverClass="is-pressed"
                       disabled={roomCtrl.busy || room.baseScore === score}
                       onClick={() => void roomCtrl.updateBaseScore(score)}
                     >
-                      底分 {score}
+                      {score}
                     </Button>
                   ))}
                 </View>
-              ) : null}
-              <View className="waiting-actions">
-                <Button
-                  className="btn-accent"
-                  hoverClass="is-pressed"
-                  disabled={roomCtrl.busy}
-                  onClick={() => void roomCtrl.ready()}
-                >
-                  {room.selfReady ? "取消准备" : "准备"}
-                </Button>
-                <Button
-                  className="btn-ghost"
-                  hoverClass="is-pressed"
-                  disabled={roomCtrl.busy}
-                  onClick={() => void roomCtrl.leaveRoom()}
-                >
-                  离开房间
-                </Button>
-              </View>
+              ) : (
+                <Text className="lobby-center__base-score">本房底分 {room.baseScore}</Text>
+              )}
+            </View>
+            <View className="lobby-invite-tip">
+              <Text>房号 {room.roomCode}</Text>
+              <Text className="lobby-invite-tip__dot">·</Text>
+              <Text>好友在首页输入房号即可加入</Text>
             </View>
           </View>
         ) : (
@@ -672,6 +767,7 @@ export default function RoomPage() {
           </>
         )}
       </View>
+      {roundStartCountdown !== null ? <RoundStartOverlay countdown={roundStartCountdown} /> : null}
     </View>
   );
 }
