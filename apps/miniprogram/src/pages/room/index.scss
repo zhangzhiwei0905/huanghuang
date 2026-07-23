@@ -346,13 +346,7 @@
   background: #e0eae2;
 }
 
-.lobby-station__avatar {
-  width: 9vmin;
-  height: 9vmin;
-  min-width: 40px;
-  min-height: 40px;
-  max-width: 56px;
-  max-height: 56px;
+.seat-avatar {
   border-radius: 50%;
   background: #fff;
   border: 1px solid var(--line, #cde0d3);
@@ -363,15 +357,37 @@
   flex-shrink: 0;
 }
 
-.lobby-station__avatar-img {
+.seat-avatar--lobby {
+  width: 9vmin;
+  height: 9vmin;
+  min-width: 40px;
+  min-height: 40px;
+  max-width: 56px;
+  max-height: 56px;
+}
+
+.seat-avatar--player {
+  width: 6.2vmin;
+  height: 6.2vmin;
+  min-width: 26px;
+  min-height: 26px;
+  max-width: 34px;
+  max-height: 34px;
+}
+
+.seat-avatar__image {
   width: 100%;
   height: 100%;
 }
 
-.lobby-station__avatar-fallback {
+.seat-avatar__fallback {
   font-size: clamp(14px, 3.4vmin, 20px);
   font-weight: 700;
   color: var(--muted, #5f625b);
+}
+
+.seat-avatar--player .seat-avatar__fallback {
+  font-size: clamp(12px, 2.5vmin, 16px);
 }
 
 .lobby-station__name {
@@ -461,7 +477,7 @@
 .player-station {
   position: absolute;
   z-index: 4;
-  min-width: 18vmin;
+  min-width: 24vmin;
   max-width: 30vmin;
   padding: 0.8vmin 1.2vmin;
   border: 1px solid #d8d4c4;
@@ -535,11 +551,23 @@
   transform: none;
 }
 
+.player-station__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.8vmin;
+  min-width: 0;
+}
+
+.player-station__copy {
+  flex: 1;
+  min-width: 0;
+}
+
 .player-station__name {
   display: block;
   font-size: 2.2vmin;
   font-weight: 700;
-  max-width: 22vmin;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -550,6 +578,7 @@
   margin-top: 0.2vmin;
   font-size: 1.7vmin;
   color: var(--muted, #5f625b);
+  white-space: nowrap;
 }
 
 .player-station__melds {

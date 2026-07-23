@@ -38,6 +38,29 @@ const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
   reconnecting: "重连中",
 };
 
+function SeatAvatar({
+  avatarUrl,
+  nickname,
+  isBot = false,
+  variant,
+}: {
+  avatarUrl: string | null;
+  nickname: string | null;
+  isBot?: boolean;
+  variant: "lobby" | "player";
+}) {
+  const fallback = isBot ? "机" : (nickname?.slice(0, 1) ?? "");
+  return (
+    <View className={`seat-avatar seat-avatar--${variant}`}>
+      {avatarUrl !== null ? (
+        <Image src={`${API_BASE}${avatarUrl}`} mode="aspectFill" className="seat-avatar__image" />
+      ) : (
+        <Text className="seat-avatar__fallback">{fallback}</Text>
+      )}
+    </View>
+  );
+}
+
 function relativePosition(seat: Seat, selfSeat: Seat): number {
   return ((seat - selfSeat + 4) % 4) as 0 | 1 | 2 | 3;
 }
@@ -387,29 +410,20 @@ export default function RoomPage() {
                       key={seat.seat}
                       className={`lobby-station ${pos}${seat.isSelf ? " is-self" : ""}${seat.ready ? " is-ready" : ""}`}
                     >
-                      <View className="lobby-station__avatar">
-                        {seat.avatarUrl !== null ? (
-                          <Image
-                            src={`${API_BASE}${seat.avatarUrl}`}
-                            className="lobby-station__avatar-img"
-                          />
-                        ) : (
-                          <Text className="lobby-station__avatar-fallback">
-                            {seat.occupied ? (seat.nickname?.slice(0, 1) ?? "?") : ""}
-                          </Text>
-                        )}
-                      </View>
+                      <SeatAvatar
+                        avatarUrl={seat.avatarUrl}
+                        nickname={seat.occupied ? seat.nickname : null}
+                        variant="lobby"
+                      />
                       <Text className="lobby-station__name">
                         {seat.occupied ? (seat.nickname ?? "玩家") : "空位"}
                       </Text>
                       <Text className="lobby-station__meta">
                         {seat.isOwner ? "房主 · " : ""}
                         {seat.occupied
-                          ? seat.connected
-                            ? seat.ready
-                              ? "已准备"
-                              : "未准备"
-                            : "离线"
+                          ? `积分 ${seat.score} · ${
+                              seat.connected ? (seat.ready ? "已准备" : "未准备") : "离线"
+                            }`
                           : "等待中"}
                       </Text>
                     </View>
@@ -467,14 +481,22 @@ export default function RoomPage() {
                       seat === room.selfSeat ? " is-self" : ""
                     }`}
                   >
-                    <Text className="player-station__name">
-                      {player.nickname}
-                      {player.controller === "BOT" ? "·机" : ""}
-                    </Text>
-                    <Text className="player-station__meta">
-                      分{player.score} · 手{player.handCount} · 倍{player.personalMultiplier}
-                      {player.connected ? "" : " · 离"}
-                    </Text>
+                    <View className="player-station__identity">
+                      <SeatAvatar
+                        avatarUrl={player.avatarUrl}
+                        nickname={player.nickname}
+                        isBot={player.controller === "BOT"}
+                        variant="player"
+                      />
+                      <View className="player-station__copy">
+                        <Text className="player-station__name">{player.nickname}</Text>
+                        <Text className="player-station__meta">
+                          积分 {player.score} · 手牌 {player.handCount} · 倍数{" "}
+                          {player.personalMultiplier}
+                          {player.connected ? "" : " · 离线"}
+                        </Text>
+                      </View>
+                    </View>
                     {player.melds.length > 0 || latestReleasedWildcard !== null ? (
                       <View className="player-station__melds">
                         {player.melds.map((meld) => (

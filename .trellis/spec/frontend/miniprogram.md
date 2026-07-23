@@ -85,6 +85,28 @@ safe because mp keeps the highlight until the next discard.
 
 ---
 
+## Native Profile Capture
+
+WeChat does not let a mini-program silently read the current avatar or
+nickname. The supported flow requires explicit user interaction:
+
+- A `Button openType="chooseAvatar"` yields a local temporary path. Render
+  that path immediately, then upload it on form submission. Uploading inside
+  `onChooseAvatar` makes a network/domain failure look like selection failed.
+- An `Input type="nickname"` can show the current WeChat nickname suggestion,
+  but accepting it does not reliably emit every React/Taro input event on a
+  real device. Keep the native input uncontrolled, give it a `name`, wrap it
+  in `Form`, and read `event.detail.value` from `Form.onSubmit`.
+- The submitted nickname remains user-editable. Validate the form value at
+  submit time and keep the selected local avatar path after upload/auth
+  failures so the user can retry.
+
+Do not replace this with a controlled React value whose only synchronization
+path is `onInput`/`onBlur`; that can display a native nickname while submitting
+stale or empty state.
+
+---
+
 ## Devtools Automation (miniprogram-automator)
 
 ### Working recipe
@@ -92,9 +114,15 @@ safe because mp keeps the highlight until the next discard.
 1. Enable 设置 → 安全设置 → 服务端口 in devtools (creates
    `~/Library/Application Support/微信开发者工具/<hash>/Default/.ide` with the
    HTTP port). Without it every `cli` invocation hangs with no output.
-2. `cli auto --project apps/miniprogram --auto-port 9420`, then
-   `automator.connect({ wsEndpoint: "ws://127.0.0.1:9420" })`.
-3. Drive game state **server-side**, not through the UI: create session + room
+2. Build first, then start automation with the compiled project:
+   `cli auto --project apps/miniprogram/dist --port <http-port> --auto-port 9420`.
+   Starting at the source project root can make the independent automation
+   window look for `pages/index/index.wxml` before Taro output exists.
+3. DevTools RC builds can return `version` instead of the old `SDKVersion`
+   field from `Tool.getInfo`, which makes miniprogram-automator 0.12.1's public
+   `connect()` version check fail. In that combination, use the launcher's
+   underlying `connectTool({ wsEndpoint: "ws://127.0.0.1:9420" })`.
+4. Drive game state **server-side**, not through the UI: create session + room
    via the HTTP API, then
    `mini.evaluate((tok, rm) => { wx.setStorageSync("huanghuang_session_token", tok); wx.setStorageSync("huanghuang_open_room", rm); }, token, room)`
    and `mini.reLaunch("/pages/room/index")`. BOT rooms start in `PLAYING` and

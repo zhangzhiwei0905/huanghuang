@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Image, Input, Text, View } from "@tarojs/components";
+import { Button, Form, Image, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import type { BaseScore, RoomMode, RoomProjection } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
@@ -37,55 +37,60 @@ function LoginGate({
   onError,
 }: {
   onDone: (identity: Identity) => void;
-  onError: (message: string) => void;
+  onError: (message: string | null) => void;
 }) {
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [nickname, setNickname] = useState("");
+  const [avatarTempPath, setAvatarTempPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function onChooseAvatar(event: { detail: { avatarUrl: string } }) {
-    setBusy(true);
-    try {
-      const uploaded = await uploadAvatar(event.detail.avatarUrl);
-      setAvatarUrl(uploaded);
-    } catch (cause) {
-      // Same lesson as describeSubmitError below: a swallowed generic message
-      // makes an unwhitelisted uploadFile domain (a real, previously-hit
-      // failure mode in this project — request/socket domains were added
-      // before, uploadFile is a separate whitelist entry) indistinguishable
-      // from any other failure. Surface whatever detail is available.
-      const detail =
-        cause instanceof Error
-          ? cause.message
-          : typeof cause === "object" && cause !== null && "errMsg" in cause
-            ? String((cause as { errMsg?: unknown }).errMsg)
-            : "";
-      onError(`头像上传失败${detail.length > 0 ? `：${detail}` : ""}，可以先跳过，进去之后再试`);
-    } finally {
-      setBusy(false);
+  function onChooseAvatar(event: { detail: { avatarUrl: string } }) {
+    if (typeof event.detail.avatarUrl !== "string" || event.detail.avatarUrl.length === 0) {
+      onError("没有读取到所选头像，请重新选择");
+      return;
     }
+    // chooseAvatar returns a local temp path. Preview it immediately so a
+    // slow or blocked upload cannot look like the selection did nothing.
+    setAvatarTempPath(event.detail.avatarUrl);
+    onError(null);
   }
 
-  async function submit() {
+  async function submit(event: { detail: { value?: Record<string, unknown> } }) {
+    const rawNickname = event.detail.value?.nickname;
+    const nickname = typeof rawNickname === "string" ? rawNickname.trim() : "";
+    if (avatarTempPath === null) {
+      onError("请先选择微信头像");
+      return;
+    }
     if (nickname.trim().length === 0) {
-      onError("先给自己起个名字");
+      onError("请选择微信昵称或手动输入名字");
       return;
     }
     setBusy(true);
+    onError(null);
     try {
+      let uploadedAvatarUrl: string;
+      try {
+        uploadedAvatarUrl = await uploadAvatar(avatarTempPath);
+      } catch (cause) {
+        const detail = requestFailureDetail(cause);
+        onError(`头像上传失败${detail.length > 0 ? `：${detail}` : ""}，请重试`);
+        return;
+      }
       // wx.login()'s code expires in minutes — fetch it right before the
       // submit, not earlier while the user is still picking an avatar/typing.
-      const identity = await wechatLogin(nickname.trim(), avatarUrl);
-      onDone(identity);
-    } catch {
-      onError("登录没有成功，请再试一次");
+      try {
+        const identity = await wechatLogin(nickname, uploadedAvatarUrl);
+        onDone(identity);
+      } catch (cause) {
+        const detail = requestFailureDetail(cause);
+        onError(`登录没有成功${detail.length > 0 ? `：${detail}` : ""}，请再试一次`);
+      }
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <View className="mp-home__panel mp-login">
+    <Form className="mp-home__panel mp-login" onSubmit={(event) => void submit(event)}>
       <Text className="mp-home__panel-title">欢迎来晃晃</Text>
       <Button
         openType="chooseAvatar"
@@ -93,8 +98,8 @@ function LoginGate({
         className="mp-login__avatar-btn"
         disabled={busy}
       >
-        {avatarUrl !== null ? (
-          <Image src={`${API_BASE}${avatarUrl}`} className="mp-login__avatar-img" />
+        {avatarTempPath !== null ? (
+          <Image src={avatarTempPath} mode="aspectFill" className="mp-login__avatar-img" />
         ) : (
           <Text className="mp-login__avatar-fallback">选头像</Text>
         )}
@@ -102,41 +107,37 @@ function LoginGate({
       <Input
         className="mp-field__input"
         type="nickname"
-        value={nickname}
+        name="nickname"
         maxlength={12}
-        placeholder="给自己起个名字"
-        onInput={(event) => setNickname(event.detail.value)}
-        // type="nickname" is the official "default to the user's real WeChat
-        // nickname, still editable" mechanism — its suggestion bar doesn't
-        // always fire bindinput when tapped, so bindblur carries the value
-        // as a fallback.
-        onBlur={(event) => setNickname(event.detail.value)}
+        placeholder="微信昵称（可手动修改）"
       />
       <View className="mp-home__form-actions">
         <Button
+          formType="submit"
           hoverClass="is-pressed"
           className="mp-btn mp-btn--primary"
           disabled={busy}
-          onClick={() => void submit()}
         >
           进入晃晃
         </Button>
       </View>
-    </View>
+    </Form>
   );
+}
+
+function requestFailureDetail(cause: unknown): string {
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === "object" && cause !== null && "errMsg" in cause) {
+    const message = (cause as { errMsg?: unknown }).errMsg;
+    return typeof message === "string" ? message : "";
+  }
+  return "";
 }
 
 function describeSubmitError(cause: unknown): string {
   if (cause instanceof ApiError) return errorLabel(cause.code);
-  if (cause instanceof Error && cause.message.length > 0) {
-    return `请求失败：${cause.message}`;
-  }
-  if (typeof cause === "object" && cause !== null && "errMsg" in cause) {
-    const message = (cause as { errMsg?: unknown }).errMsg;
-    if (typeof message === "string" && message.length > 0) {
-      return `请求失败：${message}`;
-    }
-  }
+  const detail = requestFailureDetail(cause);
+  if (detail.length > 0) return `请求失败：${detail}`;
   return "操作没有成功，请再试一次";
 }
 
