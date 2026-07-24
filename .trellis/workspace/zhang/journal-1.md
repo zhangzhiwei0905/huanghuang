@@ -590,3 +590,36 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 小程序微信登录与账户区优化
+
+**Date**: 2026-07-24
+**Task**: 小程序微信登录与账户区优化
+**Branch**: `miniprogram`
+
+### Summary
+
+实现已绑定微信身份的一键恢复，首次用户继续使用头像昵称填写能力；轻量化首页账户区和退出按钮；补充服务端回归测试、前后端规范，并完成生产部署及微信开发者工具验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8db26df` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
