@@ -557,3 +557,36 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 收敛小程序候场座位视觉
+
+**Date**: 2026-07-24
+**Task**: 收敛小程序候场座位视觉
+**Branch**: `miniprogram`
+
+### Summary
+
+将候场玩家头像、字号和信息框尺寸对齐实战牌桌，弱化背景边框与阴影，把准备状态合并到积分元信息，并将自己的准备按钮与玩家信息框视觉分离；通过正式服务器和微信开发者工具 11352 验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9400cfe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

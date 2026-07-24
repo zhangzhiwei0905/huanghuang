@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
-- **Last Active**: 2026-07-23
+- **Total Sessions**: 14
+- **Last Active**: 2026-07-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~559 | Active |
+| `journal-1.md` | ~592 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-07-24 | 收敛小程序候场座位视觉 | `9400cfe` | `miniprogram` |
 | 13 | 2026-07-23 | 小程序候场与牌桌重设计 | `6db44fb` | `miniprogram` |
 | 12 | 2026-07-23 | 小程序头像昵称与牌桌身份优化 | `42be66d` | `miniprogram` |
 | 11 | 2026-07-23 | 微信登录持久化 + 好友房大厅牌桌化 + 生产部署 | `cbeeef6`, `827185e`, `987002e` | `miniprogram` |
