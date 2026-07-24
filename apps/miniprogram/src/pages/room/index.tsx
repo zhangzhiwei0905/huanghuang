@@ -112,13 +112,26 @@ function LobbySeat({
             {seat.isSelf ? <Text className="lobby-seat__self-tag">我</Text> : null}
           </View>
           <Text className="lobby-seat__meta">
-            {seat.occupied ? `积分 ${seat.score}` : "分享房号邀请好友"}
+            {seat.occupied ? (
+              <>
+                <Text>积分 {seat.score}</Text>
+                <Text
+                  className={`lobby-seat__inline-state${seat.ready ? " is-ready" : ""}${
+                    seat.connected ? "" : " is-offline"
+                  }`}
+                >
+                  {" "}
+                  · {status}
+                </Text>
+              </>
+            ) : (
+              "邀请好友加入"
+            )}
           </Text>
         </View>
       </View>
-      <View className="lobby-seat__state-row">
-        <Text className={`lobby-seat__state${seat.ready ? " is-ready" : ""}`}>{status}</Text>
-        {seat.isSelf ? (
+      {seat.isSelf ? (
+        <View className="lobby-seat__state-row">
           <Button
             className={`lobby-ready-button${seat.ready ? " is-cancel" : ""}`}
             hoverClass="is-pressed"
@@ -127,8 +140,8 @@ function LobbySeat({
           >
             {busy ? "处理中" : seat.ready ? "取消准备" : "准备"}
           </Button>
-        ) : null}
-      </View>
+        </View>
+      ) : null}
     </View>
   );
 }
