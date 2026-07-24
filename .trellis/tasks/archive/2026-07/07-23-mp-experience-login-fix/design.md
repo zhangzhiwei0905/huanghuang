@@ -70,6 +70,39 @@ Content-Type: application/json
 
 不调用 `getUserProfile`：现行规则不支持静默带出真实昵称，且旧接口在新基础库中可能只返回通用资料。
 
+### 4.1 单一入口与账户展示
+
+首页未登录态只渲染“微信登录”主按钮。点击后打开资料完善层，复用现有 `LoginGate` 的头像选择、昵称原生表单、上传和错误恢复逻辑；该入口不承诺一次点击静默读取个人资料。
+
+登录成功后，在所有首页模式上方渲染独立账户区：
+
+```text
+[头像] 昵称        [退出登录]
+```
+
+- 头像和昵称来自 `Identity`，不重复请求。
+- “退出登录”调用现有 `clearStoredSessionToken()`，清空 React 身份状态并回到未登录入口。
+- 创建/加入/人机表单删除当前“身份 / 重新登录”行，避免账户操作只在二级表单中出现。
+- 登录资料完善层继续在卡片内部显示 busy、进度和错误。
+
+### 4.2 已有微信身份快速恢复
+
+“微信登录”先调用同一个 `/api/auth/wechat`，但携带 `resumeOnly: true`：
+
+```text
+wx.login
+  → POST /api/auth/wechat { code, resumeOnly: true }
+  → openid 已存在：轮换 session token，返回服务器保存的 nickname/avatarUrl
+  → openid 不存在：404 WECHAT_PROFILE_REQUIRED，客户端打开资料完善层
+```
+
+`resumeOnly` 分支只读取已保存资料，不写入占位昵称，也不覆盖头像。首次用户仍通过
+`chooseAvatar + Input type="nickname"` 显式完善资料；微信不允许通过登录 code 静默取得
+当前昵称。
+
+账户区移除 `.mp-account__identity` 的白色背景、边框与阴影。退出按钮保留 44px 外部点击
+区域，使用伪元素绘制更小的内部按钮外观，兼顾横屏空间和触控可用性。
+
 ## 5. 验证与发布
 
 - 纯函数单元测试覆盖 JPEG、PNG、非法字符、错误文件头、空数据和超限数据。
