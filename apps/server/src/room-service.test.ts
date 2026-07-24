@@ -5,6 +5,7 @@ import {
   sameTileKind,
   type RoundState,
 } from "@huanghuang/game-engine";
+import type { Meld, Tile, TileKind } from "@huanghuang/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { GameDatabase, type AnonymousSession } from "./database.js";
@@ -16,6 +17,10 @@ import {
 } from "./room-service.js";
 
 const owner: AnonymousSession = { id: "owner", nickname: "房主" };
+
+function testTile(id: string, suit: TileKind["suit"], rank: TileKind["rank"]): Tile {
+  return { id, suit, rank };
+}
 
 function activeRound(room: RoomState): RoundState {
   if (room.round === null) throw new Error("Expected an active round");
@@ -51,6 +56,7 @@ describe("RoomService", () => {
     });
     expect(Date.parse(projection.waitingExpiresAt ?? "")).toBeGreaterThan(Date.now());
     expect(projection.players).toEqual([]);
+    expect(projection.tingHints).toEqual([]);
     expect(projection.lobbySeats.filter((seat) => seat.occupied)).toHaveLength(1);
     expect(projection.lobbySeats[0]).toMatchObject({
       nickname: "房主",
@@ -231,6 +237,143 @@ describe("RoomService", () => {
 
     expect(service.project(room, owner.id).selfDrawnTileId).toBe(round.lastDrawnTileId);
     expect(service.project(room, "outsider").selfDrawnTileId).toBeNull();
+  });
+
+  it("projects per-discard ting guidance from public information only", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    const discarded = testTile("ting-discard", "TIAO", 7);
+    round.phase = "TURN_DECISION";
+    round.currentSeat = 0;
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = discarded.id;
+    round.indicatorTile = testTile("ting-indicator", "TIAO", 8);
+    round.wildcardKind = { suit: "TIAO", rank: 9 };
+    round.players[0].personalMultiplier = 2;
+    round.players[0].hand = [
+      testTile("wan-1", "WAN", 1),
+      testTile("wan-2", "WAN", 2),
+      testTile("wan-3", "WAN", 3),
+      testTile("wan-4", "WAN", 4),
+      testTile("wan-5", "WAN", 5),
+      testTile("wan-6", "WAN", 6),
+      testTile("wan-7", "WAN", 7),
+      testTile("wan-8", "WAN", 8),
+      testTile("wan-9", "WAN", 9),
+      testTile("tiao-5-a", "TIAO", 5),
+      testTile("tiao-5-b", "TIAO", 5),
+      testTile("tong-2", "TONG", 2),
+      testTile("tong-3", "TONG", 3),
+      discarded,
+    ];
+    round.players[1].melds = [
+      {
+        id: "public-tong-1",
+        kind: "PONG",
+        tileIds: ["tong-1-a", "tong-1-b", "tong-1-c"],
+        tileKind: { suit: "TONG", rank: 1 },
+        sourcePlayerId: "seat-2",
+        sourceDiscardId: "discard-tong-1-a",
+        createdAtVersion: 1,
+      },
+      {
+        id: "public-tong-4",
+        kind: "PONG",
+        tileIds: ["tong-4-a", "tong-4-b", "tong-4-c"],
+        tileKind: { suit: "TONG", rank: 4 },
+        sourcePlayerId: "seat-2",
+        sourceDiscardId: "discard-tong-4-a",
+        createdAtVersion: 1,
+      },
+    ];
+    round.players[2].discards = [
+      testTile("tong-1-a", "TONG", 1),
+      testTile("tong-1-d", "TONG", 1),
+      testTile("tong-4-a", "TONG", 4),
+    ];
+    round.players[3].releasedWildcards = [testTile("released-wildcard", "TIAO", 9)];
+
+    const projection = service.project(room, owner.id);
+    const hints = projection.tingHints.find((hint) => hint.discardTileId === discarded.id);
+
+    expect(projection.schemaVersion).toBe(5);
+    expect(hints?.waits).toContainEqual({
+      tileKind: { suit: "TONG", rank: 1 },
+      winType: "HARD",
+      multiplier: 4,
+      remainingCount: 0,
+    });
+    expect(hints?.waits).toContainEqual({
+      tileKind: { suit: "TONG", rank: 4 },
+      winType: "HARD",
+      multiplier: 4,
+      remainingCount: 1,
+    });
+    expect(hints?.waits).toContainEqual({
+      tileKind: round.wildcardKind,
+      winType: "SOFT",
+      multiplier: 2,
+      remainingCount: 3,
+    });
+    expect(service.project(room, "outsider").tingHints).toEqual([]);
+
+    const beforeHiddenMutation = structuredClone(projection.tingHints);
+    round.wall.reverse();
+    round.players[3].hand = round.players[3].hand.map((tile) => ({
+      ...tile,
+      suit: "WAN",
+      rank: 8,
+    }));
+    expect(service.project(room, owner.id).tingHints).toEqual(beforeHiddenMutation);
+  });
+
+  it("projects ting guidance after a pong when there is no drawn tile", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    const discarded = testTile("post-pong-discard", "TONG", 7);
+    const pong: Meld = {
+      id: "self-pong",
+      kind: "PONG",
+      tileIds: ["pong-a", "pong-b", "pong-c"],
+      tileKind: { suit: "TONG", rank: 2 },
+      sourcePlayerId: "seat-1",
+      sourceDiscardId: "pong-source",
+      createdAtVersion: 1,
+    };
+    round.phase = "TURN_DECISION";
+    round.currentSeat = 0;
+    round.lastDrawSeat = 1;
+    round.lastDrawnTileId = "";
+    round.indicatorTile = testTile("post-pong-indicator", "TIAO", 8);
+    round.wildcardKind = { suit: "TIAO", rank: 9 };
+    round.players[0].melds = [pong];
+    round.players[0].hand = [
+      testTile("post-wan-1", "WAN", 1),
+      testTile("post-wan-2", "WAN", 2),
+      testTile("post-wan-3", "WAN", 3),
+      testTile("post-wan-4", "WAN", 4),
+      testTile("post-wan-5", "WAN", 5),
+      testTile("post-wan-6", "WAN", 6),
+      testTile("post-wan-7", "WAN", 7),
+      testTile("post-wan-8", "WAN", 8),
+      testTile("post-wan-9", "WAN", 9),
+      testTile("post-tiao-5", "TIAO", 5),
+      discarded,
+    ];
+
+    const projection = service.project(room, owner.id);
+
+    expect(projection.selfDrawnTileId).toBeNull();
+    expect(
+      projection.tingHints
+        .find((hint) => hint.discardTileId === discarded.id)
+        ?.waits.some(
+          (wait) =>
+            wait.tileKind.suit === "TIAO" && wait.tileKind.rank === 5 && wait.winType === "HARD",
+        ),
+    ).toBe(true);
   });
 
   it("projects the responding player as the active seat without changing the discarder", () => {

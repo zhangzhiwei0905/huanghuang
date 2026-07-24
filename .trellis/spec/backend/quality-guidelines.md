@@ -207,3 +207,110 @@ applyScoreDeltas(state, calculateKongSettlement({ baseScore, actorSeat, kind, so
 - Passing opponent concealed hands or wall order into bot strategy code.
 - Changing `personalMultiplier` from pong or kong reducers.
 - Catching an error and returning success.
+
+## Scenario: Member-specific discard ting guidance
+
+### 1. Scope / Trigger
+
+Any feature that marks which physical hand tile can be discarded to enter ting, or displays
+winning-tile type/multiplier/remaining copies, must use the engine analysis and the member-specific
+room projection. Frontends must not duplicate `evaluateWin`.
+
+### 2. Signatures
+
+```ts
+analyzeDiscardTingOptions({
+  concealedTiles,
+  melds,
+  wildcardKind,
+}): {
+  discardTileId: string;
+  waits: { tileKind: TileKind; winType: WinType }[];
+}[];
+
+type DiscardTingProjection = {
+  discardTileId: string;
+  waits: {
+    tileKind: TileKind;
+    winType: WinType;
+    multiplier: number;
+    remainingCount: number;
+  }[];
+};
+
+type RoomProjection = {
+  schemaVersion: 5;
+  tingHints: DiscardTingProjection[];
+};
+```
+
+### 3. Contracts
+
+- `packages/game-engine/src/ting.ts` removes one non-wildcard physical tile ID, enumerates the 27
+  tile kinds, and calls the existing `evaluateWin` for every simulated winning tile.
+- The engine output contains rule results only. It does not know projections, hidden/public state,
+  remaining copies or display multipliers.
+- `RoomService.project` emits non-empty `tingHints` only to the current member during
+  `PLAYING + TURN_DECISION` when `DISCARD_TILE` is legal. Every other projection emits `[]`.
+- `discardTileId` preserves physical identity so duplicate face tiles can each be marked and selected.
+- The projected multiplier is `(HARD ? 2 : 1) * currentPlayer.personalMultiplier`; payer
+  multipliers are not included.
+- Remaining copies are public-information upper bounds: start at four, then subtract the current
+  member's hand, the indicator, every discard, released wildcard and public meld tile.
+- Public tiles are deduplicated by physical tile ID before counting because a claimed discard can
+  still appear in the source discard list and in a meld's `tileIds`.
+- Remaining-count code must not read `round.wall` or opponent concealed hands. A zero count remains
+  in the wait list.
+- If the post-discard hand already contains a wildcard, the wildcard kind is not a wait candidate.
+  Otherwise the wildcard kind is evaluated through the same win rule and can be projected.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required projection |
+|---|---|
+| Waiting, settlement or discard-response phase | `tingHints: []` |
+| Requesting member is not the current discarder | `tingHints: []` |
+| A physical discard produces no legal wait | Omit that discard from projected `tingHints` |
+| A wait has four publicly visible copies | Keep the wait with `remainingCount: 0` |
+| Hidden wall/opponent hand changes but public state does not | Projection remains identical |
+| Post-discard hand already holds a wildcard | No wildcard-kind wait |
+
+### 5. Good/Base/Bad Cases
+
+- Good: two identical physical tiles both carry the same waits under different `discardTileId`
+  values, and selecting either one uses the existing second-tap discard interaction.
+- Base: a hand with no ting-producing discard receives an empty list and renders no guide chrome.
+- Bad: sending exact wall counts, subtracting opponent hands, or importing the game engine into a
+  frontend to recompute waits.
+
+### 6. Tests Required
+
+- Engine tests cover hard/soft waits, duplicate physical discards, wildcard inclusion/exclusion,
+  non-ting discards and the shorter concealed hand after pong.
+- Service tests assert combined multipliers, public counts, physical-ID deduplication, zero-copy
+  retention and empty projections for non-acting members.
+- A privacy regression mutates wall order and opponent concealed kinds while leaving public state
+  unchanged, then asserts `tingHints` remains equal.
+- Frontend helper tests assert only non-empty discard hints are indexed and edge/center card anchors
+  remain inside the hand rail.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+const waits = calculateWinTypesInMiniProgram(room.players[room.selfSeat].hand);
+const remaining = round.wall.filter((tile) => sameKind(tile, wait)).length;
+```
+
+Correct:
+
+```ts
+const hints = analyzeDiscardTingOptions({
+  concealedTiles: player.hand,
+  melds: player.melds,
+  wildcardKind: round.wildcardKind,
+});
+
+return projectPublicTingHints(hints, publicVisibleTileCounts);
+```

@@ -46,7 +46,7 @@ type RoomMode = "FRIEND" | "BOT";
 type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
 
 type RoomProjection = {
-  schemaVersion: 4;
+  schemaVersion: 5;
   mode: RoomMode;
   stage: RoomStage;
   status: "ACTIVE" | "CLOSED";
@@ -55,6 +55,7 @@ type RoomProjection = {
   roundId: string | null;
   currentSeat: Seat | null;
   actingSeat: Seat | null;
+  tingHints: DiscardTingProjection[];
   lobbySeats: LobbySeatProjection[];
 };
 
@@ -92,6 +93,7 @@ type ChatMessageProjection = {
 - Owner dissolution sets `status = "CLOSED"` immediately in every stage. Waiting timeout uses `WAITING_TIMEOUT`; an owner leaving an otherwise empty room uses `EMPTY_ROOM`. The client clears room state, chat and the invite query parameter, then maps the authoritative reason to its notice.
 - A closed room remains readable for 30 seconds so Socket version notifications can lead to the close projection. After physical eviction, `ROOM_NOT_FOUND` and `NOT_A_MEMBER` also clear stale local room state with a generic closed-room notice.
 - Chat is an ephemeral Socket event for `FRIEND + PLAYING`: the server derives sender identity and timestamp, broadcasts to room members, and never increments the room version or writes chat into SQLite.
+- `tingHints` is an ephemeral, member-specific projection for the current legal discarder. It is empty for every other member and outside `PLAYING + TURN_DECISION`; the client renders it and never recalculates win type, multiplier or remaining copies.
 - The client keeps at most four chat messages, derives the latest active message per `senderSeat`, renders it as a bubble beside that player's avatar, and removes each message after about 3 seconds. CSS owns only the fade; JavaScript remains responsible for removal under reduced motion. The chat input remains centered in the bottom action dock and must not overlap the hand or auxiliary actions.
 
 ### 4. Validation & Error Matrix

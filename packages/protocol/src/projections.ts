@@ -68,8 +68,20 @@ export type RoundSettlementProjection = {
   }[];
 };
 
+export type TingWaitProjection = {
+  tileKind: TileKind;
+  winType: WinType;
+  multiplier: number;
+  remainingCount: number;
+};
+
+export type DiscardTingProjection = {
+  discardTileId: string;
+  waits: TingWaitProjection[];
+};
+
 export type RoomProjection = {
-  schemaVersion: 4;
+  schemaVersion: 5;
   roomId: string;
   roomCode: string;
   version: number;
@@ -99,6 +111,7 @@ export type RoomProjection = {
     | null;
   roundSettlement: RoundSettlementProjection | null;
   legalActions: string[];
+  tingHints: DiscardTingProjection[];
   players: PlayerProjection[];
   lobbySeats: LobbySeatProjection[];
 };

@@ -14,6 +14,7 @@ import { API_BASE } from "../../config";
 import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
 import { RoundSettlementModal } from "../../components/RoundSettlementModal";
+import { TingHintCard } from "../../components/TingHintCard";
 import { useRoom, type ConnectionStatus } from "../../hooks/useRoom";
 import {
   hasValidTileSelection,
@@ -29,6 +30,7 @@ import { decideTilePress } from "../../lib/handInteraction";
 import { ROUND_START_COUNTDOWN_SECONDS, shouldShowRoundStart } from "../../lib/roomTransitions";
 import { isWildcardTile } from "../../lib/tileArt";
 import { sortHand } from "../../lib/tiles";
+import { indexTingHints, tingCardAnchor } from "../../lib/tingHints";
 import "./index.scss";
 
 const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
@@ -276,6 +278,17 @@ export default function RoomPage() {
   );
   const buttons = primaryActionButtons(room?.legalActions ?? []);
   const canDiscard = room?.legalActions.includes("DISCARD_TILE") === true;
+  const tingHints = useMemo(() => indexTingHints(room?.tingHints ?? []), [room?.tingHints]);
+  const selectedTingWaits =
+    selectedTileId === null ? null : (tingHints.get(selectedTileId) ?? null);
+  const orderedHandTileIds = useMemo(
+    () => [...hand.map((tile) => tile.id), ...(drawnTile === null ? [] : [drawnTile.id])],
+    [hand, drawnTile],
+  );
+  const selectedTingAnchor = useMemo(
+    () => tingCardAnchor(orderedHandTileIds, selectedTileId),
+    [orderedHandTileIds, selectedTileId],
+  );
   const lobbyOccupiedCount = room?.lobbySeats.filter((candidate) => candidate.occupied).length ?? 0;
   const lobbyReadyCount = room?.lobbySeats.filter((candidate) => candidate.ready).length ?? 0;
   const recentDiscardId = useRecentDiscardId(room);
@@ -291,6 +304,18 @@ export default function RoomPage() {
     const timer = setInterval(() => setSecondsRemaining(deadlineSeconds(actionDeadlineAt)), 500);
     return () => clearInterval(timer);
   }, [actionDeadlineAt]);
+
+  useEffect(() => {
+    if (selectedTileId === null) return;
+    const tileStillHeld = self?.hand?.some((tile) => tile.id === selectedTileId) === true;
+    const canInteractWithHand =
+      room?.stage === "PLAYING" &&
+      room.roundPhase === "TURN_DECISION" &&
+      room.actingSeat === room.selfSeat;
+    if (!tileStillHeld || !canInteractWithHand) {
+      setSelectedTileId(null);
+    }
+  }, [room?.actingSeat, room?.roundPhase, room?.selfSeat, room?.stage, selectedTileId, self?.hand]);
 
   useEffect(() => {
     if (room === null) {
@@ -711,7 +736,7 @@ export default function RoomPage() {
               })}
 
               <View className="self-area">
-                {canDiscard && selectedTile !== null ? (
+                {canDiscard && selectedTile !== null && selectedTingWaits === null ? (
                   <Text className="discard-tip">再点一次选中的牌即可打出</Text>
                 ) : null}
                 <ActionDock
@@ -719,47 +744,65 @@ export default function RoomPage() {
                   disabled={locked}
                   onAction={(button) => void onAction(button)}
                 />
+                {selectedTingWaits !== null && selectedTingAnchor !== null ? (
+                  <TingHintCard
+                    waits={selectedTingWaits}
+                    wildcardKind={room.wildcardKind}
+                    anchor={selectedTingAnchor}
+                  />
+                ) : null}
                 <View className="self-hand">
                   {hand.map((tile) => (
-                    <MahjongTile
-                      key={tile.id}
-                      tile={tile}
-                      selected={tile.id === selectedTileId}
-                      wildcardKind={room.wildcardKind}
-                      highlighted={
-                        handHighlight.kongTileIds.has(tile.id) ||
-                        handHighlight.pongTileIds.has(tile.id)
-                      }
-                      highlightHint={
-                        handHighlight.kongTileIds.has(tile.id)
-                          ? "可杠"
-                          : handHighlight.pongTileIds.has(tile.id)
-                            ? "可碰"
-                            : undefined
-                      }
-                      onPress={onTilePress}
-                    />
-                  ))}
-                  {drawnTile !== null ? (
-                    <View className="drawn-tile-slot">
-                      <Text className="drawn-tile-slot__label">摸</Text>
+                    <View key={tile.id} className="hand-tile-slot">
+                      {tingHints.has(tile.id) ? (
+                        <Text className="hand-tile-slot__ting">听</Text>
+                      ) : null}
                       <MahjongTile
-                        tile={drawnTile}
-                        selected={drawnTile.id === selectedTileId}
+                        tile={tile}
+                        selected={tile.id === selectedTileId}
                         wildcardKind={room.wildcardKind}
                         highlighted={
-                          handHighlight.kongTileIds.has(drawnTile.id) ||
-                          handHighlight.pongTileIds.has(drawnTile.id)
+                          handHighlight.kongTileIds.has(tile.id) ||
+                          handHighlight.pongTileIds.has(tile.id)
                         }
                         highlightHint={
-                          handHighlight.kongTileIds.has(drawnTile.id)
+                          handHighlight.kongTileIds.has(tile.id)
                             ? "可杠"
-                            : handHighlight.pongTileIds.has(drawnTile.id)
+                            : handHighlight.pongTileIds.has(tile.id)
                               ? "可碰"
                               : undefined
                         }
                         onPress={onTilePress}
                       />
+                    </View>
+                  ))}
+                  {drawnTile !== null ? (
+                    <View
+                      className={`drawn-tile-slot${tingHints.has(drawnTile.id) ? " has-ting" : ""}`}
+                    >
+                      <Text className="drawn-tile-slot__label">摸</Text>
+                      <View className="hand-tile-slot">
+                        {tingHints.has(drawnTile.id) ? (
+                          <Text className="hand-tile-slot__ting">听</Text>
+                        ) : null}
+                        <MahjongTile
+                          tile={drawnTile}
+                          selected={drawnTile.id === selectedTileId}
+                          wildcardKind={room.wildcardKind}
+                          highlighted={
+                            handHighlight.kongTileIds.has(drawnTile.id) ||
+                            handHighlight.pongTileIds.has(drawnTile.id)
+                          }
+                          highlightHint={
+                            handHighlight.kongTileIds.has(drawnTile.id)
+                              ? "可杠"
+                              : handHighlight.pongTileIds.has(drawnTile.id)
+                                ? "可碰"
+                                : undefined
+                          }
+                          onPress={onTilePress}
+                        />
+                      </View>
                     </View>
                   ) : null}
                 </View>

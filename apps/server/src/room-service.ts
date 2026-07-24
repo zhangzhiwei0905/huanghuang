@@ -1,4 +1,5 @@
 import {
+  analyzeDiscardTingOptions,
   availableTurnActions,
   chooseBotAction,
   claimExposedKong,
@@ -14,6 +15,7 @@ import {
   passResponse,
   releasableWildcardIds,
   releaseWildcard,
+  tileKindKey,
   type BotAction,
   type BotDecisionView,
   type RoundState,
@@ -24,6 +26,7 @@ import type {
   ChatMessageProjection,
   CommandEnvelope,
   CommandResult,
+  DiscardTingProjection,
   PlayerController,
   RoomMode,
   RoomCloseReason,
@@ -186,6 +189,68 @@ function tileKindField(payload: CommandPayload): TileKind | null {
   }
   if (!Number.isInteger(rank) || rank < 1 || rank > 9) return null;
   return { suit, rank: rank as TileKind["rank"] };
+}
+
+function publicVisibleTileCounts(round: RoundState, selfSeat: Seat): Map<string, number> {
+  const visibleTiles = new Map<string, TileKind>();
+  const addVisibleTile = (id: string, kind: TileKind): void => {
+    if (!visibleTiles.has(id)) {
+      visibleTiles.set(id, { suit: kind.suit, rank: kind.rank });
+    }
+  };
+
+  for (const tile of round.players[selfSeat].hand) {
+    addVisibleTile(tile.id, tile);
+  }
+  addVisibleTile(round.indicatorTile.id, round.indicatorTile);
+  for (const seat of SEATS) {
+    const player = round.players[seat];
+    for (const tile of player.discards) addVisibleTile(tile.id, tile);
+    for (const tile of player.releasedWildcards) addVisibleTile(tile.id, tile);
+    for (const meld of player.melds) {
+      for (const tileId of meld.tileIds) addVisibleTile(tileId, meld.tileKind);
+    }
+  }
+
+  const counts = new Map<string, number>();
+  for (const kind of visibleTiles.values()) {
+    const key = tileKindKey(kind);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function projectTingHints(options: {
+  round: RoundState;
+  selfSeat: Seat | null;
+  legalActions: readonly string[];
+}): DiscardTingProjection[] {
+  if (
+    options.selfSeat === null ||
+    options.round.phase !== "TURN_DECISION" ||
+    options.round.currentSeat !== options.selfSeat ||
+    !options.legalActions.includes("DISCARD_TILE")
+  ) {
+    return [];
+  }
+
+  const player = options.round.players[options.selfSeat];
+  const publicCounts = publicVisibleTileCounts(options.round, options.selfSeat);
+  return analyzeDiscardTingOptions({
+    concealedTiles: player.hand,
+    melds: player.melds,
+    wildcardKind: options.round.wildcardKind,
+  })
+    .filter((option) => option.waits.length > 0)
+    .map((option) => ({
+      discardTileId: option.discardTileId,
+      waits: option.waits.map((wait) => ({
+        tileKind: wait.tileKind,
+        winType: wait.winType,
+        multiplier: (wait.winType === "HARD" ? 2 : 1) * player.personalMultiplier,
+        remainingCount: Math.max(0, 4 - (publicCounts.get(tileKindKey(wait.tileKind)) ?? 0)),
+      })),
+    }));
 }
 
 export class RoomService {
@@ -861,9 +926,13 @@ export class RoomService {
               nextDealerSeat: round.outcome.nextDealerSeat,
             }
           : { kind: "DRAW" as const, nextDealerSeat: round.outcome.nextDealerSeat };
+    const tingHints =
+      room.stage === "PLAYING" && round !== null
+        ? projectTingHints({ round, selfSeat, legalActions })
+        : [];
 
     return {
-      schemaVersion: 4,
+      schemaVersion: 5,
       roomId: room.id,
       roomCode: room.code,
       version: room.version,
@@ -890,6 +959,7 @@ export class RoomService {
       roundOutcome,
       roundSettlement,
       legalActions,
+      tingHints,
       players,
       lobbySeats: SEATS.map((seat) => {
         const controller = room.seats[seat];

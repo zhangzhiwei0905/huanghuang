@@ -22,6 +22,7 @@ packages/game-engine/src/
 ├── round.ts              # Round progression
 ├── win.ts                # Pure win evaluator
 ├── settlement.ts         # Score formulas (zero-sum invariants)
+├── ting.ts               # Pure discard -> winning-tile analysis via win evaluator
 ├── bot.ts                # Restricted-view bot decisions
 └── index.ts              # Public barrel only — no deep imports by consumers
 ```

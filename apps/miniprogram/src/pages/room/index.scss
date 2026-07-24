@@ -1053,6 +1053,32 @@
   display: none;
 }
 
+.hand-tile-slot {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+}
+
+.hand-tile-slot__ting {
+  position: absolute;
+  z-index: 4;
+  top: -0.9vmin;
+  left: -0.3vmin;
+  min-width: 2.5vmin;
+  border: 1px solid rgb(255 244 202 / 72%);
+  border-radius: 999px;
+  padding: 0.1vmin 0.45vmin;
+  background: #9a5d28;
+  color: #fff8e7;
+  font-size: 1.45vmin;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* The just-drawn tile sits apart from the sorted hand (see `drawnTile` in
    index.tsx) — a thin divider + a small "摸" label mark it as separate,
    same idea as the web client's drawn-tile-slot. */
@@ -1086,6 +1112,16 @@
   color: #fff;
   font-size: 1.5vmin;
   line-height: 1.5;
+}
+
+.drawn-tile-slot .hand-tile-slot__ting {
+  left: auto;
+  right: -0.3vmin;
+}
+
+.drawn-tile-slot.has-ting .drawn-tile-slot__label {
+  left: 0;
+  transform: translateX(-75%);
 }
 
 /* Client-only stage transition: the authoritative room is already PLAYING

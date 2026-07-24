@@ -1,0 +1,107 @@
+.ting-hint-rail {
+  position: relative;
+  z-index: 11;
+  width: 100%;
+  height: max(10.8vmin, 48px);
+  flex: 0 0 max(10.8vmin, 48px);
+  pointer-events: none;
+}
+
+.ting-hint-card {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  width: min(68vw, 580px);
+  max-width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 1vmin;
+  border: 1px solid rgb(223 193 119 / 62%);
+  border-radius: 1.4vmin;
+  padding: 0.7vmin 1vmin;
+  background: rgb(18 35 26 / 94%);
+  color: #fffaf0;
+  box-shadow: 0 0.8vmin 1.8vmin rgb(0 0 0 / 30%);
+  pointer-events: auto;
+}
+
+.ting-hint-card.is-start {
+  transform: translateX(0);
+}
+
+.ting-hint-card.is-center {
+  transform: translateX(-50%);
+}
+
+.ting-hint-card.is-end {
+  transform: translateX(-100%);
+}
+
+.ting-hint-card__title {
+  flex: 0 0 auto;
+  color: #e8c97a;
+  font-size: 1.7vmin;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.ting-hint-card__scroll {
+  width: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.ting-hint-card__list {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8vmin;
+}
+
+.ting-hint-card__item {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.6vmin;
+  border-left: 1px solid rgb(255 255 255 / 16%);
+  padding-left: 0.8vmin;
+}
+
+.ting-hint-card__item:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.ting-hint-card__item.is-exhausted {
+  opacity: 0.55;
+}
+
+.ting-hint-card .mj-tile--compact {
+  width: 3.8vmin;
+  height: 5.3vmin;
+  min-width: 22px;
+  min-height: 31px;
+  max-width: 28px;
+  max-height: 39px;
+}
+
+.ting-hint-card__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15vmin;
+}
+
+.ting-hint-card__type {
+  font-size: 1.65vmin;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.ting-hint-card__remaining {
+  color: rgb(255 250 240 / 72%);
+  font-size: 1.4vmin;
+  line-height: 1.25;
+  white-space: nowrap;
+}
