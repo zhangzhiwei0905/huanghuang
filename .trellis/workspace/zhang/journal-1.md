@@ -623,3 +623,36 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 压缩小程序候场顶部栏
+
+**Date**: 2026-07-24
+**Task**: 压缩小程序候场顶部栏
+**Branch**: `miniprogram`
+
+### Summary
+
+压缩候场顶部栏和按钮视觉高度，保留 44px 触控区域，修正错误提示位置，并通过生产构建与微信开发者工具截图验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7ba5f58` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
