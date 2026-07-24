@@ -9,6 +9,7 @@ import {
   clearStoredSessionToken,
   type Identity,
   resolveIdentity,
+  resumeWechatIdentity,
   uploadAvatar,
   wechatLogin,
 } from "../../api/session";
@@ -32,7 +33,29 @@ function sharedRoomCode(code: string | undefined): string | null {
 // `{ errMsg: string }`). Swallowing the latter into one generic "操作没有
 //成功" string makes real-device domain-whitelist failures indistinguishable
 // from an actual server error — surface whatever detail is available.
-function LoginGate({ onDone }: { onDone: (identity: Identity) => void }) {
+function HomeBrand() {
+  return (
+    <>
+      <View className="mp-home__logo">
+        <View className="mp-home__logo-tile mp-home__logo-tile--a">
+          <Text className="mp-home__logo-char">晃</Text>
+        </View>
+        <View className="mp-home__logo-tile mp-home__logo-tile--b">
+          <Text className="mp-home__logo-char">晃</Text>
+        </View>
+      </View>
+      <Text className="mp-home__tagline">四人数字麻将 · 好友房 / 人机对战</Text>
+    </>
+  );
+}
+
+function LoginGate({
+  onDone,
+  onCancel,
+}: {
+  onDone: (identity: Identity) => void;
+  onCancel: () => void;
+}) {
   const [avatarTempPath, setAvatarTempPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -99,7 +122,7 @@ function LoginGate({ onDone }: { onDone: (identity: Identity) => void }) {
 
   return (
     <Form className="mp-home__panel mp-login" onSubmit={(event) => void submit(event)}>
-      <Text className="mp-home__panel-title">欢迎来晃晃</Text>
+      <Text className="mp-home__panel-title">完善微信资料</Text>
       <Button
         openType="chooseAvatar"
         onChooseAvatar={(event) => void onChooseAvatar(event)}
@@ -134,7 +157,15 @@ function LoginGate({ onDone }: { onDone: (identity: Identity) => void }) {
           className="mp-btn mp-btn--primary"
           disabled={busy}
         >
-          {busy ? "正在进入…" : "进入晃晃"}
+          {busy ? "正在登录…" : "完成登录"}
+        </Button>
+        <Button
+          hoverClass="is-pressed"
+          className="mp-btn mp-login__cancel"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          取消
         </Button>
       </View>
     </Form>
@@ -166,6 +197,9 @@ export default function IndexPage() {
   const [mode, setMode] = useState<Mode>(sharedCode !== null ? "JOIN" : "HOME");
   const [identityState, setIdentityState] = useState<IdentityState>("checking");
   const [identity, setIdentity] = useState<Identity | null>(null);
+  const [loginPanelOpen, setLoginPanelOpen] = useState(false);
+  const [loginEntryBusy, setLoginEntryBusy] = useState(false);
+  const [loginEntryError, setLoginEntryError] = useState<string | null>(null);
   const [roomCode, setRoomCode] = useState(sharedCode ?? "");
   const [baseScore, setBaseScore] = useState<BaseScore>(2);
   const [busy, setBusy] = useState(false);
@@ -217,6 +251,36 @@ export default function IndexPage() {
     }
   }
 
+  function logout() {
+    clearStoredSessionToken();
+    setIdentity(null);
+    setIdentityState("loggedOut");
+    setLoginPanelOpen(false);
+    setLoginEntryBusy(false);
+    setLoginEntryError(null);
+    setMode(sharedCode !== null ? "JOIN" : "HOME");
+    setError(null);
+  }
+
+  async function beginWechatLogin() {
+    setLoginEntryBusy(true);
+    setLoginEntryError(null);
+    try {
+      const resolved = await resumeWechatIdentity();
+      if (resolved === null) {
+        setLoginPanelOpen(true);
+        return;
+      }
+      setIdentity(resolved);
+      setIdentityState("loggedIn");
+    } catch (cause) {
+      const detail = requestFailureDetail(cause);
+      setLoginEntryError(`微信登录失败${detail.length > 0 ? `：${detail}` : ""}，请重试`);
+    } finally {
+      setLoginEntryBusy(false);
+    }
+  }
+
   if (identityState === "checking") {
     return (
       <View className="mp-home">
@@ -231,12 +295,33 @@ export default function IndexPage() {
       <View className="mp-home">
         <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
         <View className="mp-home__overlay" />
-        <LoginGate
-          onDone={(resolved) => {
-            setIdentity(resolved);
-            setIdentityState("loggedIn");
-          }}
-        />
+        <View className="mp-home__stage mp-login-entry">
+          <HomeBrand />
+          <Button
+            hoverClass="is-pressed"
+            className="mp-btn mp-btn--primary mp-login-entry__button"
+            disabled={loginEntryBusy}
+            onClick={() => void beginWechatLogin()}
+          >
+            {loginEntryBusy ? "正在登录…" : "微信登录"}
+          </Button>
+          {loginEntryError !== null ? (
+            <Text className="mp-login-entry__error">{loginEntryError}</Text>
+          ) : null}
+        </View>
+        {loginPanelOpen ? (
+          <View className="mp-login-layer">
+            <View className="mp-login-layer__scrim" />
+            <LoginGate
+              onDone={(resolved) => {
+                setIdentity(resolved);
+                setIdentityState("loggedIn");
+                setLoginPanelOpen(false);
+              }}
+              onCancel={() => setLoginPanelOpen(false)}
+            />
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -247,17 +332,34 @@ export default function IndexPage() {
     <View className="mp-home">
       <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
       <View className="mp-home__overlay" />
+      <View className="mp-account">
+        <View className="mp-account__identity">
+          <View className="mp-account__avatar">
+            {identity.avatarUrl !== null ? (
+              <Image
+                src={`${API_BASE}${identity.avatarUrl}`}
+                mode="aspectFill"
+                className="mp-account__avatar-image"
+              />
+            ) : (
+              <Text className="mp-account__avatar-fallback">{identity.nickname.slice(0, 1)}</Text>
+            )}
+          </View>
+          <Text className="mp-account__nickname">{identity.nickname}</Text>
+        </View>
+        <Button
+          hoverClass="is-pressed"
+          className="mp-account__logout"
+          ariaLabel="退出登录"
+          disabled={busy}
+          onClick={logout}
+        >
+          退出
+        </Button>
+      </View>
       {mode === "HOME" ? (
         <View className="mp-home__stage">
-          <View className="mp-home__logo">
-            <View className="mp-home__logo-tile mp-home__logo-tile--a">
-              <Text className="mp-home__logo-char">晃</Text>
-            </View>
-            <View className="mp-home__logo-tile mp-home__logo-tile--b">
-              <Text className="mp-home__logo-char">晃</Text>
-            </View>
-          </View>
-          <Text className="mp-home__tagline">四人数字麻将 · 好友房 / 人机对战</Text>
+          <HomeBrand />
           <View className="mp-home__menu">
             <Button
               hoverClass="is-pressed"
@@ -289,24 +391,6 @@ export default function IndexPage() {
         <View className="mp-home__panel">
           <Text className="mp-home__panel-title">{heading}</Text>
           <View className="mp-home__form">
-            <View className="mp-field">
-              <Text className="mp-field__label">身份</Text>
-              {identity.avatarUrl !== null ? (
-                <Image src={`${API_BASE}${identity.avatarUrl}`} className="mp-field__avatar" />
-              ) : null}
-              <Text className="mp-field__value">{identity.nickname}</Text>
-              <Text
-                className="mp-field__relogin"
-                onClick={() => {
-                  clearStoredSessionToken();
-                  setIdentity(null);
-                  setIdentityState("loggedOut");
-                }}
-              >
-                重新登录
-              </Text>
-            </View>
-
             {mode === "JOIN" ? (
               <View className="mp-field">
                 <Text className="mp-field__label">房间号</Text>

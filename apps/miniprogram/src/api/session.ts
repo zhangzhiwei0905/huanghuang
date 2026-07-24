@@ -130,6 +130,38 @@ export async function wechatLogin(nickname: string, avatarUrl: string | null): P
   return { nickname: data.nickname, avatarUrl: data.avatarUrl };
 }
 
+/**
+ * Resume a profile previously linked to the current WeChat openid.
+ * First-time users return null and continue through explicit profile capture.
+ */
+export async function resumeWechatIdentity(): Promise<Identity | null> {
+  const { code } = await Taro.login();
+  const response = await Taro.request({
+    url: `${API_BASE}/api/auth/wechat`,
+    method: "POST",
+    data: { code, resumeOnly: true },
+    header: { "Content-Type": "application/json" },
+  });
+  const errorCode =
+    typeof response.data === "object" &&
+    response.data !== null &&
+    "error" in response.data &&
+    typeof response.data.error === "string"
+      ? response.data.error
+      : null;
+  if (response.statusCode === 404 && errorCode === "WECHAT_PROFILE_REQUIRED") {
+    return null;
+  }
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(errorCode ?? `WECHAT_AUTH_HTTP_${String(response.statusCode)}`);
+  }
+  const data = response.data as SessionIssueResponse;
+  if (data.sessionToken !== null) {
+    setStoredSessionToken(data.sessionToken);
+  }
+  return { nickname: data.nickname, avatarUrl: data.avatarUrl };
+}
+
 function readFileAsBase64(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     Taro.getFileSystemManager().readFile({

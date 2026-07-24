@@ -45,6 +45,85 @@ Keep infrastructure details in server logs only. The legacy multipart
 `/api/upload/avatar` route remains for older clients, but the current
 mini-program must use `/api/upload/avatar-data`.
 
+## Scenario: Resume a stored WeChat profile
+
+### 1. Scope / Trigger
+
+Any change to mini-program login, logout, `openid` persistence or
+`POST /api/auth/wechat` must preserve first-time profile consent while allowing
+a returning WeChat identity to reuse its server-stored avatar and nickname.
+
+### 2. Signatures
+
+```ts
+POST /api/auth/wechat
+{ code: string; resumeOnly: true }
+
+GameDatabase.resumeWechatSession(openId: string, tokenHash: string):
+  AnonymousSession | null
+```
+
+### 3. Contracts
+
+- The server exchanges `code` for `openid` with the configured
+  `WECHAT_APP_ID` / `WECHAT_APP_SECRET`.
+- When `resumeOnly === true`, an existing `openid` rotates only its token and
+  `last_seen_at`; nickname and avatar URL remain unchanged.
+- A missing `openid` returns `404 WECHAT_PROFILE_REQUIRED` and creates no
+  session row. The client then opens explicit `chooseAvatar` +
+  `Input type="nickname"` profile capture.
+- A normal profile submission keeps the existing upsert behavior and may
+  update the stored nickname/avatar.
+
+### 4. Validation & Error Matrix
+
+| Condition | HTTP | Body |
+|---|---:|---|
+| Missing/empty code | 400 | `{ error: "INVALID_INPUT" }` |
+| WeChat code exchange rejected | 401 | `{ error: "WECHAT_AUTH_FAILED" }` |
+| WeChat exchange unavailable | 502 | `{ error: "WECHAT_AUTH_UNAVAILABLE" }` |
+| `resumeOnly` with unknown openid | 404 | `{ error: "WECHAT_PROFILE_REQUIRED" }` |
+| `resumeOnly` with known openid | 200 | Stored nickname/avatar + new session token |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a player who previously completed profile capture logs out, logs in
+  again, and receives the same nickname/avatar with a rotated token.
+- Base: a first-time player receives `WECHAT_PROFILE_REQUIRED` and is sent to
+  native profile capture.
+- Bad: creating a `"微信玩家"` row during resume, or overwriting a saved avatar
+  with `null`.
+
+### 6. Tests Required
+
+- Database tests assert unknown openids create no rows.
+- Database tests assert token rotation invalidates the old hash while preserving
+  nickname and avatar.
+- Mini-program build inspection asserts `resumeOnly: true` and
+  `WECHAT_PROFILE_REQUIRED` handling are present.
+- Real-device acceptance confirms a previously linked WeChat user skips repeat
+  profile entry.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+database.upsertWechatSession(
+  { openId, nickname: "微信玩家", avatarUrl: null },
+  tokenHash,
+);
+```
+
+Correct:
+
+```ts
+const session = database.resumeWechatSession(openId, tokenHash);
+if (session === null) {
+  return reply.code(404).send({ error: "WECHAT_PROFILE_REQUIRED" });
+}
+```
+
 ### Socket game commands and chat
 
 Commands are acknowledged with the shared `CommandResult` (or a thin `{ accepted: false, errorCode }` for pre-execute failures):

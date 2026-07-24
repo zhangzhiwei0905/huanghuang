@@ -117,6 +117,17 @@ safe because mp keeps the highlight until the next discard.
 WeChat does not let a mini-program silently read the current avatar or
 nickname. The supported flow requires explicit user interaction:
 
+- The logged-out home may present one `微信登录` entry and open profile capture
+  in a second-stage layer, but that entry must not imply silent authorization.
+  First call `/api/auth/wechat` with `{ code, resumeOnly: true }`: a stored
+  openid returns its saved profile, while `404 WECHAT_PROFILE_REQUIRED` opens
+  the layer. Keep `chooseAvatar` and `Input type="nickname"` as two explicit
+  native user actions for that first-time path, then close the layer only after
+  authentication succeeds.
+- After authentication, render the resolved avatar and nickname together in a
+  persistent account area. Keep logout as a separate account action, clear the
+  stored session immediately, and return to the single login entry; do not hide
+  logout inside room creation/join forms.
 - A `Button openType="chooseAvatar"` yields a local temporary path. Render
   that path immediately, then upload it on form submission. Uploading inside
   `onChooseAvatar` makes a network/domain failure look like selection failed.

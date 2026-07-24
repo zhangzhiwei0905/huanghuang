@@ -151,7 +151,12 @@ app.post("/api/auth/wechat", async (request, reply) => {
   ) {
     return reply.code(501).send({ error: "WECHAT_AUTH_DISABLED" });
   }
-  const body = (request.body ?? {}) as { code?: unknown; nickname?: unknown; avatarUrl?: unknown };
+  const body = (request.body ?? {}) as {
+    code?: unknown;
+    nickname?: unknown;
+    avatarUrl?: unknown;
+    resumeOnly?: unknown;
+  };
   if (typeof body.code !== "string" || body.code.length === 0) {
     return reply.code(400).send({ error: "INVALID_INPUT" });
   }
@@ -180,10 +185,14 @@ app.post("/api/auth/wechat", async (request, reply) => {
     return await reply.code(502).send({ error: "WECHAT_AUTH_UNAVAILABLE" });
   }
   const token = randomBytes(32).toString("base64url");
-  const session = database.upsertWechatSession(
-    { openId, nickname, avatarUrl },
-    createHash("sha256").update(token).digest("hex"),
-  );
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const session =
+    body.resumeOnly === true
+      ? database.resumeWechatSession(openId, tokenHash)
+      : database.upsertWechatSession({ openId, nickname, avatarUrl }, tokenHash);
+  if (session === null) {
+    return reply.code(404).send({ error: "WECHAT_PROFILE_REQUIRED" });
+  }
   sessions.attachSessionTokenHeader(reply, token);
   return {
     sessionId: session.id,

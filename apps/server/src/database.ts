@@ -164,6 +164,24 @@ export class GameDatabase {
     return session;
   }
 
+  /**
+   * Rotate the token for an already-linked WeChat identity without changing
+   * its saved profile. A missing openid stays missing — callers use that to
+   * route first-time users into explicit avatar/nickname capture.
+   */
+  resumeWechatSession(openId: string, tokenHash: string): AnonymousSession | null {
+    const existing = this.findSessionByOpenId(openId);
+    if (existing === null) return null;
+    this.connection
+      .prepare(
+        `UPDATE anonymous_sessions
+         SET token_hash = ?, last_seen_at = ?
+         WHERE wechat_open_id = ?`,
+      )
+      .run(tokenHash, new Date().toISOString(), openId);
+    return existing;
+  }
+
   saveRoom(
     room: { id: string; code: string; status: string; version: number },
     stateJson: string,
