@@ -656,3 +656,37 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 完成结算赖子样式与听牌提示
+
+**Date**: 2026-07-25
+**Task**: 完成结算赖子样式与听牌提示
+**Branch**: `miniprogram`
+
+### Summary
+
+实现按合法出牌生成的听牌提示、硬软胡合并倍率与公开剩余数，小程序展示听标识和候选卡；修复结算赖子 outline 残边，并通过全量测试、构建及微信开发者工具真实房间视觉验收。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a6f31d0` | (see git log) |
+| `0c5faa7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

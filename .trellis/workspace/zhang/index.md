@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
-- **Last Active**: 2026-07-24
+- **Total Sessions**: 17
+- **Last Active**: 2026-07-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~658 | Active |
+| `journal-1.md` | ~692 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-07-25 | 完成结算赖子样式与听牌提示 | `a6f31d0`, `0c5faa7` | `miniprogram` |
 | 16 | 2026-07-24 | 压缩小程序候场顶部栏 | `7ba5f58` | `miniprogram` |
 | 15 | 2026-07-24 | 小程序微信登录与账户区优化 | `8db26df` | `miniprogram` |
 | 14 | 2026-07-24 | 收敛小程序候场座位视觉 | `9400cfe` | `miniprogram` |
