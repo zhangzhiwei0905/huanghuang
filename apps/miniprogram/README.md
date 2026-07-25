@@ -20,18 +20,18 @@ pnpm install
 
 | Variable / file | Purpose |
 |-----------------|---------|
-| `TARO_APP_API_BASE` | API origin at **build** time (default `http://127.0.0.1:3000`) |
+| `TARO_APP_API_BASE` | API origin at **build** time (default `https://huanghuang.amazingzz.xyz`) |
 | `project.config.json` → `appid` | Replace `touristappid` with your WeChat mini-program appId |
 | WeChat 合法域名 | Production: request + socket 合法域名 = your HTTPS API host |
 
 Examples:
 
 ```bash
-# local server
-pnpm --filter @huanghuang/miniprogram dev:weapp
+# local server (explicit opt-in)
+TARO_APP_API_BASE=http://127.0.0.1:3000 pnpm --filter @huanghuang/miniprogram dev:weapp
 
-# production API
-TARO_APP_API_BASE=https://huanghuang.example.com pnpm --filter @huanghuang/miniprogram build:weapp
+# production API (default)
+pnpm --filter @huanghuang/miniprogram build:weapp
 ```
 
 Auth contract: see [`docs/miniprogram-auth.md`](../../docs/miniprogram-auth.md).
@@ -40,7 +40,7 @@ Auth contract: see [`docs/miniprogram-auth.md`](../../docs/miniprogram-auth.md).
 
 1. Build once: `pnpm --filter @huanghuang/miniprogram build:weapp` (outputs `apps/miniprogram/dist`).
 2. DevTools → 导入项目 → directory **`apps/miniprogram`** (uses `project.config.json` `miniprogramRoot: dist/`).
-3. For local HTTP API, disable domain check in DevTools (or set `urlCheck: false` in project config — already default for scaffold).
+3. A normal build connects to production. For local HTTP API, explicitly set `TARO_APP_API_BASE=http://127.0.0.1:3000` and disable domain checking in DevTools.
 4. Smoke page: health check + `POST /api/session` token issue.
 
 ## Scripts
@@ -78,4 +78,3 @@ Room handoff uses temporary storage key `huanghuang_open_room` after create/join
 Use `socket.io-mp` (WeChat native WebSocket transport). Plain `socket.io-client` does **not** work reliably in WeChat DevTools and will loop on “实时连接暂时中断，正在重连”.
 
 Local DevTools still needs **不校验合法域名**. Server must be the `miniprogram` branch with token auth.
-

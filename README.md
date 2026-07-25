@@ -36,7 +36,8 @@ Taro 4 + React 客户端在 `apps/miniprogram`。鉴权说明见 `docs/miniprogr
 ```bash
 pnpm --filter @huanghuang/miniprogram build:weapp
 # 微信开发者工具导入 apps/miniprogram（miniprogramRoot=dist）
-# 生产 API：TARO_APP_API_BASE=https://你的域名 pnpm --filter @huanghuang/miniprogram build:weapp
+# 默认连接生产 API；本地联调才显式覆盖：
+TARO_APP_API_BASE=http://127.0.0.1:3000 pnpm --filter @huanghuang/miniprogram build:weapp
 ```
 
 iPhone/iPad 使用 Safari 打开 HTTPS 生产地址后，可通过“分享 → 添加到主屏幕”安装；从主屏幕启动会使用独立横屏窗口。普通 Safari 访问也会跟随地址栏高度和设备安全区动态调整。

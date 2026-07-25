@@ -666,8 +666,9 @@
 .player-station {
   position: absolute;
   z-index: 4;
-  min-width: 24vmin;
-  max-width: 30vmin;
+  width: max(30vmin, 132px);
+  min-width: 0;
+  max-width: min(36vmin, 156px);
   padding: 0.8vmin 1.2vmin;
   border: 1px solid #d8d4c4;
   border-radius: 1.4vmin;
@@ -712,31 +713,21 @@
   transform: translateX(-50%);
 }
 
-/* Left/right stations no longer center via translateY(-50%): when meld
-   groups push the card taller, centering grows it both up (into the
-   opposite station/discard ring) and down (into self-area). Anchoring the
-   top edge instead means growth only ever pushes downward. top:39% (vs the
-   old top:42% + -50% transform) keeps the empty/few-meld card at roughly
-   the same visual position as before — only tall multi-meld cards differ. */
 .player-station.pos-left {
-  top: 39%;
+  top: 29%;
   left: max(10vmin, calc(1vmin + env(safe-area-inset-left)));
-  max-width: 46vmin;
 }
 
 .player-station.pos-right {
-  top: 39%;
+  top: 29%;
   right: calc(1vmin + env(safe-area-inset-right));
-  max-width: 46vmin;
 }
 
-/* Self info sits above hand, left-ish like web bottom station.
-   Raised to clear the taller self-area (action buttons ~7.6vmin + gap
-   0.8vmin + hand ~11.8vmin + 0.8vmin outer offset ≈ 21vmin from the
-   bottom edge when action buttons are showing). */
 .player-station.pos-self {
-  left: max(10vmin, calc(1.2vmin + env(safe-area-inset-left)));
-  bottom: 26vmin;
+  right: calc(1.2vmin + env(safe-area-inset-right));
+  bottom: 1.2vmin;
+  width: max(27vmin, 118px);
+  max-width: min(31vmin, 136px);
   transform: none;
 }
 
@@ -762,33 +753,104 @@
   white-space: nowrap;
 }
 
-.player-station__meta {
-  display: block;
+.player-station__stats {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15vmin 0.65vmin;
   margin-top: 0.2vmin;
+}
+
+.player-station__stat {
+  flex: 0 0 auto;
   font-size: 1.7vmin;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
   color: var(--muted, #5f625b);
   white-space: nowrap;
 }
 
-.player-station__melds {
-  display: flex;
-  flex-wrap: wrap;
+.player-station__stat.is-offline {
+  color: #805c55;
+  font-weight: 700;
+}
+
+/* Identity and public melds have different capacity constraints. Keeping
+   melds in their own fixed rails prevents a four-group side station from
+   growing into the local player's information or hand. */
+.player-meld-rail {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: 1fr;
+  align-items: start;
+  justify-content: center;
   gap: 0.6vmin;
-  margin-top: 0.4vmin;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.player-meld-rail.pos-opposite {
+  top: max(15.5vmin, 62px);
+  left: 50%;
+  width: max(72vmin, 300px);
+  transform: translateX(-50%);
+}
+
+.player-meld-rail.pos-left,
+.player-meld-rail.pos-right {
+  top: 45%;
+  width: max(35vmin, 146px);
+  grid-auto-flow: row;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7vmin;
+}
+
+.player-meld-rail.pos-left {
+  left: max(10vmin, calc(1vmin + env(safe-area-inset-left)));
+}
+
+.player-meld-rail.pos-right {
+  right: calc(1vmin + env(safe-area-inset-right));
+}
+
+.player-meld-rail.pos-self {
+  left: max(10vmin, calc(1.2vmin + env(safe-area-inset-left)));
+  bottom: 17.5vmin;
+  width: max(72vmin, 300px);
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-template-rows: 1fr;
 }
 
 .meld-group {
   display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2vmin;
+  padding: 0.35vmin 0.45vmin 0.45vmin;
+  border: 1px solid rgb(224 218 196 / 54%);
+  border-radius: 0.7vmin;
+  background: rgb(247 244 231 / 76%);
+}
+
+.meld-group__label {
+  color: rgb(49 58 50 / 72%);
+  font-size: clamp(7px, 1.25vmin, 9px);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.meld-group__tiles {
+  display: flex;
   gap: 0.15vmin;
 }
 
-/* Smaller than the discard-pile tile size: melds/released-wildcards need
-   their own scale so 3-4 exposed groups (max hand structure: 4 sets, no
-   concealed pair once all are exposed) stay on one row inside the widened
-   pos-left/pos-right card instead of wrapping and growing the station
-   tall. Wrap is still allowed as a fallback for the rare 4-kong case, but
-   only ever adds height downward now (see pos-left/pos-right top-anchor). */
-.player-station__melds .mj-tile--compact {
+.player-meld-rail .mj-tile--compact {
   width: 2.6vmin;
   height: 3.6vmin;
   min-width: 15px;
@@ -799,9 +861,21 @@
 
 .released-wildcard-group {
   display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2vmin;
+  padding: 0.35vmin 0.45vmin 0.45vmin;
+  border: 1px solid rgb(211 180 106 / 58%);
+  border-radius: 0.7vmin;
+  background: rgb(247 240 213 / 82%);
+  color: var(--tile-gold, #8a713f);
+}
+
+.released-wildcard-group__tiles {
+  display: flex;
   align-items: flex-end;
   gap: 0.3vmin;
-  color: var(--tile-gold, #8a713f);
 }
 
 .released-wildcard-group__count {

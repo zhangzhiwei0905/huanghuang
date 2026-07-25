@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
 import type {
   BaseScore,
   LobbySeatProjection,
+  MeldKind,
   RoomProjection,
   RoomStage,
   Seat,
@@ -41,6 +42,14 @@ const VISIBLE_DISCARDS = 12;
    dock — only a single wide row fits there, so it shows fewer tiles (players
    know their own discards; the count chip carries the total). */
 const SELF_VISIBLE_DISCARDS = 6;
+
+const MELD_LABELS: Record<MeldKind, string> = {
+  PONG: "碰",
+  EXPOSED_KONG: "明杠",
+  CONCEALED_KONG: "暗杠",
+  ADDED_KONG: "补杠",
+  INDICATOR_PONG_KONG: "亮杠",
+};
 
 const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
   connecting: "连接中",
@@ -607,58 +616,76 @@ export default function RoomPage() {
                 const pos = POSITION_CLASS[relativePosition(seat, selfSeat)] ?? "pos-self";
                 const active = room.actingSeat === seat;
                 const latestReleasedWildcard = player.releasedWildcards.at(-1) ?? null;
+                const hasPublicTiles =
+                  player.melds.length > 0 || latestReleasedWildcard !== null;
                 return (
-                  <View
-                    key={seat}
-                    className={`player-station ${pos}${active ? " is-active" : ""}${
-                      seat === room.selfSeat ? " is-self" : ""
-                    }`}
-                  >
-                    <View className="player-station__identity">
-                      <SeatAvatar
-                        avatarUrl={player.avatarUrl}
-                        nickname={player.nickname}
-                        isBot={player.controller === "BOT"}
-                        variant="player"
-                      />
-                      <View className="player-station__copy">
-                        <Text className="player-station__name">{player.nickname}</Text>
-                        <Text className="player-station__meta">
-                          积分 {player.score} · 手牌 {player.handCount} · 倍数{" "}
-                          {player.personalMultiplier}
-                          {player.connected ? "" : " · 离线"}
-                        </Text>
+                  <Fragment key={seat}>
+                    <View
+                      className={`player-station ${pos}${active ? " is-active" : ""}${
+                        seat === room.selfSeat ? " is-self" : ""
+                      }`}
+                    >
+                      <View className="player-station__identity">
+                        <SeatAvatar
+                          avatarUrl={player.avatarUrl}
+                          nickname={player.nickname}
+                          isBot={player.controller === "BOT"}
+                          variant="player"
+                        />
+                        <View className="player-station__copy">
+                          <Text className="player-station__name">{player.nickname}</Text>
+                          <View className="player-station__stats">
+                            <Text className="player-station__stat">积分 {player.score}</Text>
+                            <Text className="player-station__stat">{player.handCount}张</Text>
+                            <Text className="player-station__stat">
+                              ×{player.personalMultiplier}
+                            </Text>
+                            {!player.connected ? (
+                              <Text className="player-station__stat is-offline">离线</Text>
+                            ) : null}
+                          </View>
+                        </View>
                       </View>
                     </View>
-                    {player.melds.length > 0 || latestReleasedWildcard !== null ? (
-                      <View className="player-station__melds">
+                    {hasPublicTiles ? (
+                      <View
+                        className={`player-meld-rail ${pos}${
+                          seat === room.selfSeat ? " is-self" : ""
+                        }`}
+                      >
                         {player.melds.map((meld) => (
                           <View key={meld.id} className="meld-group">
-                            {meld.tileIds.map((tileId) => (
-                              <MahjongTile
-                                key={tileId}
-                                compact
-                                tile={{ id: tileId, ...meld.tileKind }}
-                                wildcardKind={room.wildcardKind}
-                              />
-                            ))}
+                            <Text className="meld-group__label">{MELD_LABELS[meld.kind]}</Text>
+                            <View className="meld-group__tiles">
+                              {meld.tileIds.map((tileId) => (
+                                <MahjongTile
+                                  key={tileId}
+                                  compact
+                                  tile={{ id: tileId, ...meld.tileKind }}
+                                  wildcardKind={room.wildcardKind}
+                                />
+                              ))}
+                            </View>
                           </View>
                         ))}
                         {latestReleasedWildcard !== null ? (
                           <View className="released-wildcard-group">
-                            <MahjongTile
-                              compact
-                              tile={latestReleasedWildcard}
-                              wildcardKind={room.wildcardKind}
-                            />
-                            <Text className="released-wildcard-group__count">
-                              ×{player.releasedWildcards.length}
-                            </Text>
+                            <Text className="meld-group__label">放赖</Text>
+                            <View className="released-wildcard-group__tiles">
+                              <MahjongTile
+                                compact
+                                tile={latestReleasedWildcard}
+                                wildcardKind={room.wildcardKind}
+                              />
+                              <Text className="released-wildcard-group__count">
+                                ×{player.releasedWildcards.length}
+                              </Text>
+                            </View>
                           </View>
                         ) : null}
                       </View>
                     ) : null}
-                  </View>
+                  </Fragment>
                 );
               })}
 

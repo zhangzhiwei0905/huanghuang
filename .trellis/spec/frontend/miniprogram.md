@@ -225,7 +225,15 @@ backgrounding) is sometimes needed to pick them up.
 ### Building for production
 
 ```bash
-TARO_APP_API_BASE=https://<domain> pnpm --filter @huanghuang/miniprogram build:weapp
+pnpm --filter @huanghuang/miniprogram build:weapp
+```
+
+The default compiled origin is `https://huanghuang.amazingzz.xyz`, so a normal
+DevTools compile or experience-version upload cannot silently fall back to
+localhost. Local server work must opt in explicitly:
+
+```bash
+TARO_APP_API_BASE=http://127.0.0.1:3000 pnpm --filter @huanghuang/miniprogram build:weapp
 ```
 
 Verify the URL actually landed before shipping — it ends up in
@@ -234,6 +242,24 @@ Verify the URL actually landed before shipping — it ends up in
 ```bash
 grep -o '"https://<domain>"' apps/miniprogram/dist/common.js
 ```
+
+### Player identity and public meld capacity
+
+In the playable landscape table, player identity and exposed melds have
+different capacity constraints. Keep the identity card fixed and bounded:
+long nicknames may ellipsize, while score, hand count, multiplier and offline
+state render as short wrapping stats inside the card. Render melds/released
+wildcards exactly once in seat-specific public rails rather than allowing them
+to grow the identity card.
+
+- Opposite/self rails use horizontal group bands in reserved top/bottom lanes.
+- Left/right rails use bounded two-column group grids.
+- Validate the maximum four groups for adjacent seats at phone landscape
+  dimensions. A no-meld screenshot is not evidence that station geometry is
+  safe.
+- Keep the local identity in the free edge beside the centered hand; do not
+  place a four-group rail in that edge because it will overlap the outer hand
+  tiles.
 
 ### Gotcha: swallowed network errors mask domain-whitelist failures
 

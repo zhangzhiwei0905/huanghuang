@@ -1,6 +1,8 @@
 import path from "node:path";
 import type { UserConfigExport } from "@tarojs/cli";
 
+const DEFAULT_API_BASE = "https://huanghuang.amazingzz.xyz";
+
 const config: UserConfigExport<"webpack5"> = {
   projectName: "huanghuang",
   date: "2026-7-21",
@@ -15,8 +17,9 @@ const config: UserConfigExport<"webpack5"> = {
   outputRoot: "dist",
   plugins: ["@tarojs/plugin-framework-react"],
   defineConstants: {
-    // Overridable at build time: TARO_APP_API_BASE=https://your.domain
-    TARO_APP_API_BASE: JSON.stringify(process.env.TARO_APP_API_BASE ?? "http://127.0.0.1:3000"),
+    // Experience/release builds must be upload-safe by default. Local server
+    // work remains opt-in via TARO_APP_API_BASE=http://127.0.0.1:3000.
+    TARO_APP_API_BASE: JSON.stringify(process.env.TARO_APP_API_BASE ?? DEFAULT_API_BASE),
   },
   copy: {
     patterns: [],
