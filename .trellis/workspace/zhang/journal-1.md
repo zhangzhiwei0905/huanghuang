@@ -724,3 +724,36 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: 小程序牌桌引导、公开牌布局与可配置出牌时长
+
+**Date**: 2026-07-25
+**Task**: 小程序牌桌引导、公开牌布局与可配置出牌时长
+**Branch**: `miniprogram`
+
+### Summary
+
+优化四席碰杠放赖轨道与本家头像避让，压缩白底纵向听牌辅助卡并突出倍率和真实公开余牌；创建好友房和人机房新增20/25/30秒出牌时长，贯通协议、持久化、投影与服务端权威截止时间。通过136项测试、lint、类型检查、全量构建和小程序生产构建；生产数据库与旧容器已保留回滚点，服务已部署为9c560aa并通过本机及公网ready检查。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9c560aa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
