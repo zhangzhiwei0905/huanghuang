@@ -690,3 +690,37 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 优化小程序牌桌布局并恢复线上听牌提示
+
+**Date**: 2026-07-25
+**Task**: 优化小程序牌桌布局并恢复线上听牌提示
+**Branch**: `miniprogram`
+
+### Summary
+
+拆分玩家身份卡与四席副露轨道，修复长文本和多组碰杠重叠；将小程序默认 API 改为生产域名；部署 revision 4267ffb 并用真实机器人房验证 schemaVersion 5、非空 tingHints、倍率和公开剩余数量。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4267ffb` | (see git log) |
+| `c7fc009` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
