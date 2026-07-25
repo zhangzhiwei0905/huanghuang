@@ -31,10 +31,10 @@
 
 ## Phase 5：安全部署与线上验证
 
-- [ ] 提交实现与任务文档。
-- [ ] 使用当前提交 SHA 构建并部署服务端，不改变生产 `.env` 和 `game_data` volume。
-- [ ] 核对 `huanghuang-app` 容器健康状态和 revision label。
-- [ ] 通过生产 API/房间投影验证 schemaVersion 5 与真实 `tingHints`。
+- [x] 提交实现与任务文档（`4267ffb`）。
+- [x] 使用提交 SHA 构建并部署服务端，不改变生产环境变量和 `huanghuang_game_data` volume。
+- [x] 核对 `huanghuang-app` 容器健康状态和 revision label。
+- [x] 通过生产 API/房间投影验证 schemaVersion 5 与真实非空 `tingHints`。
 - [x] 生成最终体验版小程序构建，默认连接生产 API，交付上传目录与验证结果。
 
 ## Visual validation
@@ -43,3 +43,12 @@
 - 第一轮发现本家副露轨道压住右侧手牌；将本家副露移入左侧轨道下方的独立横向带。
 - 第二轮发现本家身份卡与最左侧手牌边缘相交；将较窄的本家身份卡移到右下空白边缘。
 - 最终截图中四席身份卡、三席极端副露、中央牌河、操作按钮和完整手牌互不遮挡，两张可听弃牌均显示“听”标识。
+
+## Production validation
+
+- 镜像/容器 revision：`4267ffb`。
+- `GET /health/live`：`{"status":"ok"}`。
+- `GET /health/ready`：`{"status":"ready"}`。
+- 生产临时机器人房：`schemaVersion: 5`；使用现有机器人牌效策略推进 2 次决策后，得到 1 个可听弃牌、4 个候选胡牌；首个候选包含倍率 `1` 和公开剩余数 `2`。
+- 验证完成后已调用离房接口清理临时房间。
+- 无环境变量的普通小程序构建只包含 `https://huanghuang.amazingzz.xyz`，不包含 `http://127.0.0.1:3000`。
