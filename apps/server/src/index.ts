@@ -248,7 +248,12 @@ app.post("/api/rooms", (request, reply) => {
   const parsed = createRoomSchema.safeParse(request.body);
   if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
   const { session } = sessions.ensure(request, reply, parsed.data.nickname);
-  const room = rooms.createRoom(session, parsed.data.baseScore, parsed.data.mode);
+  const room = rooms.createRoom(
+    session,
+    parsed.data.baseScore,
+    parsed.data.mode,
+    parsed.data.turnTimeoutSeconds,
+  );
   return reply.code(201).send(rooms.project(room, session.id));
 });
 

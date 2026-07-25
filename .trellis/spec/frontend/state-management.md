@@ -59,7 +59,9 @@ type RoomProjection = {
   lobbySeats: LobbySeatProjection[];
 };
 
-POST /api/rooms                 { nickname, baseScore, mode }
+type TurnTimeoutSeconds = 20 | 25 | 30;
+
+POST /api/rooms                 { nickname, baseScore, mode, turnTimeoutSeconds }
 POST /api/rooms/:code/ready    { ready: boolean }
 PATCH /api/rooms/:code/settings { baseScore: 1 | 2 | 5 | 10 }
 POST /api/rooms/:code/continue {}
@@ -89,6 +91,11 @@ type ChatMessageProjection = {
 - Every `FRIEND + WAITING` projection has a UTC ISO `waitingExpiresAt`; starting a round clears it, and returning from a round creates a fresh three-minute deadline. Join, readiness and base-score changes do not extend it.
 - Readiness is an explicit desired state. Repeating `{ ready: true }` or `{ ready: false }` is idempotent; the client must not ask the server to perform an implicit toggle.
 - Only the current friend-room owner can change `baseScore`, and only in `WAITING`. A successful change clears every ready state so all four players reconfirm the new score.
+- Room creation accepts `turnTimeoutSeconds` as `20 | 25 | 30`; legacy
+  requests that omit it default to 20. The value is projected back to every
+  member and remains fixed for the lifetime of the room.
+- `turnTimeoutSeconds` controls human `TURN_DECISION` deadlines only. Response
+  windows and bot delays remain server-owned constants.
 - Leaving removes membership immediately. Snapshot reads, Socket subscription, and chat all validate current membership; browser URL state is not proof of membership.
 - Owner dissolution sets `status = "CLOSED"` immediately in every stage. Waiting timeout uses `WAITING_TIMEOUT`; an owner leaving an otherwise empty room uses `EMPTY_ROOM`. The client clears room state, chat and the invite query parameter, then maps the authoritative reason to its notice.
 - A closed room remains readable for 30 seconds so Socket version notifications can lead to the close projection. After physical eviction, `ROOM_NOT_FOUND` and `NOT_A_MEMBER` also clear stale local room state with a generic closed-room notice.
@@ -101,6 +108,7 @@ type ChatMessageProjection = {
 | Condition | Result |
 |---|---|
 | Create body has no valid `mode` | `400 INVALID_INPUT` |
+| Create body has a timeout other than 20, 25 or 30 | `400 INVALID_INPUT` |
 | Join targets a bot room or an in-progress friend room | `409 ROOM_NOT_JOINABLE` |
 | Join targets a full friend waiting room | `409 ROOM_FULL` |
 | Ready payload omits a boolean `ready` | `400 INVALID_INPUT` |
@@ -136,7 +144,9 @@ type ChatMessageProjection = {
 - Protocol/service tests reject blank, over-60-character, non-member, and wrong-stage chat while preserving server-derived sender fields.
 - Service tests assert bot rooms reject joins, do not auto-continue, and preserve scores after explicit continuation.
 - Projection tests assert `currentSeat` remains the discarder while `actingSeat` identifies the pending responder.
-- Frontend/API tests assert create requests include `mode`, readiness sends the desired boolean, settings use `PATCH`, and bot continuation uses the explicit endpoint.
+- Frontend/API tests assert mini-program create requests include `mode` and
+  `turnTimeoutSeconds`, readiness sends the desired boolean, settings use
+  `PATCH`, and bot continuation uses the explicit endpoint.
 - Browser checks cover desktop and phone landscape geometry, dissolve notice, owner settings, ready cancellation, and avatar-adjacent chat fade/removal after about 3 seconds.
 
 ### 7. Wrong vs Correct

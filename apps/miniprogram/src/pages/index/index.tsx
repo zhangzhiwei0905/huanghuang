@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Form, Image, Input, Text, View } from "@tarojs/components";
+import { Button, Form, Image, Input, Picker, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import type { BaseScore, RoomMode, RoomProjection } from "@huanghuang/protocol";
+import type { BaseScore, RoomMode, RoomProjection, TurnTimeoutSeconds } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
 import { ApiError, roomApi } from "../../api/http";
 import { API_BASE } from "../../config";
@@ -17,6 +17,11 @@ import { errorLabel } from "../../lib/errors";
 import "./index.scss";
 
 const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
+// Taro resolves protocol types correctly but cannot bundle runtime exports
+// through the protocol package's ESM `.js` re-export paths. Keep this tuple
+// locally type-constrained; the server still validates the authoritative
+// create-room schema.
+const TURN_TIMEOUT_OPTIONS = [20, 25, 30] satisfies TurnTimeoutSeconds[];
 
 type Mode = "HOME" | "CREATE" | "JOIN" | "BOT";
 type IdentityState = "checking" | "loggedOut" | "loggedIn";
@@ -202,6 +207,7 @@ export default function IndexPage() {
   const [loginEntryError, setLoginEntryError] = useState<string | null>(null);
   const [roomCode, setRoomCode] = useState(sharedCode ?? "");
   const [baseScore, setBaseScore] = useState<BaseScore>(2);
+  const [turnTimeoutSeconds, setTurnTimeoutSeconds] = useState<TurnTimeoutSeconds>(20);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -241,6 +247,7 @@ export default function IndexPage() {
               identity.nickname,
               baseScore,
               (kind === "BOT" ? "BOT" : "FRIEND") satisfies RoomMode,
+              turnTimeoutSeconds,
             );
       Taro.setStorageSync("huanghuang_open_room", room);
       await Taro.navigateTo({ url: "/pages/room/index" });
@@ -404,22 +411,43 @@ export default function IndexPage() {
                 />
               </View>
             ) : (
-              <View className="mp-field">
-                <Text className="mp-field__label">底分</Text>
-                <View className="mp-score-row">
-                  {BASE_SCORES.map((score) => (
-                    <Button
-                      hoverClass="is-pressed"
-                      key={score}
-                      className={`mp-score${baseScore === score ? " is-on" : ""}`}
-                      disabled={busy}
-                      onClick={() => setBaseScore(score)}
-                    >
-                      {score}
-                    </Button>
-                  ))}
+              <>
+                <View className="mp-field">
+                  <Text className="mp-field__label">底分</Text>
+                  <View className="mp-score-row">
+                    {BASE_SCORES.map((score) => (
+                      <Button
+                        hoverClass="is-pressed"
+                        key={score}
+                        className={`mp-score${baseScore === score ? " is-on" : ""}`}
+                        disabled={busy}
+                        onClick={() => setBaseScore(score)}
+                      >
+                        {score}
+                      </Button>
+                    ))}
+                  </View>
                 </View>
-              </View>
+                <View className="mp-field">
+                  <Text className="mp-field__label">出牌时长</Text>
+                  <Picker
+                    className="mp-field__picker"
+                    mode="selector"
+                    range={TURN_TIMEOUT_OPTIONS}
+                    value={TURN_TIMEOUT_OPTIONS.indexOf(turnTimeoutSeconds)}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const selected = TURN_TIMEOUT_OPTIONS[Number(event.detail.value)];
+                      if (selected !== undefined) setTurnTimeoutSeconds(selected);
+                    }}
+                  >
+                    <View className="mp-field__select">
+                      <Text>{turnTimeoutSeconds} 秒</Text>
+                      <Text className="mp-field__select-arrow">⌄</Text>
+                    </View>
+                  </Picker>
+                </View>
+              </>
             )}
 
             {error !== null ? <Text className="mp-error">{error}</Text> : null}

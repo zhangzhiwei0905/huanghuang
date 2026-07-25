@@ -64,6 +64,7 @@ function resultRoom(): RoomProjection {
     roomCode: "123456",
     version: 12,
     baseScore: 2,
+    turnTimeoutSeconds: 20,
     mode: "FRIEND",
     stage: "ROUND_RESULT",
     roundId: "round-1",

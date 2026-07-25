@@ -1,27 +1,28 @@
 .ting-hint-rail {
-  position: relative;
+  position: absolute;
   z-index: 11;
-  width: 100%;
-  height: max(10.8vmin, 48px);
-  flex: 0 0 max(10.8vmin, 48px);
+  inset: 0;
   pointer-events: none;
 }
 
 .ting-hint-card {
   position: absolute;
-  bottom: 0;
+  bottom: calc(100% + 0.8vmin);
   display: flex;
-  width: min(68vw, 580px);
+  width: min(34vw, 300px);
+  min-width: min(30vw, 248px);
   max-width: 100%;
   box-sizing: border-box;
-  align-items: center;
-  gap: 1vmin;
-  border: 1px solid rgb(223 193 119 / 62%);
-  border-radius: 1.4vmin;
-  padding: 0.7vmin 1vmin;
-  background: rgb(18 35 26 / 94%);
-  color: #fffaf0;
-  box-shadow: 0 0.8vmin 1.8vmin rgb(0 0 0 / 30%);
+  flex-direction: column;
+  gap: 0.35vmin;
+  border: 1px solid rgb(204 199 180 / 92%);
+  border-radius: 1.25vmin;
+  padding: 0.55vmin;
+  background: rgb(255 253 247 / 98%);
+  color: #26352c;
+  box-shadow:
+    0 0.3vmin 0 rgb(136 130 110 / 26%),
+    0 0.8vmin 1.8vmin rgb(8 28 19 / 20%);
   pointer-events: auto;
 }
 
@@ -37,71 +38,126 @@
   transform: translateX(-100%);
 }
 
-.ting-hint-card__title {
+.ting-hint-card__heading {
+  display: flex;
   flex: 0 0 auto;
-  color: #e8c97a;
-  font-size: 1.7vmin;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1vmin;
+  padding: 0 0.25vmin 0.35vmin;
+  border-bottom: 1px solid rgb(45 88 64 / 14%);
+}
+
+.ting-hint-card__title {
+  color: #35483d;
+  font-size: clamp(9px, 1.55vmin, 11px);
   font-weight: 700;
   line-height: 1.25;
+  white-space: nowrap;
+}
+
+.ting-hint-card__summary {
+  color: #7b6840;
+  font-size: clamp(9px, 1.45vmin, 10px);
+  font-weight: 700;
   white-space: nowrap;
 }
 
 .ting-hint-card__scroll {
-  width: 1px;
+  width: 100%;
   min-width: 0;
-  flex: 1 1 auto;
-  white-space: nowrap;
+}
+
+.ting-hint-card.is-single .ting-hint-card__scroll {
+  height: max(6.3vmin, 28px);
+}
+
+.ting-hint-card.is-multiple .ting-hint-card__scroll {
+  height: max(12.9vmin, 58px);
 }
 
 .ting-hint-card__list {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.8vmin;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3vmin;
 }
 
 .ting-hint-card__item {
-  display: inline-flex;
+  display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 0.6vmin;
-  border-left: 1px solid rgb(255 255 255 / 16%);
-  padding-left: 0.8vmin;
-}
-
-.ting-hint-card__item:first-child {
-  border-left: 0;
-  padding-left: 0;
+  gap: 0.55vmin;
+  min-height: max(5.8vmin, 26px);
+  padding: 0.25vmin 0.4vmin;
+  border-radius: 0.7vmin;
+  background: #f3f5ef;
 }
 
 .ting-hint-card__item.is-exhausted {
-  opacity: 0.55;
+  background: #f1efea;
+  opacity: 0.68;
 }
 
 .ting-hint-card .mj-tile--compact {
-  width: 3.8vmin;
-  height: 5.3vmin;
-  min-width: 22px;
-  min-height: 31px;
-  max-width: 28px;
-  max-height: 39px;
+  width: 3.1vmin;
+  height: 4.35vmin;
+  min-width: 18px;
+  min-height: 25px;
+  max-width: 22px;
+  max-height: 31px;
 }
 
 .ting-hint-card__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.ting-hint-card__metrics {
   display: flex;
-  flex-direction: column;
-  gap: 0.15vmin;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5vmin;
 }
 
 .ting-hint-card__type {
-  font-size: 1.65vmin;
+  flex: 0 0 auto;
+  min-width: 3.8em;
+  box-sizing: border-box;
+  border-radius: 999px;
+  padding: 0.2vmin 0.55vmin;
+  background: #2f6a4c;
+  color: #fff;
+  font-size: clamp(8px, 1.4vmin, 10px);
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.ting-hint-card__type.is-soft {
+  background: #8a713f;
+}
+
+.ting-hint-card__multiplier {
+  flex: 0 0 auto;
+  color: #214f38;
+  font-size: clamp(13px, 2.3vmin, 16px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .ting-hint-card__remaining {
-  color: rgb(255 250 240 / 72%);
-  font-size: 1.4vmin;
-  line-height: 1.25;
+  flex: 0 0 auto;
+  border: 1px solid rgb(47 106 76 / 20%);
+  border-radius: 0.7vmin;
+  padding: 0.25vmin 0.5vmin;
+  background: #fff;
+  color: #3e594a;
+  font-size: clamp(9px, 1.55vmin, 11px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
   white-space: nowrap;
 }

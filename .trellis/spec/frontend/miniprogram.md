@@ -110,6 +110,19 @@ table. Tracking tail-id alone (without length) reintroduces the stale-highlight
 bug. Mirrors `apps/web/src/components/GameTable.tsx:766` but must be persistent-
 safe because mp keeps the highlight until the next discard.
 
+### Native selector for room turn duration
+
+The create-room form uses WeChat's native `Picker` with a local
+`TurnTimeoutSeconds[]` tuple containing `20 | 25 | 30`. Keep it type-constrained
+to the shared protocol union. Do not import protocol runtime constants here:
+Taro can erase protocol type imports but its Webpack resolver cannot follow the
+protocol package's ESM `.js` re-export paths for runtime values.
+
+Send the selected value through `roomApi.create`. The client only chooses the
+room setting; the server remains responsible for producing
+`actionDeadlineAt`. Show the projected value in the waiting-room toolbar and
+playable-table capsule so every member can confirm the room rule.
+
 ---
 
 ## Native Profile Capture
@@ -253,13 +266,66 @@ wildcards exactly once in seat-specific public rails rather than allowing them
 to grow the identity card.
 
 - Opposite/self rails use horizontal group bands in reserved top/bottom lanes.
-- Left/right rails use bounded two-column group grids.
+- The local identity card belongs in the right side of the reserved band above
+  the hand, not on the same bottom baseline as the hand. On narrow landscape
+  screens, a bottom-aligned identity card is eventually covered by the
+  horizontally centered 14-tile hand.
+- Public rails must shrink-wrap sparse content. A fixed `300px` horizontal
+  rail or an always-two-column side grid makes a lone released wildcard float
+  away from its owner.
+- Left/right rails use one row for one or two public groups, a two-column grid
+  for three or four groups, and a three-column/two-row grid for the maximum
+  five items (four melds plus released wildcard). Keeping five items in two
+  columns creates a third row that collides with the local bottom rail.
+- Grid children need `justify-self: start`; otherwise a narrow released-
+  wildcard card stretches to the widest meld column and renders as a large
+  empty-looking slab.
 - Validate the maximum four groups for adjacent seats at phone landscape
-  dimensions. A no-meld screenshot is not evidence that station geometry is
-  safe.
-- Keep the local identity in the free edge beside the centered hand; do not
-  place a four-group rail in that edge because it will overlap the outer hand
-  tiles.
+  dimensions, both with and without a released wildcard. A no-meld screenshot
+  or a four-meld screenshot without wildcard is not evidence that station
+  geometry is safe.
+- Keep the local public rail on the left and the local identity card on the
+  right of the lane above the hand. This separates both from the centered
+  action dock and leaves the full bottom row to the hand.
+
+```scss
+.player-meld-rail.pos-left.is-dense,
+.player-meld-rail.pos-right.is-dense {
+  grid-template-columns: repeat(2, max-content);
+}
+
+.player-meld-rail.pos-left.public-groups-5,
+.player-meld-rail.pos-right.public-groups-5 {
+  grid-template-columns: repeat(3, max-content);
+}
+
+.meld-group,
+.released-wildcard-group {
+  justify-self: start;
+}
+```
+
+### Ting helper is presentation over the authoritative projection
+
+The mini-program must display `RoomProjection.tingHints` exactly as projected
+by the server. The client may index waits by physical discard id and order
+them for readability, but it must not infer hidden tiles or recalculate
+`remainingCount`.
+
+- Render waits in a vertically scrollable warm-white card above the selected
+  discard candidate; a dark horizontal ticker is too dense for novice help.
+- Mount the card as an absolute overlay above the action row instead of a
+  fixed-height flex child. Otherwise short wait lists leave empty space and
+  every selection pushes the discard button away from its stable position.
+- Size one wait to one row and cap longer lists at two visible rows with
+  vertical scrolling. Keep multiplier and remaining count adjacent instead of
+  using `margin-left: auto`, which creates a large blank gutter.
+- Order `HARD` waits before `SOFT` waits while preserving the server-projected
+  multiplier and remaining count.
+- Make multiplier and remaining count separate high-emphasis elements rather
+  than combining them into a low-contrast sentence.
+- Keep the empty-wall state visible (`余 0 张 · 已绝张`) instead of filtering it
+  out; this is useful public information even though the tile cannot be drawn.
 
 ### Gotcha: swallowed network errors mask domain-whitelist failures
 

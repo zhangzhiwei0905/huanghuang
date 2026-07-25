@@ -44,6 +44,7 @@ function room(overrides?: Partial<RoomProjection>): RoomProjection {
     roomCode: "123456",
     version: 1,
     baseScore: 2,
+    turnTimeoutSeconds: 20,
     mode: "FRIEND",
     stage: "PLAYING",
     roundId: "round-1",

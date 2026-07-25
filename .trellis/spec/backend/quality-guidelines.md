@@ -11,6 +11,19 @@ pnpm build
 
 Pure game modules require positive, negative, and boundary tests. Settlement functions assert zero-sum output. Randomness and time must be injected into the engine.
 
+## Room turn-duration configuration
+
+- `packages/protocol/src/commands.ts` owns the only allowed values:
+  `20 | 25 | 30`, with 20 as the compatibility default.
+- `RoomState.turnTimeoutSeconds` is persisted in the existing room JSON
+  snapshot and projected to clients. Snapshot normalization defaults legacy
+  rows that lack the field to 20.
+- `RoomService.refreshDeadline` applies the configured duration only to human
+  `TURN_DECISION`. Keep the 5-second discard-response window and bot delay
+  independent.
+- Protocol tests reject unsupported values; service tests assert a configured
+  human room creates the matching deadline.
+
 ## Scenario: Authoritative game command boundary
 
 ### 1. Scope / Trigger

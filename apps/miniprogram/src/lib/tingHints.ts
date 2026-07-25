@@ -17,6 +17,16 @@ export function indexTingHints(
   );
 }
 
+export function orderTingWaits(
+  waits: readonly TingWaitProjection[],
+): readonly TingWaitProjection[] {
+  return [...waits].sort((left, right) => {
+    const leftPriority = left.winType === "HARD" ? 0 : 1;
+    const rightPriority = right.winType === "HARD" ? 0 : 1;
+    return leftPriority - rightPriority;
+  });
+}
+
 export function tingCardAnchor(
   orderedTileIds: readonly string[],
   selectedTileId: string | null,

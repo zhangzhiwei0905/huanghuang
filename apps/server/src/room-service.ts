@@ -35,7 +35,9 @@ import type {
   RoundSettlementProjection,
   Seat,
   TileKind,
+  TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
+import { DEFAULT_TURN_TIMEOUT_SECONDS } from "@huanghuang/protocol";
 import { randomInt, randomUUID } from "node:crypto";
 import type { AnonymousSession, GameDatabase } from "./database.js";
 
@@ -60,6 +62,7 @@ type PersistedRoomState = {
   code: string;
   ownerSessionId: string;
   baseScore: BaseScore;
+  turnTimeoutSeconds?: TurnTimeoutSeconds;
   status: "ACTIVE" | "CLOSED";
   version: number;
   dissolveAfterRound: boolean;
@@ -83,6 +86,7 @@ export type RoomState = {
   code: string;
   ownerSessionId: string;
   baseScore: BaseScore;
+  turnTimeoutSeconds: TurnTimeoutSeconds;
   status: "ACTIVE" | "CLOSED";
   version: number;
   dissolveAfterRound: boolean;
@@ -113,7 +117,6 @@ const ZERO_SCORES: Record<Seat, number> = { 0: 0, 1: 0, 2: 0, 3: 0 };
 
 const randomIntFromCrypto = (max: number): number => randomInt(max);
 const BOT_DELAY_MS = 650;
-const TURN_TIMEOUT_MS = 15_000;
 const RESPONSE_TIMEOUT_MS = 5_000;
 const ROUND_RESULT_MS = 4_000;
 export const WAITING_ROOM_TIMEOUT_MS = 3 * 60_000;
@@ -290,6 +293,7 @@ export class RoomService {
         code: persisted.code,
         ownerSessionId: persisted.ownerSessionId,
         baseScore: persisted.baseScore,
+        turnTimeoutSeconds: persisted.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS,
         status: persisted.status,
         version: persisted.version,
         dissolveAfterRound: persisted.dissolveAfterRound,
@@ -361,6 +365,7 @@ export class RoomService {
         code: persisted.code,
         ownerSessionId: persisted.ownerSessionId,
         baseScore: persisted.baseScore,
+        turnTimeoutSeconds: persisted.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS,
         status: persisted.status,
         version: persisted.version,
         dissolveAfterRound: persisted.dissolveAfterRound,
@@ -386,6 +391,7 @@ export class RoomService {
       code: persisted.code,
       ownerSessionId: persisted.ownerSessionId,
       baseScore: persisted.baseScore,
+      turnTimeoutSeconds: persisted.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS,
       status: persisted.status,
       version: persisted.version,
       dissolveAfterRound: persisted.dissolveAfterRound,
@@ -450,7 +456,7 @@ export class RoomService {
         ? BOT_DELAY_MS
         : round.phase === "DISCARD_RESPONSE"
           ? RESPONSE_TIMEOUT_MS
-          : TURN_TIMEOUT_MS;
+          : room.turnTimeoutSeconds * 1_000;
     room.actionDeadlineAt = new Date(now + duration).toISOString();
   }
 
@@ -646,12 +652,18 @@ export class RoomService {
     throw new Error("Unable to allocate a unique room code");
   }
 
-  createRoom(session: AnonymousSession, baseScore: BaseScore, mode: RoomMode): RoomState {
+  createRoom(
+    session: AnonymousSession,
+    baseScore: BaseScore,
+    mode: RoomMode,
+    turnTimeoutSeconds: TurnTimeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS,
+  ): RoomState {
     const room: RoomState = {
       id: randomUUID(),
       code: this.nextRoomCode(),
       ownerSessionId: session.id,
       baseScore,
+      turnTimeoutSeconds,
       status: "ACTIVE",
       version: 0,
       dissolveAfterRound: false,
@@ -937,6 +949,7 @@ export class RoomService {
       roomCode: room.code,
       version: room.version,
       baseScore: room.baseScore,
+      turnTimeoutSeconds: room.turnTimeoutSeconds,
       mode: room.mode,
       stage: room.stage,
       roundId: round?.id ?? null,

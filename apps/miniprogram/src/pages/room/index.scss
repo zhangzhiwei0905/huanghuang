@@ -725,7 +725,7 @@
 
 .player-station.pos-self {
   right: calc(1.2vmin + env(safe-area-inset-right));
-  bottom: 1.2vmin;
+  bottom: max(16vmin, 64px);
   width: max(27vmin, 118px);
   max-width: min(31vmin, 136px);
   transform: none;
@@ -776,36 +776,48 @@
   font-weight: 700;
 }
 
-/* Identity and public melds have different capacity constraints. Keeping
-   melds in their own fixed rails prevents a four-group side station from
-   growing into the local player's information or hand. */
+/* Identity and public melds have different capacity constraints. Each rail
+   shrink-wraps its content from a seat-specific anchor: sparse public state
+   stays beside its owner instead of floating inside a large empty track,
+   while dense side rails switch to a bounded two-column grid. */
 .player-meld-rail {
   position: absolute;
   z-index: 4;
   display: grid;
   grid-auto-flow: column;
+  grid-auto-columns: max-content;
   grid-template-rows: 1fr;
   align-items: start;
-  justify-content: center;
+  justify-content: start;
   gap: 0.6vmin;
+  width: auto;
+  max-width: calc(100% - 2.4vmin);
   box-sizing: border-box;
   pointer-events: none;
 }
 
 .player-meld-rail.pos-opposite {
-  top: max(15.5vmin, 62px);
+  top: max(11.5vmin, 46px);
   left: 50%;
-  width: max(72vmin, 300px);
   transform: translateX(-50%);
 }
 
 .player-meld-rail.pos-left,
 .player-meld-rail.pos-right {
   top: 45%;
-  width: max(35vmin, 146px);
+}
+
+.player-meld-rail.pos-left.is-dense,
+.player-meld-rail.pos-right.is-dense {
   grid-auto-flow: row;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-columns: auto;
+  grid-template-columns: repeat(2, max-content);
   gap: 0.7vmin;
+}
+
+.player-meld-rail.pos-left.public-groups-5,
+.player-meld-rail.pos-right.public-groups-5 {
+  grid-template-columns: repeat(3, max-content);
 }
 
 .player-meld-rail.pos-left {
@@ -818,28 +830,32 @@
 
 .player-meld-rail.pos-self {
   left: max(10vmin, calc(1.2vmin + env(safe-area-inset-left)));
-  bottom: 17.5vmin;
-  width: max(72vmin, 300px);
+  bottom: max(17.5vmin, 68px);
   grid-auto-flow: column;
   grid-template-columns: none;
   grid-template-rows: 1fr;
 }
 
-.meld-group {
+.meld-group,
+.released-wildcard-group {
   display: flex;
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
+  justify-self: start;
   gap: 0.2vmin;
   padding: 0.35vmin 0.45vmin 0.45vmin;
-  border: 1px solid rgb(224 218 196 / 54%);
   border-radius: 0.7vmin;
+}
+
+.meld-group {
+  border: 1px solid rgb(224 218 196 / 54%);
   background: rgb(247 244 231 / 76%);
 }
 
 .meld-group__label {
   color: rgb(49 58 50 / 72%);
-  font-size: clamp(7px, 1.25vmin, 9px);
+  font-size: clamp(6px, 1.05vmin, 8px);
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -860,14 +876,7 @@
 }
 
 .released-wildcard-group {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.2vmin;
-  padding: 0.35vmin 0.45vmin 0.45vmin;
   border: 1px solid rgb(211 180 106 / 58%);
-  border-radius: 0.7vmin;
   background: rgb(247 240 213 / 82%);
   color: var(--tile-gold, #8a713f);
 }
@@ -880,7 +889,7 @@
 
 .released-wildcard-group__count {
   padding-bottom: 0.2vmin;
-  font-size: 1.7vmin;
+  font-size: clamp(7px, 1.35vmin, 9px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -1104,6 +1113,15 @@
   flex-direction: column;
   align-items: center;
   gap: 0.8vmin;
+}
+
+.self-guidance-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  justify-content: center;
 }
 
 /* No tray chrome — tiles sit directly on the table art. The top headroom

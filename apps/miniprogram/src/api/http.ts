@@ -5,6 +5,7 @@ import type {
   CommandResult,
   RoomMode,
   RoomProjection,
+  TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
 import { API_BASE } from "../config";
 import { authHeaders, getStoredSessionToken, setStoredSessionToken } from "./session";
@@ -61,10 +62,15 @@ async function request<T>(
 }
 
 export const roomApi = {
-  create(nickname: string, baseScore: BaseScore, mode: RoomMode): Promise<RoomProjection> {
+  create(
+    nickname: string,
+    baseScore: BaseScore,
+    mode: RoomMode,
+    turnTimeoutSeconds: TurnTimeoutSeconds,
+  ): Promise<RoomProjection> {
     return request("/api/rooms", {
       method: "POST",
-      data: { nickname, baseScore, mode },
+      data: { nickname, baseScore, mode, turnTimeoutSeconds },
     });
   },
   join(nickname: string, roomCode: string): Promise<RoomProjection> {

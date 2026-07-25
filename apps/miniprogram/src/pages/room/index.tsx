@@ -464,6 +464,8 @@ export default function RoomPage() {
               <Text className="lobby-toolbar__code">{room.roomCode}</Text>
               <Text className="lobby-toolbar__divider">·</Text>
               <Text className="lobby-toolbar__meta">底分 {room.baseScore}</Text>
+              <Text className="lobby-toolbar__divider">·</Text>
+              <Text className="lobby-toolbar__meta">出牌 {room.turnTimeoutSeconds}秒</Text>
               <Text
                 className={`lobby-toolbar__connection${
                   roomCtrl.connectionStatus === "connected" ? " is-online" : ""
@@ -514,6 +516,7 @@ export default function RoomPage() {
                 {room.mode === "BOT" ? "人机对战" : room.roomCode}
               </Text>
               <Text className="info-capsule__meta">底分{room.baseScore}</Text>
+              <Text className="info-capsule__meta">出牌{room.turnTimeoutSeconds}秒</Text>
               {roomCtrl.connectionStatus !== "connected" ? (
                 <Text className="info-capsule__meta info-capsule__meta--warn">
                   {CONNECTION_LABELS[roomCtrl.connectionStatus]}
@@ -616,8 +619,10 @@ export default function RoomPage() {
                 const pos = POSITION_CLASS[relativePosition(seat, selfSeat)] ?? "pos-self";
                 const active = room.actingSeat === seat;
                 const latestReleasedWildcard = player.releasedWildcards.at(-1) ?? null;
-                const hasPublicTiles =
-                  player.melds.length > 0 || latestReleasedWildcard !== null;
+                const hasPublicTiles = player.melds.length > 0 || latestReleasedWildcard !== null;
+                const publicGroupCount =
+                  player.melds.length + (latestReleasedWildcard === null ? 0 : 1);
+                const publicRailDensity = publicGroupCount <= 2 ? "is-sparse" : "is-dense";
                 return (
                   <Fragment key={seat}>
                     <View
@@ -651,6 +656,8 @@ export default function RoomPage() {
                       <View
                         className={`player-meld-rail ${pos}${
                           seat === room.selfSeat ? " is-self" : ""
+                        } ${publicRailDensity} public-groups-${publicGroupCount}${
+                          latestReleasedWildcard === null ? "" : " has-wildcard"
                         }`}
                       >
                         {player.melds.map((meld) => (
@@ -766,18 +773,20 @@ export default function RoomPage() {
                 {canDiscard && selectedTile !== null && selectedTingWaits === null ? (
                   <Text className="discard-tip">再点一次选中的牌即可打出</Text>
                 ) : null}
-                <ActionDock
-                  buttons={buttons}
-                  disabled={locked}
-                  onAction={(button) => void onAction(button)}
-                />
-                {selectedTingWaits !== null && selectedTingAnchor !== null ? (
-                  <TingHintCard
-                    waits={selectedTingWaits}
-                    wildcardKind={room.wildcardKind}
-                    anchor={selectedTingAnchor}
+                <View className="self-guidance-row">
+                  <ActionDock
+                    buttons={buttons}
+                    disabled={locked}
+                    onAction={(button) => void onAction(button)}
                   />
-                ) : null}
+                  {selectedTingWaits !== null && selectedTingAnchor !== null ? (
+                    <TingHintCard
+                      waits={selectedTingWaits}
+                      wildcardKind={room.wildcardKind}
+                      anchor={selectedTingAnchor}
+                    />
+                  ) : null}
+                </View>
                 <View className="self-hand">
                   {hand.map((tile) => (
                     <View key={tile.id} className="hand-tile-slot">

@@ -1,6 +1,6 @@
 import type { DiscardTingProjection } from "@huanghuang/protocol";
 import { describe, expect, it } from "vitest";
-import { indexTingHints, tingCardAnchor } from "./tingHints";
+import { indexTingHints, orderTingWaits, tingCardAnchor } from "./tingHints";
 
 const hints: DiscardTingProjection[] = [
   {
@@ -41,5 +41,25 @@ describe("ting hint presentation helpers", () => {
       positionPercent: 93.75,
     });
     expect(tingCardAnchor(tileIds, "missing")).toBeNull();
+  });
+
+  it("shows hard waits before soft waits without changing their server values", () => {
+    const waits: DiscardTingProjection["waits"] = [
+      {
+        tileKind: { suit: "WAN", rank: 9 },
+        winType: "SOFT",
+        multiplier: 8,
+        remainingCount: 3,
+      },
+      {
+        tileKind: { suit: "TIAO", rank: 9 },
+        winType: "HARD",
+        multiplier: 16,
+        remainingCount: 1,
+      },
+    ];
+
+    expect(orderTingWaits(waits)).toEqual([waits[1], waits[0]]);
+    expect(waits[0]?.winType).toBe("SOFT");
   });
 });

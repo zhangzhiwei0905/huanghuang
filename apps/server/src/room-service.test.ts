@@ -50,6 +50,7 @@ describe("RoomService", () => {
       mode: "FRIEND",
       stage: "WAITING",
       baseScore: 2,
+      turnTimeoutSeconds: 20,
       selfSeat: 0,
       actionDeadlineAt: null,
       roundId: null,
@@ -101,7 +102,7 @@ describe("RoomService", () => {
 
   it("starts one friend round only after four seated humans are ready", () => {
     const service = createService();
-    const room = service.createRoom(owner, 5, "FRIEND");
+    const room = service.createRoom(owner, 5, "FRIEND", 30);
     const guests: AnonymousSession[] = [
       { id: "guest-1", nickname: "甲" },
       { id: "guest-2", nickname: "乙" },
@@ -123,6 +124,7 @@ describe("RoomService", () => {
     expect(room.stage).toBe("WAITING");
     expect(room.round).toBeNull();
 
+    const beforeRoundStart = Date.now();
     service.setReady(guests[2]?.id ?? "", room.code, true);
     expect(room.stage).toBe("PLAYING");
     expect(room.round).not.toBeNull();
@@ -132,6 +134,12 @@ describe("RoomService", () => {
     expect(Object.values(activeRound(room).players).every((player) => player.score === 0)).toBe(
       true,
     );
+    expect(room.turnTimeoutSeconds).toBe(30);
+    expect(service.project(room, owner.id).turnTimeoutSeconds).toBe(30);
+    expect(Date.parse(room.actionDeadlineAt ?? "") - beforeRoundStart).toBeGreaterThanOrEqual(
+      29_000,
+    );
+    expect(Date.parse(room.actionDeadlineAt ?? "") - beforeRoundStart).toBeLessThanOrEqual(31_000);
   });
 
   it("returns a completed friend round to waiting and keeps seats and scores", () => {

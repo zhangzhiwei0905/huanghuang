@@ -1,4 +1,4 @@
-import type { RoomMode } from "./commands.js";
+import type { RoomMode, TurnTimeoutSeconds } from "./commands.js";
 import type { BaseScore, Meld, PersonalMultiplier, Seat, Tile, TileKind, WinType } from "./game.js";
 
 export type PlayerController = "HUMAN" | "BOT" | "TRUSTEE";
@@ -86,6 +86,7 @@ export type RoomProjection = {
   roomCode: string;
   version: number;
   baseScore: BaseScore;
+  turnTimeoutSeconds: TurnTimeoutSeconds;
   mode: RoomMode;
   stage: RoomStage;
   roundId: string | null;

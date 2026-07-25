@@ -3,6 +3,11 @@ import { baseScoreSchema } from "./game.js";
 
 export const roomModeSchema = z.enum(["FRIEND", "BOT"]);
 
+export const turnTimeoutSecondsSchema = z.union([z.literal(20), z.literal(25), z.literal(30)]);
+export type TurnTimeoutSeconds = z.infer<typeof turnTimeoutSecondsSchema>;
+export const TURN_TIMEOUT_SECONDS_OPTIONS: readonly TurnTimeoutSeconds[] = [20, 25, 30];
+export const DEFAULT_TURN_TIMEOUT_SECONDS: TurnTimeoutSeconds = 20;
+
 export const commandTypeSchema = z.enum([
   "SET_READY",
   "LEAVE_ROOM",
@@ -32,6 +37,7 @@ export const createRoomSchema = z.object({
   nickname: z.string().trim().min(1).max(12),
   baseScore: baseScoreSchema.default(2),
   mode: roomModeSchema,
+  turnTimeoutSeconds: turnTimeoutSecondsSchema.default(DEFAULT_TURN_TIMEOUT_SECONDS),
 });
 
 export const joinRoomSchema = z.object({

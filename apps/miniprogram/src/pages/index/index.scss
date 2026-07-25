@@ -265,7 +265,7 @@
 }
 
 .mp-field__label {
-  width: 8vmin;
+  width: max(13vmin, 56px);
   flex-shrink: 0;
   font-size: clamp(12px, 2.7vmin, 16px);
   color: var(--muted, #5f625b);
@@ -281,6 +281,34 @@
   background: #fff;
   color: var(--ink, #272925);
   font-size: clamp(13px, 3vmin, 17px);
+}
+
+.mp-field__picker {
+  min-width: 0;
+  flex: 1;
+}
+
+.mp-field__select {
+  display: flex;
+  min-height: max(7vmin, 28px);
+  height: max(7vmin, 28px);
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.4vmin 0 1.6vmin;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 1.2vmin;
+  background: #fff;
+  color: var(--ink, #272925);
+  font-size: clamp(13px, 3vmin, 17px);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-field__select-arrow {
+  color: var(--accent, #2f6a4c);
+  font-size: clamp(14px, 3.2vmin, 18px);
+  font-weight: 700;
+  transform: translateY(-0.15em);
 }
 
 .mp-score-row {
