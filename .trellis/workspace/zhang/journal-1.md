@@ -790,3 +790,36 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: 小程序牌局音效与即时播放上线
+
+**Date**: 2026-07-26
+**Task**: 小程序牌局音效与即时播放上线
+**Branch**: `miniprogram`
+
+### Summary
+
+接入27种牌名及碰、杠、放赖、补杠、胡牌共32个小程序音效；通过投影差异覆盖四家事件，跳过录音前置静音并改为即时并发播放；新增可持久化音效开关、回归测试和小程序规范。全量164项测试、类型检查、lint与生产构建通过，服务部署为36d9cb5-audio-wt-20260726-1748并完成数据库备份、公网健康与Socket.IO验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e8bfeff` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
