@@ -757,3 +757,36 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: 四位房间码与机器人好友房上线
+
+**Date**: 2026-07-26
+**Task**: 四位房间码与机器人好友房上线
+**Branch**: `miniprogram`
+
+### Summary
+
+完成四位房间码、房间级机器人难度、好友房机器人与观战替补、每局重新准备、双对子摸赖子软胡回归，以及 Web/小程序上方公开牌与沉浸式横屏布局；全量门禁通过并部署生产。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6072d40` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
