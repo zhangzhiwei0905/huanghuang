@@ -28,6 +28,16 @@ import {
   handHighlightGroups,
 } from "../../lib/actionEligibility";
 import { decideTilePress } from "../../lib/handInteraction";
+import {
+  createGameAudioTracker,
+  updateGameAudioTracker,
+  type GameAudioTracker,
+} from "../../lib/gameAudioEvents";
+import {
+  getStoredGameAudioEnabled,
+  setStoredGameAudioEnabled,
+} from "../../lib/gameAudioPreference";
+import { createGameAudioPlayer, type GameAudioPlayer } from "../../lib/gameAudioPlayer";
 import { ROUND_START_COUNTDOWN_SECONDS, shouldShowRoundStart } from "../../lib/roomTransitions";
 import { isWildcardTile } from "../../lib/tileArt";
 import { sortHand } from "../../lib/tiles";
@@ -238,6 +248,38 @@ function useRecentDiscardId(room: RoomProjection | null): string | null {
   return recentRef.current;
 }
 
+function useGameAudio(
+  room: RoomProjection | null,
+  connectionStatus: ConnectionStatus,
+  enabled: boolean,
+): void {
+  const trackerRef = useRef<GameAudioTracker | null>(null);
+  const playerRef = useRef<GameAudioPlayer | null>(null);
+  if (trackerRef.current === null) trackerRef.current = createGameAudioTracker();
+
+  useEffect(() => {
+    const tracker = trackerRef.current;
+    if (tracker === null) return;
+    const files = updateGameAudioTracker(tracker, room, connectionStatus === "connected");
+    if (!enabled) {
+      playerRef.current?.destroy();
+      playerRef.current = null;
+      return;
+    }
+    if (files.length === 0) return;
+    if (playerRef.current === null) playerRef.current = createGameAudioPlayer();
+    for (const fileName of files) playerRef.current.play(fileName);
+  }, [connectionStatus, enabled, room]);
+
+  useEffect(
+    () => () => {
+      playerRef.current?.destroy();
+      playerRef.current = null;
+    },
+    [],
+  );
+}
+
 function deadlineSeconds(deadline: string | null): number | null {
   return deadline === null
     ? null
@@ -259,6 +301,7 @@ export default function RoomPage() {
   const roomCtrl = useRoom();
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [inviteStatus, setInviteStatus] = useState("复制房号");
+  const [gameAudioEnabled, setGameAudioEnabled] = useState(getStoredGameAudioEnabled);
   const [roundStartCountdown, setRoundStartCountdown] = useState<number | null>(null);
   const previousStageRef = useRef<RoomStage | null>(null);
   const previousRoomIdRef = useRef<string | null>(null);
@@ -332,6 +375,7 @@ export default function RoomPage() {
   const lobbyOccupiedCount = room?.lobbySeats.filter((candidate) => candidate.occupied).length ?? 0;
   const lobbyReadyCount = room?.lobbySeats.filter((candidate) => candidate.ready).length ?? 0;
   const recentDiscardId = useRecentDiscardId(room);
+  useGameAudio(room, roomCtrl.connectionStatus, gameAudioEnabled);
   const locked = roomCtrl.busy || roomCtrl.connectionStatus !== "connected";
   const actionDeadlineAt = room?.actionDeadlineAt ?? null;
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(() =>
@@ -399,6 +443,14 @@ export default function RoomPage() {
     } catch {
       setInviteStatus("复制失败");
     }
+  }
+
+  function toggleGameAudio() {
+    setGameAudioEnabled((current) => {
+      const next = !current;
+      setStoredGameAudioEnabled(next);
+      return next;
+    });
   }
 
   async function onAction(button: ActionButtonModel) {
@@ -514,6 +566,16 @@ export default function RoomPage() {
             </View>
             <View className="lobby-toolbar__actions">
               <Button
+                className={`lobby-toolbar__button sound-toggle${
+                  gameAudioEnabled ? "" : " is-muted"
+                }`}
+                hoverClass="is-pressed"
+                aria-label={gameAudioEnabled ? "关闭音效" : "开启音效"}
+                onClick={toggleGameAudio}
+              >
+                {gameAudioEnabled ? "音效开" : "音效关"}
+              </Button>
+              <Button
                 className="lobby-toolbar__button"
                 hoverClass="is-pressed"
                 onClick={() => void copyRoomCode()}
@@ -548,6 +610,14 @@ export default function RoomPage() {
               onClick={() => void roomCtrl.leaveRoom()}
             >
               离开
+            </Button>
+            <Button
+              className={`sound-fab${gameAudioEnabled ? "" : " is-muted"}`}
+              hoverClass="is-pressed"
+              aria-label={gameAudioEnabled ? "关闭音效" : "开启音效"}
+              onClick={toggleGameAudio}
+            >
+              {gameAudioEnabled ? "音效开" : "音效关"}
             </Button>
             <View className="info-capsule">
               <Text className="info-capsule__code">

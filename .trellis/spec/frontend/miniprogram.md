@@ -118,6 +118,53 @@ table. Tracking tail-id alone (without length) reintroduces the stale-highlight
 bug. Mirrors `apps/web/src/components/GameTable.tsx:766` but must be persistent-
 safe because mp keeps the highlight until the next discard.
 
+### Pattern: projection-derived short game audio
+
+`src/lib/gameAudioEvents.ts` owns the projection-diff contract for spoken tile
+and action audio. `src/lib/gameAudioPlayer.ts` owns the WeChat playback API and
+bundled MP3 mapping; the room page only advances the tracker and forwards file
+names to the player.
+
+```ts
+updateGameAudioTracker(
+  tracker,
+  room,
+  connectionStatus === "connected",
+): GameAudioFileName[];
+```
+
+- Seed the tracker from the first room projection without playing anything.
+- Disarm it whenever the Socket is not connected. The first projection after
+  reconnect re-arms the tracker but stays silent, so restored historical
+  discards, melds or settlement never replay.
+- Require `room.version === previous.version + 1` before emitting audio. A
+  version gap means the client recovered a full snapshot and must not replay
+  events accumulated between the two visible projections.
+- Detect discards by physical tile ID, not only pile length. A claimed discard
+  and a later new discard can leave the pile at the same length.
+- New pong, kong, added-kong and released-wildcard state comes only from public
+  player projection diffs. A new winning `roundSettlement.roundId` triggers
+  win audio; a draw remains silent.
+- Create a separate `Taro.createInnerAudioContext` with
+  `useWebAudioImplement: true` for each short cue. Keep
+  `obeyMuteSwitch = true`, seek to the clip's measured voice start, and play it
+  immediately. Rapid sequences may overlap briefly; they must never wait in a
+  queue and drift behind the matching visible discard. Stop and destroy every
+  active context when the room page unmounts or the user disables audio.
+- Store the audio preference as a boolean under
+  `huanghuang_game_audio_enabled`, defaulting to enabled when missing or
+  unreadable. Continue advancing the projection tracker while muted so
+  re-enabling audio plays only future events.
+- Keep the 32 MP3 imports in a `Record<GameAudioFileName, string>` so a missing
+  tile or action asset fails type-check/build instead of becoming a silent
+  runtime hole.
+
+Tests must cover equal-length discard replacement, every meld-to-audio mapping,
+wildcard release, win versus draw, initial-load silence, reconnect silence,
+immediate concurrent playback, active-context cleanup and stored mute preference.
+Production verification must assert all 32 MP3 files exist in `dist` and that
+the complete main package remains below WeChat's size limit.
+
 ### Native selector for room turn duration
 
 The create-room form uses WeChat's native `Picker` with a local

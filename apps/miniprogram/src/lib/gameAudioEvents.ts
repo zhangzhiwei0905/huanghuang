@@ -1,0 +1,125 @@
+import type { MeldKind, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
+
+type TileRank = Tile["rank"];
+
+export type GameAudioFileName =
+  | `tile-wan-${TileRank}.mp3`
+  | `tile-tiao-${TileRank}.mp3`
+  | `tile-tong-${TileRank}.mp3`
+  | "action-pong.mp3"
+  | "action-kong.mp3"
+  | "action-release-wildcard.mp3"
+  | "action-added-kong.mp3"
+  | "action-win.mp3";
+
+type PlayerAudioSnapshot = {
+  discardIds: Set<string>;
+  releasedWildcardIds: Set<string>;
+  meldKinds: Map<string, MeldKind>;
+};
+
+export type GameAudioSnapshot = {
+  roomId: string;
+  roundId: string | null;
+  version: number;
+  players: Partial<Record<Seat, PlayerAudioSnapshot>>;
+  settlementRoundId: string | null;
+};
+
+export type GameAudioTracker = {
+  snapshot: GameAudioSnapshot | null;
+  armed: boolean;
+};
+
+const TILE_SUIT_FILE_PREFIX: Record<Tile["suit"], "wan" | "tiao" | "tong"> = {
+  WAN: "wan",
+  TIAO: "tiao",
+  TONG: "tong",
+};
+
+export function tileAudioFileName(tile: Pick<Tile, "suit" | "rank">): GameAudioFileName {
+  return `tile-${TILE_SUIT_FILE_PREFIX[tile.suit]}-${tile.rank}.mp3`;
+}
+
+function meldAudioFileName(kind: MeldKind): GameAudioFileName {
+  if (kind === "PONG") return "action-pong.mp3";
+  if (kind === "ADDED_KONG") return "action-added-kong.mp3";
+  return "action-kong.mp3";
+}
+
+export function createGameAudioSnapshot(room: RoomProjection): GameAudioSnapshot {
+  return {
+    roomId: room.roomId,
+    roundId: room.roundId,
+    version: room.version,
+    players: Object.fromEntries(
+      room.players.map((player) => [
+        player.seat,
+        {
+          discardIds: new Set(player.discards.map((tile) => tile.id)),
+          releasedWildcardIds: new Set(player.releasedWildcards.map((tile) => tile.id)),
+          meldKinds: new Map(player.melds.map((meld) => [meld.id, meld.kind])),
+        },
+      ]),
+    ) as Partial<Record<Seat, PlayerAudioSnapshot>>,
+    settlementRoundId: room.roundSettlement?.roundId ?? null,
+  };
+}
+
+export function detectGameAudioFiles(
+  previous: GameAudioSnapshot,
+  room: RoomProjection,
+): GameAudioFileName[] {
+  if (
+    previous.roomId !== room.roomId ||
+    previous.roundId === null ||
+    previous.roundId !== room.roundId ||
+    room.version !== previous.version + 1
+  ) {
+    return [];
+  }
+
+  const files: GameAudioFileName[] = [];
+  for (const player of room.players) {
+    const before = previous.players[player.seat];
+    if (before === undefined) continue;
+
+    for (const tile of player.discards) {
+      if (!before.discardIds.has(tile.id)) files.push(tileAudioFileName(tile));
+    }
+    for (const tile of player.releasedWildcards) {
+      if (!before.releasedWildcardIds.has(tile.id)) {
+        files.push("action-release-wildcard.mp3");
+      }
+    }
+    for (const meld of player.melds) {
+      if (before.meldKinds.get(meld.id) !== meld.kind) {
+        files.push(meldAudioFileName(meld.kind));
+      }
+    }
+  }
+
+  const settlement = room.roundSettlement;
+  if (settlement?.kind === "WIN" && settlement.roundId !== previous.settlementRoundId) {
+    files.push("action-win.mp3");
+  }
+  return files;
+}
+
+export function createGameAudioTracker(): GameAudioTracker {
+  return { snapshot: null, armed: false };
+}
+
+export function updateGameAudioTracker(
+  tracker: GameAudioTracker,
+  room: RoomProjection | null,
+  connected: boolean,
+): GameAudioFileName[] {
+  const previous = tracker.snapshot;
+  const wasArmed = tracker.armed;
+  tracker.snapshot = room === null ? null : createGameAudioSnapshot(room);
+  tracker.armed = room !== null && connected;
+
+  if (room === null || !connected || !wasArmed || previous === null) return [];
+  return detectGameAudioFiles(previous, room);
+}

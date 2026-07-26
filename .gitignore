@@ -11,6 +11,7 @@ backups/
 playwright-report/
 test-results/
 .DS_Store
+/huanghuang-audio/
 .zcode/
 apps/miniprogram/dist/
 apps/miniprogram/.swc/
