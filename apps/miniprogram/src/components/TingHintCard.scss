@@ -63,21 +63,14 @@
   white-space: nowrap;
 }
 
-.ting-hint-card__scroll {
-  width: 100%;
-  min-width: 0;
-}
-
-.ting-hint-card.is-single .ting-hint-card__scroll {
-  height: max(6.3vmin, 28px);
-}
-
-.ting-hint-card.is-multiple .ting-hint-card__scroll {
-  height: max(12.9vmin, 58px);
-}
-
+/* No ScrollView, no fixed/capped height: the card shows every wait in full,
+   growing to whatever height the content needs. A capped-height scrolling
+   list was tried first and reverted per explicit user feedback ("直接展示
+   完整" — show it complete, not scrollable). */
 .ting-hint-card__list {
   display: flex;
+  width: 100%;
+  min-width: 0;
   flex-direction: column;
   gap: 0.3vmin;
 }

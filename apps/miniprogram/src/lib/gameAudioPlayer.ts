@@ -4,6 +4,9 @@ import actionKong from "../assets/audio/action-kong.mp3";
 import actionPong from "../assets/audio/action-pong.mp3";
 import actionReleaseWildcard from "../assets/audio/action-release-wildcard.mp3";
 import actionWin from "../assets/audio/action-win.mp3";
+import chaotiangang from "../assets/audio/chaotiangang.mp3";
+import gaokuaidian from "../assets/audio/gaokuaidian.mp3";
+import ruanhu from "../assets/audio/ruanhu.mp3";
 import tileTiao1 from "../assets/audio/tile-tiao-1.mp3";
 import tileTiao2 from "../assets/audio/tile-tiao-2.mp3";
 import tileTiao3 from "../assets/audio/tile-tiao-3.mp3";
@@ -31,6 +34,8 @@ import tileWan6 from "../assets/audio/tile-wan-6.mp3";
 import tileWan7 from "../assets/audio/tile-wan-7.mp3";
 import tileWan8 from "../assets/audio/tile-wan-8.mp3";
 import tileWan9 from "../assets/audio/tile-wan-9.mp3";
+import woyijingtingle from "../assets/audio/woyijingtingle.mp3";
+import yinghu from "../assets/audio/yinghu.mp3";
 import type { GameAudioFileName } from "./gameAudioEvents";
 
 const AUDIO_SOURCES: Record<GameAudioFileName, string> = {
@@ -39,6 +44,11 @@ const AUDIO_SOURCES: Record<GameAudioFileName, string> = {
   "action-pong.mp3": actionPong,
   "action-release-wildcard.mp3": actionReleaseWildcard,
   "action-win.mp3": actionWin,
+  "chaotiangang.mp3": chaotiangang,
+  "gaokuaidian.mp3": gaokuaidian,
+  "ruanhu.mp3": ruanhu,
+  "woyijingtingle.mp3": woyijingtingle,
+  "yinghu.mp3": yinghu,
   "tile-tiao-1.mp3": tileTiao1,
   "tile-tiao-2.mp3": tileTiao2,
   "tile-tiao-3.mp3": tileTiao3,
@@ -79,6 +89,11 @@ const AUDIO_WINDOWS: Record<GameAudioFileName, AudioWindow> = {
   "action-pong.mp3": { startTime: 0.83, duration: 0.33 },
   "action-release-wildcard.mp3": { startTime: 0.76, duration: 0.73 },
   "action-win.mp3": { startTime: 0.69, duration: 0.62 },
+  "chaotiangang.mp3": { startTime: 0.62, duration: 0.7 },
+  "gaokuaidian.mp3": { startTime: 0, duration: 2.92 },
+  "ruanhu.mp3": { startTime: 0, duration: 2.53 },
+  "woyijingtingle.mp3": { startTime: 0, duration: 3.44 },
+  "yinghu.mp3": { startTime: 0, duration: 2.53 },
   "tile-tiao-1.mp3": { startTime: 0.79, duration: 0.54 },
   "tile-tiao-2.mp3": { startTime: 0.98, duration: 0.55 },
   "tile-tiao-3.mp3": { startTime: 0.81, duration: 0.55 },

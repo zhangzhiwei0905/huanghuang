@@ -144,7 +144,10 @@ updateGameAudioTracker(
   and a later new discard can leave the pile at the same length.
 - New pong, kong, added-kong and released-wildcard state comes only from public
   player projection diffs. A new winning `roundSettlement.roundId` triggers
-  win audio; a draw remains silent.
+  win audio (`yinghu.mp3` for `winType === "HARD"`, `ruanhu.mp3` for `"SOFT"`;
+  `action-win.mp3` stays bundled/typed but nothing triggers it anymore); a draw
+  remains silent. `Meld.kind === "INDICATOR_PONG_KONG"` (碰亮牌/朝天杠) plays
+  `chaotiangang.mp3`, not the generic `action-pong.mp3`/`action-kong.mp3`.
 - Create a separate `Taro.createInnerAudioContext` with
   `useWebAudioImplement: true` for each short cue. Keep
   `obeyMuteSwitch = true`, seek to the clip's measured voice start, and play it
@@ -155,15 +158,55 @@ updateGameAudioTracker(
   `huanghuang_game_audio_enabled`, defaulting to enabled when missing or
   unreadable. Continue advancing the projection tracker while muted so
   re-enabling audio plays only future events.
-- Keep the 32 MP3 imports in a `Record<GameAudioFileName, string>` so a missing
+- Keep the 37 MP3 imports in a `Record<GameAudioFileName, string>` so a missing
   tile or action asset fails type-check/build instead of becoming a silent
   runtime hole.
 
 Tests must cover equal-length discard replacement, every meld-to-audio mapping,
-wildcard release, win versus draw, initial-load silence, reconnect silence,
-immediate concurrent playback, active-context cleanup and stored mute preference.
-Production verification must assert all 32 MP3 files exist in `dist` and that
+wildcard release, win versus draw (both `winType`s), initial-load silence,
+reconnect silence, immediate concurrent playback, active-context cleanup and
+stored mute preference.
+Production verification must assert all 37 MP3 files exist in `dist` and that
 the complete main package remains below WeChat's size limit.
+
+`yinghu.mp3`, `ruanhu.mp3`, `gaokuaidian.mp3` and `woyijingtingle.mp3` play
+full length — `{ startTime: 0, duration: <measured length + ~0.15s buffer> }`
+in `AUDIO_WINDOWS`. The two win-call clips were originally windowed to a short
+peak span like the `action-*` cues, but the user found the trimmed version
+sounded incomplete and asked for the full clip, same as the voice-message
+pair. Only `chaotiangang.mp3` still follows the short-peak-window convention
+(`{ startTime: 0.62, duration: 0.7 }`) — do not default new action-style cues
+to full-length playback on the assumption it's now the norm; check with the
+user per-clip.
+
+### Pattern: quick voice messages reuse `room:chat`, audio-only
+
+The mini-program does not implement the web app's chat bubble UI. Instead,
+`useRoom.ts` listens for `room:chat` (already broadcast server-side to the
+whole Socket room, including the sender) and exposes the latest
+`ChatMessageProjection` as `lastChatMessage`; `sendVoiceMessage(message)` is a
+fire-and-forget `socket.emit("room:chat", { roomCode, message }, () => {})`
+with no `runExclusive`/`refresh()` — it is not a room-mutating game command.
+`useGameAudio` matches `lastChatMessage.message` against
+`voiceMessageAudioFileName()` (exact string match against the fixed
+`VOICE_MESSAGES` catalog in `gameAudioEvents.ts`) and plays the matching clip
+once per distinct `chatMessage.id`; unmatched or already-played messages are a
+no-op. There is no chat bubble/toast tied to *receiving* a message, and no
+persisted history — do not add one without revisiting this decision.
+
+Sending, however, does have a small custom UI: the room page shows a single
+standalone "快捷消息" trigger button (`.quick-message-fab`, parked beside the
+self player-station card at the table's bottom-right, not inside
+`info-capsule`) only when `quickMessageAvailable` (`room.mode === "FRIEND" &&
+room.stage === "PLAYING"`), mirroring the server's own `createChatMessage`
+validation. Tapping it opens a custom in-game speech-bubble popover
+(`.quick-message-bubble`, a `useState` boolean, not `Taro.showActionSheet`)
+listing the `VOICE_MESSAGES` catalog; tapping an item sends and closes it,
+tapping the `.quick-message-overlay` behind it closes without sending. Both
+the trigger and the bubble share the warm cream "mahjong tile" card material
+from `.player-station` (not the dark `.leave-fab`/`.sound-fab` chrome) since
+this is a social action, not a utility control — the system action sheet was
+explicitly rejected by the user in favor of this in-theme popover.
 
 ### Native selector for room turn duration
 
@@ -363,6 +406,49 @@ to grow the identity card.
 }
 ```
 
+### Pattern: player-station stat hierarchy and active-seat emphasis
+
+`.player-station__stat` (score/multiplier/hand-count row) used one uniform
+size/weight/color for all three values — no visual hierarchy. Per explicit
+user feedback, score is what players actually track round to round, so it
+reads first: `--score` is the largest/boldest, colored with the existing jade
+`--accent`. `--multiplier` is explicitly red per user request — reuse the
+existing `--danger` token (`#7a4b45`, a muted terracotta already in the
+palette) rather than a saturated alarm-red; red is otherwise unused on this
+card so it doesn't compete with anything, and it reads as "stakes/risk"
+against the cool jade + cream card. `--hand` is smallest/most muted,
+`opacity: 0.8` on top of `--muted`. (An earlier pass used the gold
+`--tile-gold` token for multiplier — the user asked for red specifically,
+so that's gone; `--tile-gold` is still the right choice for anything that
+needs a *third*, non-alarming accent, e.g. `TingHintCard`'s `.is-soft`.)
+
+`.player-station.is-active` (whose-turn highlight) originally pulsed a
+box-shadow from fully invisible (`0 0 0 0`) up to a faint 12%-opacity ring and
+back — easy to miss at a glance. The fix keeps a ring that's never fully
+invisible (0%/100% keyframe already shows a visible `rgb(47 106 76 / 50%)`
+ring) and pulses outward to a bigger, softer glow at 50%, plus a thicker 2px
+border and a light jade-tinted background wash. **Do not add `transform` to
+`.is-active`** — `.pos-opposite`/`.pos-left`/`.pos-right`/`.pos-self` each set
+their own `transform` for positioning (e.g. `translateX(-50%)` for the
+opposite seat), and since `.is-active` and each `.pos-*` class have equal
+selector specificity, whichever rule is declared later in the stylesheet
+wins the cascade — a `transform` on `.is-active` would silently break the
+opposite seat's centering the moment it becomes active. Emphasize with
+border/glow/background only, never geometry, on this element.
+
+Left/right meld rails (`.player-meld-rail.pos-left`/`.pos-right`) sat at
+`top: 45%` while their own player-station card sits at `top: 29%` — a ~16
+point gap, far more than the card's own ~8-10vmin height, floating the melds
+in empty space. A first fix flattened this to a second guessed percentage
+(`top: 37%`), which closed the gap but then overlapped the card's stats row —
+two independent percentages of the same container can't be trusted to track
+each other's real height. Fixed properly with `top: calc(29% + 12vmin)`:
+anchored to the card's own `top: 29%` plus a fixed vmin clearance sized to
+the card's actual content (avatar row + up to two wrapped lines of stats),
+so the gap moves with the card instead of drifting out of sync with it. This
+still keeps the rail further from the `top: 46%` discard-zone band than the
+original 45% did.
+
 ### Ting helper is presentation over the authoritative projection
 
 The mini-program must display `RoomProjection.tingHints` exactly as projected
@@ -378,6 +464,14 @@ them for readability, but it must not infer hidden tiles or recalculate
 - Size one wait to one row and cap longer lists at two visible rows with
   vertical scrolling. Keep multiplier and remaining count adjacent instead of
   using `margin-left: auto`, which creates a large blank gutter.
+- No `ScrollView`, no capped height: the card renders every wait in full and
+  grows to whatever height the content needs. An earlier pass tried hiding
+  just the scrollbar chrome (`ScrollView` + `enhanced` + `showScrollbar={false}`
+  + `::-webkit-scrollbar{display:none}`) while keeping the 2-row scroll cap —
+  the user rejected that too ("还是有滚动条" / "希望是直接展示完整"): a
+  hidden-but-still-scrollable list isn't the same as showing it complete.
+  `.ting-hint-card__list` is a plain flex column now, no scroll container at
+  all.
 - Order `HARD` waits before `SOFT` waits while preserving the server-projected
   multiplier and remaining count.
 - Make multiplier and remaining count separate high-emphasis elements rather

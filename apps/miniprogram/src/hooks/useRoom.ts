@@ -1,6 +1,7 @@
 import type {
   BaseScore,
   BotDifficulty,
+  ChatMessageProjection,
   CommandEnvelope,
   RoomProjection,
   Seat,
@@ -33,6 +34,8 @@ type RoomController = {
   send: (type: CommandEnvelope["type"], payload?: Record<string, unknown>) => Promise<void>;
   refresh: () => Promise<void>;
   clearNotice: () => void;
+  lastChatMessage: ChatMessageProjection | null;
+  sendVoiceMessage: (message: string) => void;
 };
 
 const COMMAND_ACK_TIMEOUT_MS = 8000;
@@ -71,6 +74,7 @@ export function useRoom(): RoomController {
   const [socketGeneration, setSocketGeneration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [lastChatMessage, setLastChatMessage] = useState<ChatMessageProjection | null>(null);
   const roomRef = useRef(room);
   const socketRef = useRef<Socket | null>(null);
   const mutationInFlightRef = useRef(false);
@@ -225,11 +229,15 @@ export function useRoom(): RoomController {
     const handleRoomUpdate = () => {
       if (!disposed) void refresh();
     };
+    const handleChatMessage = (payload: ChatMessageProjection) => {
+      if (!disposed) setLastChatMessage(payload);
+    };
 
     socket.on("connect", subscribe);
     socket.on("disconnect", handleDisconnect);
     socket.on("room:update", handleRoomUpdate);
     socket.on("connect_error", handleConnectError);
+    socket.on("room:chat", handleChatMessage);
     socket.connect();
 
     return () => {
@@ -241,6 +249,7 @@ export function useRoom(): RoomController {
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
       socket.off("room:update", handleRoomUpdate);
+      socket.off("room:chat", handleChatMessage);
       socket.disconnect();
     };
   }, [clearLocalRoom, refresh, replaceProjection, room?.roomCode, socketGeneration]);
@@ -395,6 +404,13 @@ export function useRoom(): RoomController {
     [refresh, runExclusive],
   );
 
+  const sendVoiceMessage = useCallback((message: string) => {
+    const current = roomRef.current;
+    const socket = socketRef.current;
+    if (current === null || socket?.connected !== true) return;
+    socket.emit("room:chat", { roomCode: current.roomCode, message }, () => {});
+  }, []);
+
   return {
     room,
     busy,
@@ -414,5 +430,7 @@ export function useRoom(): RoomController {
     send,
     refresh,
     clearNotice: () => setNotice(null),
+    lastChatMessage,
+    sendVoiceMessage,
   };
 }

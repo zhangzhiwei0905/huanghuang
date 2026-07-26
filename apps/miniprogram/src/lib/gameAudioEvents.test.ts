@@ -13,6 +13,7 @@ import {
   detectGameAudioFiles,
   tileAudioFileName,
   updateGameAudioTracker,
+  voiceMessageAudioFileName,
 } from "./gameAudioEvents.js";
 
 function player(seat: Seat, overrides: Partial<PlayerProjection> = {}): PlayerProjection {
@@ -33,12 +34,15 @@ function player(seat: Seat, overrides: Partial<PlayerProjection> = {}): PlayerPr
   };
 }
 
-function settlement(kind: "WIN" | "DRAW"): RoundSettlementProjection {
+function settlement(
+  kind: "WIN" | "DRAW",
+  winType: "HARD" | "SOFT" = "HARD",
+): RoundSettlementProjection {
   return {
     roundId: "round-1",
     kind,
     winnerSeat: kind === "WIN" ? 0 : null,
-    winType: kind === "WIN" ? "HARD" : null,
+    winType: kind === "WIN" ? winType : null,
     baseScore: 2,
     winBaseMultiplier: kind === "WIN" ? 2 : null,
     winnerMultiplier: kind === "WIN" ? 1 : null,
@@ -130,7 +134,7 @@ describe("game audio projection events", () => {
     ["PONG", "action-pong.mp3"],
     ["EXPOSED_KONG", "action-kong.mp3"],
     ["CONCEALED_KONG", "action-kong.mp3"],
-    ["INDICATOR_PONG_KONG", "action-kong.mp3"],
+    ["INDICATOR_PONG_KONG", "chaotiangang.mp3"],
     ["ADDED_KONG", "action-added-kong.mp3"],
   ] as const)("maps %s to %s", (kind, fileName) => {
     const before = room();
@@ -153,14 +157,26 @@ describe("game audio projection events", () => {
         player(3),
       ],
     });
-    const won = room({ version: 2, roundSettlement: settlement("WIN") });
+    const wonHard = room({ version: 2, roundSettlement: settlement("WIN", "HARD") });
+    const wonSoft = room({ version: 2, roundSettlement: settlement("WIN", "SOFT") });
     const drawn = room({ version: 2, roundSettlement: settlement("DRAW") });
 
     expect(detectGameAudioFiles(createGameAudioSnapshot(before), released)).toEqual([
       "action-release-wildcard.mp3",
     ]);
-    expect(detectGameAudioFiles(createGameAudioSnapshot(before), won)).toEqual(["action-win.mp3"]);
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), wonHard)).toEqual([
+      "yinghu.mp3",
+    ]);
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), wonSoft)).toEqual([
+      "ruanhu.mp3",
+    ]);
     expect(detectGameAudioFiles(createGameAudioSnapshot(before), drawn)).toEqual([]);
+  });
+
+  it("maps quick voice-message text to its matching audio file", () => {
+    expect(voiceMessageAudioFileName("搞快点搞快点")).toBe("gaokuaidian.mp3");
+    expect(voiceMessageAudioFileName("我已经听牌啦")).toBe("woyijingtingle.mp3");
+    expect(voiceMessageAudioFileName("随便聊两句")).toBeNull();
   });
 
   it("stays silent on initial load and the first projection after reconnect", () => {

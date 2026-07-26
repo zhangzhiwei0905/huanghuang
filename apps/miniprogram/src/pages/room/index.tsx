@@ -3,6 +3,7 @@ import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
 import type {
   BaseScore,
+  ChatMessageProjection,
   LobbySeatProjection,
   MeldKind,
   RoomProjection,
@@ -31,6 +32,8 @@ import { decideTilePress } from "../../lib/handInteraction";
 import {
   createGameAudioTracker,
   updateGameAudioTracker,
+  voiceMessageAudioFileName,
+  VOICE_MESSAGES,
   type GameAudioTracker,
 } from "../../lib/gameAudioEvents";
 import {
@@ -252,9 +255,11 @@ function useGameAudio(
   room: RoomProjection | null,
   connectionStatus: ConnectionStatus,
   enabled: boolean,
+  chatMessage: ChatMessageProjection | null,
 ): void {
   const trackerRef = useRef<GameAudioTracker | null>(null);
   const playerRef = useRef<GameAudioPlayer | null>(null);
+  const lastPlayedChatIdRef = useRef<string | null>(null);
   if (trackerRef.current === null) trackerRef.current = createGameAudioTracker();
 
   useEffect(() => {
@@ -270,6 +275,17 @@ function useGameAudio(
     if (playerRef.current === null) playerRef.current = createGameAudioPlayer();
     for (const fileName of files) playerRef.current.play(fileName);
   }, [connectionStatus, enabled, room]);
+
+  useEffect(() => {
+    if (chatMessage === null) return;
+    if (lastPlayedChatIdRef.current === chatMessage.id) return;
+    lastPlayedChatIdRef.current = chatMessage.id;
+    if (!enabled) return;
+    const fileName = voiceMessageAudioFileName(chatMessage.message);
+    if (fileName === null) return;
+    if (playerRef.current === null) playerRef.current = createGameAudioPlayer();
+    playerRef.current.play(fileName);
+  }, [chatMessage, enabled]);
 
   useEffect(
     () => () => {
@@ -302,6 +318,7 @@ export default function RoomPage() {
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [inviteStatus, setInviteStatus] = useState("复制房号");
   const [gameAudioEnabled, setGameAudioEnabled] = useState(getStoredGameAudioEnabled);
+  const [quickMessageOpen, setQuickMessageOpen] = useState(false);
   const [roundStartCountdown, setRoundStartCountdown] = useState<number | null>(null);
   const previousStageRef = useRef<RoomStage | null>(null);
   const previousRoomIdRef = useRef<string | null>(null);
@@ -375,7 +392,11 @@ export default function RoomPage() {
   const lobbyOccupiedCount = room?.lobbySeats.filter((candidate) => candidate.occupied).length ?? 0;
   const lobbyReadyCount = room?.lobbySeats.filter((candidate) => candidate.ready).length ?? 0;
   const recentDiscardId = useRecentDiscardId(room);
-  useGameAudio(room, roomCtrl.connectionStatus, gameAudioEnabled);
+  useGameAudio(room, roomCtrl.connectionStatus, gameAudioEnabled, roomCtrl.lastChatMessage);
+  const quickMessageAvailable = room !== null && room.mode === "FRIEND" && room.stage === "PLAYING";
+  useEffect(() => {
+    if (!quickMessageAvailable) setQuickMessageOpen(false);
+  }, [quickMessageAvailable]);
   const locked = roomCtrl.busy || roomCtrl.connectionStatus !== "connected";
   const actionDeadlineAt = room?.actionDeadlineAt ?? null;
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(() =>
@@ -451,6 +472,11 @@ export default function RoomPage() {
       setStoredGameAudioEnabled(next);
       return next;
     });
+  }
+
+  function sendQuickMessage(text: string) {
+    roomCtrl.sendVoiceMessage(text);
+    setQuickMessageOpen(false);
   }
 
   async function onAction(button: ActionButtonModel) {
@@ -778,10 +804,14 @@ export default function RoomPage() {
                         <View className="player-station__copy">
                           <Text className="player-station__name">{player.nickname}</Text>
                           <View className="player-station__stats">
-                            <Text className="player-station__stat">积分 {player.score}</Text>
-                            <Text className="player-station__stat">{player.handCount}张</Text>
-                            <Text className="player-station__stat">
+                            <Text className="player-station__stat player-station__stat--score">
+                              积分 {player.score}
+                            </Text>
+                            <Text className="player-station__stat player-station__stat--multiplier">
                               ×{player.personalMultiplier}
+                            </Text>
+                            <Text className="player-station__stat player-station__stat--hand">
+                              {player.handCount}张
                             </Text>
                             {!player.connected ? (
                               <Text className="player-station__stat is-offline">离线</Text>
@@ -988,6 +1018,39 @@ export default function RoomPage() {
                   ) : null}
                 </View>
               </View>
+
+              {quickMessageAvailable ? (
+                <Button
+                  className="quick-message-fab"
+                  hoverClass="is-pressed"
+                  aria-label="快捷消息"
+                  onClick={() => setQuickMessageOpen((open) => !open)}
+                >
+                  快捷消息
+                </Button>
+              ) : null}
+
+              {quickMessageAvailable && quickMessageOpen ? (
+                <>
+                  <View
+                    className="quick-message-overlay"
+                    onClick={() => setQuickMessageOpen(false)}
+                  />
+                  <View className="quick-message-bubble">
+                    {VOICE_MESSAGES.map((voice) => (
+                      <Button
+                        key={voice.text}
+                        className="quick-message-bubble__item"
+                        hoverClass="is-pressed"
+                        onClick={() => sendQuickMessage(voice.text)}
+                      >
+                        {voice.text}
+                      </Button>
+                    ))}
+                    <View className="quick-message-bubble__tail" />
+                  </View>
+                </>
+              ) : null}
             </View>
 
             {room.roundSettlement !== null ? (

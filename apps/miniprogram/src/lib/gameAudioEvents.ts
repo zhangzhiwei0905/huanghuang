@@ -10,7 +10,12 @@ export type GameAudioFileName =
   | "action-kong.mp3"
   | "action-release-wildcard.mp3"
   | "action-added-kong.mp3"
-  | "action-win.mp3";
+  | "action-win.mp3"
+  | "yinghu.mp3"
+  | "ruanhu.mp3"
+  | "chaotiangang.mp3"
+  | "gaokuaidian.mp3"
+  | "woyijingtingle.mp3";
 
 type PlayerAudioSnapshot = {
   discardIds: Set<string>;
@@ -44,8 +49,23 @@ export function tileAudioFileName(tile: Pick<Tile, "suit" | "rank">): GameAudioF
 function meldAudioFileName(kind: MeldKind): GameAudioFileName {
   if (kind === "PONG") return "action-pong.mp3";
   if (kind === "ADDED_KONG") return "action-added-kong.mp3";
+  if (kind === "INDICATOR_PONG_KONG") return "chaotiangang.mp3";
   return "action-kong.mp3";
 }
+
+const VOICE_MESSAGE_AUDIO: Record<string, GameAudioFileName> = {
+  "搞快点搞快点": "gaokuaidian.mp3",
+  "我已经听牌啦": "woyijingtingle.mp3",
+};
+
+export function voiceMessageAudioFileName(message: string): GameAudioFileName | null {
+  return VOICE_MESSAGE_AUDIO[message] ?? null;
+}
+
+export const VOICE_MESSAGES: { label: string; text: string }[] = [
+  { label: "催", text: "搞快点搞快点" },
+  { label: "听牌", text: "我已经听牌啦" },
+];
 
 export function createGameAudioSnapshot(room: RoomProjection): GameAudioSnapshot {
   return {
@@ -101,7 +121,7 @@ export function detectGameAudioFiles(
 
   const settlement = room.roundSettlement;
   if (settlement?.kind === "WIN" && settlement.roundId !== previous.settlementRoundId) {
-    files.push("action-win.mp3");
+    files.push(settlement.winType === "HARD" ? "yinghu.mp3" : "ruanhu.mp3");
   }
   return files;
 }
