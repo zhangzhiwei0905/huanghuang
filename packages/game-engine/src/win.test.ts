@@ -88,6 +88,59 @@ describe("win evaluation", () => {
     expect(result.wildcardSubstituteKind).toEqual({ suit: "TONG", rank: 3 });
   });
 
+  it("recognizes two natural pairs plus a drawn wildcard as a soft standard win", () => {
+    const wildcard = tile("WAN", 5);
+    const hand = [
+      ...triplet("WAN", 1),
+      ...triplet("TIAO", 2),
+      ...triplet("TONG", 3),
+      tile("WAN", 7),
+      tile("WAN", 7),
+      tile("TIAO", 9),
+      tile("TIAO", 9),
+      wildcard,
+    ];
+    const result = evaluateWin({
+      concealedTiles: hand,
+      melds: [],
+      wildcardKind: { suit: "WAN", rank: 5 },
+      winningTileId: wildcard.id,
+    });
+
+    expect(result.canWin).toBe(true);
+    expect(result.winType).toBe("SOFT");
+    expect(result.wildcardUsedAsSubstitute).toBe(true);
+    expect(result.wildcardSubstituteKind).toEqual({ suit: "WAN", rank: 7 });
+  });
+
+  it("recognizes drawing either natural pair kind as a hard win", () => {
+    for (const completedPair of [
+      { suit: "WAN", rank: 7 },
+      { suit: "TIAO", rank: 9 },
+    ] as const) {
+      const winning = tile(completedPair.suit, completedPair.rank);
+      const hand = [
+        ...triplet("WAN", 1),
+        ...triplet("TIAO", 2),
+        ...triplet("TONG", 3),
+        tile("WAN", 7),
+        tile("WAN", 7),
+        tile("TIAO", 9),
+        tile("TIAO", 9),
+        winning,
+      ];
+      const result = evaluateWin({
+        concealedTiles: hand,
+        melds: [],
+        wildcardKind: { suit: "WAN", rank: 5 },
+        winningTileId: winning.id,
+      });
+
+      expect(result.canWin).toBe(true);
+      expect(result.winType).toBe("HARD");
+    }
+  });
+
   it("rejects more than one wildcard", () => {
     const hand = [
       tile("WAN", 5),

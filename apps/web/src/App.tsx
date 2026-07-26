@@ -10,7 +10,7 @@ export function App() {
   const room = useRoom();
   const [restoringRoom, setRestoringRoom] = useState(() => {
     const roomCode = new URL(window.location.href).searchParams.get("room");
-    return roomCode !== null && /^\d{6}$/.test(roomCode);
+    return roomCode !== null && /^(?:[1-9]\d{3}|\d{6})$/.test(roomCode);
   });
   const [theme, setTheme] = useState<Theme>(() =>
     localStorage.getItem("huanghuang-theme") === "premium" ? "premium" : "discreet",
@@ -23,7 +23,7 @@ export function App() {
 
   useEffect(() => {
     const roomCode = new URL(window.location.href).searchParams.get("room");
-    if (roomCode === null || !/^\d{6}$/.test(roomCode)) {
+    if (roomCode === null || !/^(?:[1-9]\d{3}|\d{6})$/.test(roomCode)) {
       setRestoringRoom(false);
       return;
     }
@@ -66,6 +66,9 @@ export function App() {
           chatMessages={room.chatMessages}
           onReady={room.ready}
           onBaseScoreChange={room.updateBaseScore}
+          onBotDifficultyChange={room.updateBotDifficulty}
+          onAddBot={room.addBot}
+          onRemoveBot={room.removeBot}
           onContinue={room.continueBot}
           onChat={room.sendChat}
           onLeave={room.leaveRoom}

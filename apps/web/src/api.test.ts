@@ -13,6 +13,8 @@ describe("roomApi", () => {
         nickname: "玩家",
         baseScore: 2,
         mode: "BOT",
+        turnTimeoutSeconds: 25,
+        botDifficulty: "LOW",
       });
       return Promise.resolve(
         new Response(JSON.stringify({ mode: "BOT" }), {
@@ -22,7 +24,9 @@ describe("roomApi", () => {
       );
     });
 
-    await expect(roomApi.create("玩家", 2, "BOT")).resolves.toMatchObject({ mode: "BOT" });
+    await expect(roomApi.create("玩家", 2, "BOT", 25, "LOW")).resolves.toMatchObject({
+      mode: "BOT",
+    });
   });
 
   it("uses the explicit continue endpoint for bot rounds", async () => {
@@ -39,7 +43,7 @@ describe("roomApi", () => {
     await expect(roomApi.continueBot("123456")).resolves.toMatchObject({ stage: "PLAYING" });
   });
 
-  it("sends explicit ready state and owner base-score updates", async () => {
+  it("sends explicit ready state, room settings and bot seat mutations", async () => {
     const requests: { path: string; method: string | undefined; body: unknown }[] = [];
     vi.stubGlobal("fetch", (path: string, init: RequestInit | undefined): Promise<Response> => {
       requests.push({
@@ -57,10 +61,20 @@ describe("roomApi", () => {
 
     await roomApi.ready("123456", false);
     await roomApi.updateBaseScore("123456", 10);
+    await roomApi.updateBotDifficulty("123456", "LOW");
+    await roomApi.addBot("123456");
+    await roomApi.removeBot("123456", 2);
 
     expect(requests).toEqual([
       { path: "/api/rooms/123456/ready", method: "POST", body: { ready: false } },
       { path: "/api/rooms/123456/settings", method: "PATCH", body: { baseScore: 10 } },
+      {
+        path: "/api/rooms/123456/settings",
+        method: "PATCH",
+        body: { botDifficulty: "LOW" },
+      },
+      { path: "/api/rooms/123456/bots", method: "POST", body: {} },
+      { path: "/api/rooms/123456/bots/2", method: "DELETE", body: null },
     ]);
   });
 

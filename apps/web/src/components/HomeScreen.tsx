@@ -1,4 +1,9 @@
-import type { BaseScore, RoomProjection } from "@huanghuang/protocol";
+import type {
+  BaseScore,
+  BotDifficulty,
+  RoomProjection,
+  TurnTimeoutSeconds,
+} from "@huanghuang/protocol";
 import { useState } from "react";
 import { roomApi } from "../api.js";
 
@@ -11,6 +16,8 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
   const [nickname, setNickname] = useState(localStorage.getItem("huanghuang-nickname") ?? "");
   const [roomCode, setRoomCode] = useState(invitationCode);
   const [baseScore, setBaseScore] = useState<BaseScore>(2);
+  const [turnTimeoutSeconds, setTurnTimeoutSeconds] = useState<TurnTimeoutSeconds>(20);
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>("HIGH");
   const [mode, setMode] = useState<"HOME" | "CREATE" | "JOIN" | "BOT">(
     invitationCode === "" ? "HOME" : "JOIN",
   );
@@ -23,8 +30,8 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
       setError("先填一个牌桌昵称");
       return;
     }
-    if (kind === "JOIN" && !/^\d{6}$/u.test(roomCode)) {
-      setError("房间号需要是 6 位数字");
+    if (kind === "JOIN" && !/^(?:[1-9]\d{3}|\d{6})$/u.test(roomCode)) {
+      setError("请输入 4 位房间号");
       return;
     }
     setBusy(true);
@@ -32,7 +39,13 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
     try {
       const room =
         kind !== "JOIN"
-          ? await roomApi.create(normalizedName, baseScore, kind === "BOT" ? "BOT" : "FRIEND")
+          ? await roomApi.create(
+              normalizedName,
+              baseScore,
+              kind === "BOT" ? "BOT" : "FRIEND",
+              turnTimeoutSeconds,
+              botDifficulty,
+            )
           : await roomApi.join(normalizedName, roomCode);
       localStorage.setItem("huanghuang-nickname", normalizedName);
       onOpenRoom(room);
@@ -93,13 +106,13 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
             </label>
             {mode === "JOIN" ? (
               <label>
-                <span>六位房间号</span>
+                <span>四位房间号</span>
                 <input
                   value={roomCode}
                   inputMode="numeric"
                   maxLength={6}
                   onChange={(event) => setRoomCode(event.target.value.replace(/\D/gu, ""))}
-                  placeholder="000000"
+                  placeholder="1000"
                 />
               </label>
             ) : (
@@ -119,6 +132,40 @@ export function HomeScreen({ onOpenRoom }: HomeScreenProps) {
                 </div>
               </fieldset>
             )}
+            {mode === "CREATE" || mode === "BOT" ? (
+              <>
+                <fieldset>
+                  <legend>出牌时长</legend>
+                  <div className="score-options">
+                    {([20, 25, 30] as const).map((seconds) => (
+                      <button
+                        type="button"
+                        className={seconds === turnTimeoutSeconds ? "is-active" : ""}
+                        key={seconds}
+                        onClick={() => setTurnTimeoutSeconds(seconds)}
+                      >
+                        {seconds} 秒
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>机器人难度</legend>
+                  <div className="score-options">
+                    {(["LOW", "HIGH"] as const).map((difficulty) => (
+                      <button
+                        type="button"
+                        className={difficulty === botDifficulty ? "is-active" : ""}
+                        key={difficulty}
+                        onClick={() => setBotDifficulty(difficulty)}
+                      >
+                        {difficulty === "LOW" ? "低 · 只硬胡" : "高 · 可软胡"}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              </>
+            ) : null}
             {error === null ? null : (
               <p className="form-error" role="alert">
                 {error}

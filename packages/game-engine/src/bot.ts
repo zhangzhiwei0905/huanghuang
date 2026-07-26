@@ -1,4 +1,4 @@
-import type { Meld, Seat, Tile, TileKind } from "@huanghuang/protocol";
+import type { BotDifficulty, Meld, Seat, Tile, TileKind, WinType } from "@huanghuang/protocol";
 import { concealedKongKinds, discardableTileIds, releasableWildcardIds } from "./actions.js";
 import { sameTileKind, type RandomInt } from "./tiles.js";
 
@@ -13,6 +13,8 @@ export type BotDecisionView = {
   seat: Seat;
   phase: "TURN_DECISION" | "DISCARD_RESPONSE";
   legalActions: readonly string[];
+  botDifficulty: BotDifficulty;
+  winType: WinType | null;
   hand: Tile[];
   melds: Meld[];
   releasedWildcards: Tile[];
@@ -151,8 +153,10 @@ function shapeScore(counts: readonly number[]): number {
     else if (count === 2) score += 8;
 
     const rankIndex = index % 9;
-    if (rankIndex <= 7 && (counts[index + 1] ?? 0) > 0) score += Math.min(count, counts[index + 1] ?? 0) * 4;
-    if (rankIndex <= 6 && (counts[index + 2] ?? 0) > 0) score += Math.min(count, counts[index + 2] ?? 0) * 2;
+    if (rankIndex <= 7 && (counts[index + 1] ?? 0) > 0)
+      score += Math.min(count, counts[index + 1] ?? 0) * 4;
+    if (rankIndex <= 6 && (counts[index + 2] ?? 0) > 0)
+      score += Math.min(count, counts[index + 2] ?? 0) * 2;
     if (
       count === 1 &&
       (rankIndex === 0 || (counts[index - 1] ?? 0) === 0) &&
@@ -291,7 +295,12 @@ export function chooseBotAction(view: BotDecisionView, randomInt: RandomInt): Bo
     return view.legalActions.includes("PASS_RESPONSE") ? { type: "PASS_RESPONSE" } : null;
   }
 
-  if (view.legalActions.includes("DECLARE_WIN")) return { type: "DECLARE_WIN" };
+  if (
+    view.legalActions.includes("DECLARE_WIN") &&
+    (view.botDifficulty === "HIGH" || view.winType === "HARD")
+  ) {
+    return { type: "DECLARE_WIN" };
+  }
 
   const wildcardIds = releasableWildcardIds({
     hand: view.hand,

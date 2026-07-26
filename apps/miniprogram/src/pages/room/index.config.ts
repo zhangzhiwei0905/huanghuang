@@ -1,7 +1,5 @@
 export default {
-  navigationBarTitleText: "晃晃牌桌",
-  navigationBarBackgroundColor: "#eef6f0",
-  navigationBarTextStyle: "black",
+  navigationStyle: "custom",
   backgroundColor: "#dcece1",
   pageOrientation: "landscape",
   disableScroll: true,

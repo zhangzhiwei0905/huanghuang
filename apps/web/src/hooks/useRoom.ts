@@ -1,8 +1,10 @@
 import type {
   BaseScore,
+  BotDifficulty,
   ChatMessageProjection,
   CommandEnvelope,
   RoomProjection,
+  Seat,
 } from "@huanghuang/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
@@ -21,6 +23,9 @@ type RoomController = {
   dissolve: () => Promise<void>;
   ready: () => Promise<void>;
   updateBaseScore: (baseScore: BaseScore) => Promise<void>;
+  updateBotDifficulty: (difficulty: BotDifficulty) => Promise<void>;
+  addBot: () => Promise<void>;
+  removeBot: (seat: Seat) => Promise<void>;
   continueBot: () => Promise<void>;
   sendChat: (message: string) => Promise<boolean>;
   send: (type: CommandEnvelope["type"], payload?: Record<string, unknown>) => Promise<void>;
@@ -323,6 +328,48 @@ export function useRoom(): RoomController {
     [replaceProjection, runExclusive],
   );
 
+  const updateBotDifficulty = useCallback(
+    async (difficulty: BotDifficulty) => {
+      const current = roomRef.current;
+      if (current === null) return;
+      await runExclusive(null, async () => {
+        try {
+          replaceProjection(await roomApi.updateBotDifficulty(current.roomCode, difficulty));
+        } catch {
+          setError("修改机器人难度失败，请确认当前房主和房间状态");
+        }
+      });
+    },
+    [replaceProjection, runExclusive],
+  );
+
+  const addBot = useCallback(async () => {
+    const current = roomRef.current;
+    if (current === null) return;
+    await runExclusive(null, async () => {
+      try {
+        replaceProjection(await roomApi.addBot(current.roomCode));
+      } catch {
+        setError("添加机器人失败，请确认房间仍有空位");
+      }
+    });
+  }, [replaceProjection, runExclusive]);
+
+  const removeBot = useCallback(
+    async (seat: Seat) => {
+      const current = roomRef.current;
+      if (current === null) return;
+      await runExclusive(null, async () => {
+        try {
+          replaceProjection(await roomApi.removeBot(current.roomCode, seat));
+        } catch {
+          setError("移除机器人失败，请确认当前房主和房间状态");
+        }
+      });
+    },
+    [replaceProjection, runExclusive],
+  );
+
   const continueBot = useCallback(async () => {
     const current = roomRef.current;
     if (current === null) return;
@@ -394,6 +441,9 @@ export function useRoom(): RoomController {
     dissolve,
     ready,
     updateBaseScore,
+    updateBotDifficulty,
+    addBot,
+    removeBot,
     continueBot,
     sendChat,
     send,

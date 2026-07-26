@@ -65,12 +65,14 @@ function resultRoom(): RoomProjection {
     version: 12,
     baseScore: 2,
     turnTimeoutSeconds: 20,
+    botDifficulty: "HIGH",
     mode: "FRIEND",
     stage: "ROUND_RESULT",
     roundId: "round-1",
     roundStartedAt: "2026-07-17T00:00:00.000Z",
     waitingExpiresAt: null,
     isOwner: true,
+    selfRole: "PLAYER",
     selfReady: false,
     selfSeat: 0,
     selfDrawnTileId: null,
@@ -116,6 +118,7 @@ function resultRoom(): RoomProjection {
     players,
     lobbySeats: ([0, 1, 2, 3] as const).map((seat) => ({
       seat,
+      controller: seat === 0 ? "HUMAN" : "BOT",
       nickname: `玩家${seat + 1}`,
       avatarUrl: null,
       occupied: true,
@@ -125,6 +128,7 @@ function resultRoom(): RoomProjection {
       isSelf: seat === 0,
       score: seat === 0 ? 12 : -4,
     })),
+    spectators: [],
   };
 }
 
@@ -154,6 +158,9 @@ describe("game table presentation", () => {
         chatMessages,
         onReady: resolveVoid,
         onBaseScoreChange: resolveVoid,
+        onBotDifficultyChange: resolveVoid,
+        onAddBot: resolveVoid,
+        onRemoveBot: resolveVoid,
         onContinue: resolveVoid,
         onChat: resolveChat,
         onLeave: resolveVoid,
@@ -185,6 +192,9 @@ describe("game table presentation", () => {
         chatMessages: [],
         onReady: resolveVoid,
         onBaseScoreChange: resolveVoid,
+        onBotDifficultyChange: resolveVoid,
+        onAddBot: resolveVoid,
+        onRemoveBot: resolveVoid,
         onContinue: resolveVoid,
         onChat: resolveChat,
         onLeave: resolveVoid,
@@ -228,6 +238,9 @@ describe("game table presentation", () => {
         chatMessages: [],
         onReady: resolveVoid,
         onBaseScoreChange: resolveVoid,
+        onBotDifficultyChange: resolveVoid,
+        onAddBot: resolveVoid,
+        onRemoveBot: resolveVoid,
         onContinue: resolveVoid,
         onChat: resolveChat,
         onLeave: resolveVoid,
@@ -240,5 +253,57 @@ describe("game table presentation", () => {
     expect(markup).toContain("primary-action-button action-kong");
     expect(markup).toContain("primary-action-button action-pass");
     expect(markup).not.toContain("aux-action action-pass");
+  });
+
+  it("renders an in-round spectator without exposing a hand, actions or chat input", () => {
+    const room: RoomProjection = {
+      ...resultRoom(),
+      stage: "PLAYING",
+      roundPhase: "TURN_DECISION",
+      roundOutcome: null,
+      roundSettlement: null,
+      selfRole: "SPECTATOR",
+      selfSeat: null,
+      selfDrawnTileId: null,
+      isOwner: false,
+      actingSeat: 1,
+      currentSeat: 1,
+      legalActions: [],
+      players: resultRoom().players.map((candidate) => ({ ...candidate, hand: null })),
+      spectators: [
+        {
+          nickname: "候补玩家",
+          avatarUrl: null,
+          connected: true,
+          isSelf: true,
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(
+      createElement(GameTable, {
+        room,
+        busy: false,
+        connectionStatus: "connected",
+        pendingAction: null,
+        error: null,
+        chatMessages: [],
+        onReady: resolveVoid,
+        onBaseScoreChange: resolveVoid,
+        onBotDifficultyChange: resolveVoid,
+        onAddBot: resolveVoid,
+        onRemoveBot: resolveVoid,
+        onContinue: resolveVoid,
+        onChat: resolveChat,
+        onLeave: resolveVoid,
+        onDissolve: resolveVoid,
+        onSend: resolveVoid,
+      }),
+    );
+
+    expect(markup).toContain("观战中");
+    expect(markup).toContain("观战候补 1");
+    expect(markup).not.toContain('class="chat-form"');
+    expect(markup).not.toContain('class="hand-tile');
+    expect(markup).not.toContain("primary-action-button");
   });
 });

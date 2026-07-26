@@ -58,6 +58,32 @@ describe("discard ting analysis", () => {
     });
   });
 
+  it("projects both natural-pair hard waits and the wildcard soft wait", () => {
+    const discard = tile("TONG", 9, "two-pair-discard");
+    const wildcardKind: TileKind = { suit: "WAN", rank: 5 };
+    const hand = [
+      ...triplet("WAN", 1),
+      ...triplet("TIAO", 2),
+      ...triplet("TONG", 3),
+      tile("WAN", 7),
+      tile("WAN", 7),
+      tile("TIAO", 9),
+      tile("TIAO", 9),
+      discard,
+    ];
+    const option = optionFor(hand, discard.id, wildcardKind);
+
+    expect(option?.waits).toContainEqual({
+      tileKind: { suit: "WAN", rank: 7 },
+      winType: "HARD",
+    });
+    expect(option?.waits).toContainEqual({
+      tileKind: { suit: "TIAO", rank: 9 },
+      winType: "HARD",
+    });
+    expect(option?.waits).toContainEqual({ tileKind: wildcardKind, winType: "SOFT" });
+  });
+
   it("keeps identical physical discard choices addressable by tile id", () => {
     const duplicate = tile("TONG", 1, "tong-1-b");
     const options = analyzeDiscardTingOptions({

@@ -45,12 +45,14 @@ function room(overrides?: Partial<RoomProjection>): RoomProjection {
     version: 1,
     baseScore: 2,
     turnTimeoutSeconds: 20,
+    botDifficulty: "HIGH",
     mode: "FRIEND",
     stage: "PLAYING",
     roundId: "round-1",
     roundStartedAt: null,
     waitingExpiresAt: null,
     isOwner: false,
+    selfRole: "PLAYER",
     selfReady: true,
     selfSeat: 0,
     selfDrawnTileId: null,
@@ -70,6 +72,7 @@ function room(overrides?: Partial<RoomProjection>): RoomProjection {
     tingHints: [],
     players: players(),
     lobbySeats: [],
+    spectators: [],
     ...overrides,
   };
 }

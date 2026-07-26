@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
 import type {
@@ -89,20 +89,26 @@ function LobbySeat({
   positionClass,
   busy,
   onToggleReady,
+  canManageBots,
+  onRemoveBot,
 }: {
   seat: LobbySeatProjection;
   positionClass: (typeof POSITION_CLASS)[number];
   busy: boolean;
   onToggleReady: () => void;
+  canManageBots: boolean;
+  onRemoveBot: () => void;
 }) {
   const displayName = seat.occupied ? (seat.nickname ?? "玩家") : "等待加入";
   const status = !seat.occupied
     ? "空位"
-    : !seat.connected
-      ? "离线"
-      : seat.ready
-        ? "已准备"
-        : "未准备";
+    : seat.controller === "BOT"
+      ? "机器人 · 自动准备"
+      : !seat.connected
+        ? "离线"
+        : seat.ready
+          ? "已准备"
+          : "未准备";
 
   return (
     <View
@@ -114,6 +120,7 @@ function LobbySeat({
         <SeatAvatar
           avatarUrl={seat.avatarUrl}
           nickname={seat.occupied ? seat.nickname : "空"}
+          isBot={seat.controller === "BOT"}
           variant="lobby"
         />
         <View className="lobby-seat__copy">
@@ -150,6 +157,18 @@ function LobbySeat({
             onClick={onToggleReady}
           >
             {busy ? "处理中" : seat.ready ? "取消准备" : "准备"}
+          </Button>
+        </View>
+      ) : null}
+      {canManageBots && seat.controller === "BOT" ? (
+        <View className="lobby-seat__state-row">
+          <Button
+            className="lobby-bot-remove-button"
+            hoverClass="is-pressed"
+            disabled={busy}
+            onClick={onRemoveBot}
+          >
+            移除
           </Button>
         </View>
       ) : null}
@@ -263,6 +282,18 @@ export default function RoomPage() {
 
   const self = room === null ? null : selfPlayer(room);
   const selfSeat = room?.selfSeat ?? 0;
+  const menuSafeRight = useMemo(() => {
+    try {
+      const menu = Taro.getMenuButtonBoundingClientRect();
+      const windowWidth = Taro.getSystemInfoSync().windowWidth;
+      return Math.max(0, windowWidth - menu.left + 8);
+    } catch {
+      return 0;
+    }
+  }, []);
+  const shellStyle = {
+    "--menu-safe-right": `${menuSafeRight}px`,
+  } as CSSProperties;
   const drawnTileId = room?.selfDrawnTileId ?? null;
   // The freshly-drawn tile stays out of the sorted hand — and visually off to
   // the right in a dedicated slot — until the player acts on it (discards it,
@@ -445,7 +476,10 @@ export default function RoomPage() {
   }
 
   return (
-    <View className={`game-shell${room.actingSeat === room.selfSeat ? " is-self-turn" : ""}`}>
+    <View
+      className={`game-shell${room.actingSeat === room.selfSeat ? " is-self-turn" : ""}`}
+      style={shellStyle}
+    >
       <Image className="game-shell__bg" src={tableBackground} mode="aspectFill" />
       <View className="game-shell__overlay" />
       <View className="game-shell__content">
@@ -466,6 +500,10 @@ export default function RoomPage() {
               <Text className="lobby-toolbar__meta">底分 {room.baseScore}</Text>
               <Text className="lobby-toolbar__divider">·</Text>
               <Text className="lobby-toolbar__meta">出牌 {room.turnTimeoutSeconds}秒</Text>
+              <Text className="lobby-toolbar__divider">·</Text>
+              <Text className="lobby-toolbar__meta">
+                机器人{room.botDifficulty === "LOW" ? "低难度" : "高难度"}
+              </Text>
               <Text
                 className={`lobby-toolbar__connection${
                   roomCtrl.connectionStatus === "connected" ? " is-online" : ""
@@ -570,6 +608,8 @@ export default function RoomPage() {
                   positionClass={pos}
                   busy={roomCtrl.busy}
                   onToggleReady={() => void roomCtrl.ready()}
+                  canManageBots={room.isOwner}
+                  onRemoveBot={() => void roomCtrl.removeBot(seat.seat)}
                 />
               );
             })}
@@ -577,28 +617,56 @@ export default function RoomPage() {
               <Text className="lobby-center__eyebrow">等待开局</Text>
               <Text className="lobby-center__status">
                 {lobbyOccupiedCount < 4
-                  ? `还差 ${4 - lobbyOccupiedCount} 位玩家`
+                  ? `还差 ${4 - lobbyOccupiedCount} 个座位`
                   : `${lobbyReadyCount}/4 已准备`}
               </Text>
               <Text className="lobby-center__hint">
-                {lobbyOccupiedCount < 4 ? "复制房号或分享给好友" : "全员准备后自动开始"}
+                {lobbyOccupiedCount < 4 ? "邀请好友，或由房主添加机器人" : "所有真人准备后自动开始"}
               </Text>
               {room.isOwner ? (
-                <View className="lobby-score-picker">
-                  <Text className="lobby-score-picker__label">底分</Text>
-                  {BASE_SCORES.map((score) => (
-                    <Button
-                      key={score}
-                      className={`lobby-score-picker__button${
-                        room.baseScore === score ? " is-active" : ""
-                      }`}
-                      hoverClass="is-pressed"
-                      disabled={roomCtrl.busy || room.baseScore === score}
-                      onClick={() => void roomCtrl.updateBaseScore(score)}
-                    >
-                      {score}
-                    </Button>
-                  ))}
+                <View className="lobby-settings">
+                  <View className="lobby-score-picker">
+                    <Text className="lobby-score-picker__label">底分</Text>
+                    {BASE_SCORES.map((score) => (
+                      <Button
+                        key={score}
+                        className={`lobby-score-picker__button${
+                          room.baseScore === score ? " is-active" : ""
+                        }`}
+                        hoverClass="is-pressed"
+                        disabled={roomCtrl.busy || room.baseScore === score}
+                        onClick={() => void roomCtrl.updateBaseScore(score)}
+                      >
+                        {score}
+                      </Button>
+                    ))}
+                  </View>
+                  <View className="lobby-score-picker">
+                    <Text className="lobby-score-picker__label">难度</Text>
+                    {(["LOW", "HIGH"] as const).map((difficulty) => (
+                      <Button
+                        key={difficulty}
+                        className={`lobby-score-picker__button lobby-difficulty-button${
+                          room.botDifficulty === difficulty ? " is-active" : ""
+                        }`}
+                        hoverClass="is-pressed"
+                        disabled={roomCtrl.busy || room.botDifficulty === difficulty}
+                        onClick={() => void roomCtrl.updateBotDifficulty(difficulty)}
+                      >
+                        {difficulty === "LOW" ? "低" : "高"}
+                      </Button>
+                    ))}
+                    {room.lobbySeats.some((seat) => !seat.occupied) ? (
+                      <Button
+                        className="lobby-score-picker__button lobby-add-bot-button"
+                        hoverClass="is-pressed"
+                        disabled={roomCtrl.busy}
+                        onClick={() => void roomCtrl.addBot()}
+                      >
+                        +机器人
+                      </Button>
+                    ) : null}
+                  </View>
                 </View>
               ) : (
                 <Text className="lobby-center__base-score">本房底分 {room.baseScore}</Text>
@@ -744,6 +812,13 @@ export default function RoomPage() {
                   )}
                 </View>
               </View>
+
+              {room.selfRole === "SPECTATOR" ? (
+                <View className="spectator-banner">
+                  <Text className="spectator-banner__title">观战中</Text>
+                  <Text className="spectator-banner__copy">本局结束后自动替换机器人入座</Text>
+                </View>
+              ) : null}
 
               {SEATS.map((seat) => {
                 const player = room.players[seat];

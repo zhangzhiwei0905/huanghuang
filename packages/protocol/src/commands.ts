@@ -2,6 +2,12 @@ import { z } from "zod";
 import { baseScoreSchema } from "./game.js";
 
 export const roomModeSchema = z.enum(["FRIEND", "BOT"]);
+export const botDifficultySchema = z.enum(["LOW", "HIGH"]);
+export type BotDifficulty = z.infer<typeof botDifficultySchema>;
+export const BOT_DIFFICULTY_OPTIONS: readonly BotDifficulty[] = ["LOW", "HIGH"];
+export const DEFAULT_BOT_DIFFICULTY: BotDifficulty = "HIGH";
+
+export const roomCodeSchema = z.string().regex(/^(?:[1-9]\d{3}|\d{6})$/u);
 
 export const turnTimeoutSecondsSchema = z.union([z.literal(20), z.literal(25), z.literal(30)]);
 export type TurnTimeoutSeconds = z.infer<typeof turnTimeoutSecondsSchema>;
@@ -38,23 +44,31 @@ export const createRoomSchema = z.object({
   baseScore: baseScoreSchema.default(2),
   mode: roomModeSchema,
   turnTimeoutSeconds: turnTimeoutSecondsSchema.default(DEFAULT_TURN_TIMEOUT_SECONDS),
+  botDifficulty: botDifficultySchema.default(DEFAULT_BOT_DIFFICULTY),
 });
 
 export const joinRoomSchema = z.object({
   nickname: z.string().trim().min(1).max(12),
-  roomCode: z.string().regex(/^\d{6}$/u),
+  roomCode: roomCodeSchema,
 });
 
 export const readyRoomSchema = z.object({
   ready: z.boolean(),
 });
 
-export const updateRoomSettingsSchema = z.object({
-  baseScore: baseScoreSchema,
+export const updateRoomSettingsSchema = z
+  .object({
+    baseScore: baseScoreSchema.optional(),
+    botDifficulty: botDifficultySchema.optional(),
+  })
+  .refine((settings) => settings.baseScore !== undefined || settings.botDifficulty !== undefined);
+
+export const removeRoomBotSchema = z.object({
+  seat: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
 });
 
 export const chatMessageInputSchema = z.object({
-  roomCode: z.string().regex(/^\d{6}$/u),
+  roomCode: roomCodeSchema,
   message: z.string().trim().min(1).max(60),
 });
 
@@ -65,6 +79,7 @@ export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
 export type RoomMode = z.infer<typeof roomModeSchema>;
 export type ReadyRoomInput = z.infer<typeof readyRoomSchema>;
 export type UpdateRoomSettingsInput = z.infer<typeof updateRoomSettingsSchema>;
+export type RemoveRoomBotInput = z.infer<typeof removeRoomBotSchema>;
 export type ChatMessageInput = z.infer<typeof chatMessageInputSchema>;
 
 export type CommandResult = {

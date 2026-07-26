@@ -200,6 +200,49 @@ describe("round state machine", () => {
     expect(win.state.outcome).toMatchObject({ kind: "WIN", winnerSeat: 1, winType: "HARD" });
   });
 
+  it("offers soft win, continue and wildcard release for the two-pair draw", () => {
+    const state = createRound({
+      id: "round-two-pairs-wildcard",
+      dealerSeat: 0,
+      baseScore: 2,
+      randomInt: deterministicRandom,
+    });
+    const wildcardKind: TileKind = { suit: "WAN", rank: 5 };
+    const wildcard = makeTile("two-pair-wildcard", wildcardKind);
+    const triplet = (prefix: string, kind: TileKind) =>
+      ["a", "b", "c"].map((suffix) => makeTile(`${prefix}-${suffix}`, kind));
+    state.wildcardKind = wildcardKind;
+    state.players[0].hand = [
+      ...triplet("wan-1", { suit: "WAN", rank: 1 }),
+      ...triplet("tiao-2", { suit: "TIAO", rank: 2 }),
+      ...triplet("tong-3", { suit: "TONG", rank: 3 }),
+      makeTile("wan-7-a", { suit: "WAN", rank: 7 }),
+      makeTile("wan-7-b", { suit: "WAN", rank: 7 }),
+      makeTile("tiao-9-a", { suit: "TIAO", rank: 9 }),
+      makeTile("tiao-9-b", { suit: "TIAO", rank: 9 }),
+      wildcard,
+    ];
+    state.currentSeat = 0;
+    state.phase = "TURN_DECISION";
+    state.lastDrawSeat = 0;
+    state.lastDrawnTileId = wildcard.id;
+    state.winPassedThisTurn = false;
+
+    expect(availableTurnActions(state, 0)).toEqual(
+      expect.arrayContaining(["DECLARE_WIN", "CONTINUE_TURN", "RELEASE_WILDCARD"]),
+    );
+    const win = declareWin(state, 0);
+    expect(win.ok).toBe(true);
+    if (!win.ok) return;
+    expect(win.state.outcome).toMatchObject({ kind: "WIN", winnerSeat: 0, winType: "SOFT" });
+
+    const released = releaseWildcard(state, 0, wildcard.id);
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+    expect(released.state.players[0].releasedWildcards.at(-1)?.id).toBe(wildcard.id);
+    expect(released.state.players[0].personalMultiplier).toBe(2);
+  });
+
   it("keeps personal multipliers unchanged across pong and every kong action", () => {
     const baseState = createRound({
       id: "round-multiplier-invariants",
@@ -282,9 +325,9 @@ describe("round state machine", () => {
       randomInt: deterministicRandom,
     });
 
-    expect(([0, 1, 2, 3] as const).map((seat) => nextRound.players[seat].personalMultiplier)).toEqual([
-      1, 1, 1, 1,
-    ]);
+    expect(
+      ([0, 1, 2, 3] as const).map((seat) => nextRound.players[seat].personalMultiplier),
+    ).toEqual([1, 1, 1, 1]);
     expect(([0, 1, 2, 3] as const).map((seat) => nextRound.players[seat].score)).toEqual([
       20, -10, 5, -15,
     ]);

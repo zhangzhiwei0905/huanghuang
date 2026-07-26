@@ -45,12 +45,14 @@ describe("RoomService", () => {
     const room = service.createRoom(owner, 2, "FRIEND");
     const projection = service.project(room, owner.id);
 
-    expect(room.code).toMatch(/^\d{6}$/u);
+    expect(room.code).toMatch(/^[1-9]\d{3}$/u);
     expect(projection).toMatchObject({
       mode: "FRIEND",
       stage: "WAITING",
       baseScore: 2,
       turnTimeoutSeconds: 20,
+      botDifficulty: "HIGH",
+      selfRole: "PLAYER",
       selfSeat: 0,
       actionDeadlineAt: null,
       roundId: null,
@@ -65,6 +67,172 @@ describe("RoomService", () => {
       isSelf: true,
       ready: false,
     });
+  });
+
+  it("scans the complete four-digit code space for collisions and reports exhaustion", () => {
+    const service = createService();
+    const seedRoom = service.createRoom(owner, 2, "FRIEND");
+    const activeRooms = (
+      service as unknown as {
+        roomsByCode: Map<string, RoomState>;
+      }
+    ).roomsByCode;
+    activeRooms.clear();
+    for (let code = 1000; code <= 9999; code += 1) {
+      if (code !== 4321) activeRooms.set(String(code), seedRoom);
+    }
+
+    expect(
+      service.createRoom({ id: "collision-owner", nickname: "碰撞测试" }, 2, "FRIEND").code,
+    ).toBe("4321");
+    expect(() =>
+      service.createRoom({ id: "exhausted-owner", nickname: "耗尽测试" }, 2, "FRIEND"),
+    ).toThrow("All four-digit room codes are currently in use");
+  });
+
+  it("restores an active legacy six-digit snapshot with new field defaults", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const firstService = new RoomService(database);
+    const room = firstService.createRoom(owner, 2, "FRIEND");
+    const legacySnapshot = JSON.parse(JSON.stringify(room)) as Record<string, unknown>;
+    legacySnapshot.code = "123456";
+    delete legacySnapshot.botDifficulty;
+    delete legacySnapshot.spectators;
+    database.saveRoom(
+      { id: room.id, code: "123456", status: room.status, version: room.version },
+      JSON.stringify(legacySnapshot),
+    );
+
+    const restoredService = new RoomService(database);
+    const restored = restoredService.getRoom("123456");
+
+    expect(restored).not.toBeNull();
+    if (restored === null) throw new Error("Expected the legacy room to restore");
+    expect(restoredService.project(restored, owner.id)).toMatchObject({
+      roomCode: "123456",
+      botDifficulty: "HIGH",
+      spectators: [],
+    });
+  });
+
+  it("lets the friend-room owner manage bots and starts when all humans are ready", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND", 20, "LOW");
+    const guest = { id: "guest", nickname: "玩家" };
+
+    expect(service.addBot(guest.id, room.code)).toBe("FORBIDDEN");
+    expect(service.addBot(owner.id, room.code)).toBe(room);
+    expect(service.addBot(owner.id, room.code)).toBe(room);
+    expect(service.addBot(owner.id, room.code)).toBe(room);
+    expect(service.addBot(owner.id, room.code)).toBe("ACTION_NOT_AVAILABLE");
+
+    let projection = service.project(room, owner.id);
+    expect(projection.botDifficulty).toBe("LOW");
+    expect(projection.lobbySeats.filter((seat) => seat.controller === "BOT")).toHaveLength(3);
+    expect(projection.lobbySeats.filter((seat) => seat.ready)).toHaveLength(3);
+
+    expect(service.removeBot(owner.id, room.code, 2)).toBe(room);
+    projection = service.project(room, owner.id);
+    expect(projection.lobbySeats[2]).toMatchObject({
+      controller: null,
+      occupied: false,
+      ready: false,
+    });
+    expect(service.addBot(owner.id, room.code)).toBe(room);
+    expect(service.setReady(owner.id, room.code, true)).toBe(room);
+    expect(room.stage).toBe("PLAYING");
+  });
+
+  it("gives a waiting human priority over an existing bot seat", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    service.addBot(owner.id, room.code);
+    service.addBot(owner.id, room.code);
+    service.addBot(owner.id, room.code);
+
+    const guest = { id: "guest", nickname: "真人玩家" };
+    expect(service.joinRoom(guest, room.code)).toBe(room);
+    expect(service.project(room, guest.id)).toMatchObject({
+      selfRole: "PLAYER",
+      selfReady: false,
+    });
+    expect(service.project(room, owner.id).lobbySeats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ nickname: "真人玩家", controller: "HUMAN" }),
+      ]),
+    );
+    expect(
+      service.project(room, owner.id).lobbySeats.filter((seat) => seat.controller === "BOT"),
+    ).toHaveLength(2);
+  });
+
+  it("queues in-round humans as private-hand-safe spectators then seats them after the round", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    service.addBot(owner.id, room.code);
+    service.addBot(owner.id, room.code);
+    service.addBot(owner.id, room.code);
+    service.setReady(owner.id, room.code, true);
+
+    const spectator = { id: "spectator", nickname: "候补玩家" };
+    expect(service.joinRoom(spectator, room.code)).toBe(room);
+    const spectatorProjection = service.project(room, spectator.id);
+    expect(spectatorProjection.selfRole).toBe("SPECTATOR");
+    expect(spectatorProjection.selfSeat).toBeNull();
+    expect(spectatorProjection.legalActions).toEqual([]);
+    expect(spectatorProjection.players.every((player) => player.hand === null)).toBe(true);
+    expect(spectatorProjection.spectators).toEqual([
+      expect.objectContaining({ nickname: "候补玩家", isSelf: true }),
+    ]);
+    expect(service.hasMember(spectator.id, room.code)).toBe(true);
+
+    room.stage = "ROUND_RESULT";
+    room.nextRoundAt = new Date(0).toISOString();
+    service.tick(Date.now());
+
+    const waitingProjection = service.project(room, spectator.id);
+    expect(waitingProjection.stage).toBe("WAITING");
+    expect(waitingProjection.selfRole).toBe("PLAYER");
+    expect(waitingProjection.selfReady).toBe(false);
+    expect(waitingProjection.spectators).toEqual([]);
+    expect(waitingProjection.lobbySeats.filter((seat) => seat.controller === "BOT")).toHaveLength(
+      2,
+    );
+  });
+
+  it("caps active-round membership at four humans and seats spectators in join order", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    service.addBot(owner.id, room.code);
+    service.addBot(owner.id, room.code);
+    service.addBot(owner.id, room.code);
+    service.setReady(owner.id, room.code, true);
+
+    const spectators: AnonymousSession[] = [
+      { id: "spectator-1", nickname: "候补甲" },
+      { id: "spectator-2", nickname: "候补乙" },
+      { id: "spectator-3", nickname: "候补丙" },
+    ];
+    for (const spectator of spectators) {
+      expect(service.joinRoom(spectator, room.code)).toBe(room);
+    }
+    expect(service.joinRoom({ id: "spectator-4", nickname: "候补丁" }, room.code)).toBe(
+      "ROOM_FULL",
+    );
+    expect(
+      service.project(room, owner.id).spectators.map((spectator) => spectator.nickname),
+    ).toEqual(["候补甲", "候补乙", "候补丙"]);
+
+    room.stage = "ROUND_RESULT";
+    room.nextRoundAt = new Date(0).toISOString();
+    service.tick(Date.now());
+
+    const lobby = service.project(room, owner.id).lobbySeats;
+    expect(lobby.map((seat) => seat.nickname)).toEqual(["房主", "候补甲", "候补乙", "候补丙"]);
+    expect(lobby.every((seat) => seat.controller === "HUMAN")).toBe(true);
+    expect(lobby.every((seat) => !seat.ready)).toBe(true);
+    expect(room.spectators).toEqual([]);
   });
 
   it("creates an isolated bot match with three bots and a private projection", () => {
@@ -182,9 +350,9 @@ describe("RoomService", () => {
     ]);
   });
 
-  it("waits for bot confirmation and keeps cumulative scores when continuing", () => {
+  it("waits for bot confirmation and keeps cumulative scores and difficulty when continuing", () => {
     const service = createService();
-    const room = service.createRoom(owner, 2, "BOT");
+    const room = service.createRoom(owner, 2, "BOT", 20, "LOW");
     const firstRound = activeRound(room);
     firstRound.players[0].score = 6;
     firstRound.players[1].score = -2;
@@ -208,6 +376,7 @@ describe("RoomService", () => {
     expect(activeRound(room).id).not.toBe(firstRound.id);
     expect(activeRound(room).startingScores).toEqual({ 0: 6, 1: -2, 2: -2, 3: -2 });
     expect(room.nextDealerSeat).toBe(1);
+    expect(room.botDifficulty).toBe("LOW");
     expect(service.continueBotRound(owner.id, room.code)).toBe("ACTION_NOT_AVAILABLE");
   });
 
@@ -579,6 +748,43 @@ describe("RoomService", () => {
     service.setConnected(owner.id, true);
     expect(room.seats[0].controller).toBe("HUMAN");
     expect(room.seats[0].connected).toBe(true);
+  });
+
+  it("lets a trustee accept a soft win even when room bots use low difficulty", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT", 20, "LOW");
+    const round = activeRound(room);
+    const wildcardKind: TileKind = { suit: "WAN", rank: 5 };
+    const triplet = (prefix: string, suit: TileKind["suit"], rank: TileKind["rank"]) =>
+      ["a", "b", "c"].map((suffix) => testTile(`${prefix}-${suffix}`, suit, rank));
+    const wildcard = testTile("trustee-soft-wildcard", wildcardKind.suit, wildcardKind.rank);
+    round.wildcardKind = wildcardKind;
+    round.players[0].hand = [
+      ...triplet("trustee-wan-1", "WAN", 1),
+      ...triplet("trustee-tiao-2", "TIAO", 2),
+      ...triplet("trustee-tong-3", "TONG", 3),
+      testTile("trustee-wan-7-a", "WAN", 7),
+      testTile("trustee-wan-7-b", "WAN", 7),
+      testTile("trustee-tiao-9-a", "TIAO", 9),
+      testTile("trustee-tiao-9-b", "TIAO", 9),
+      wildcard,
+    ];
+    round.currentSeat = 0;
+    round.phase = "TURN_DECISION";
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = wildcard.id;
+    round.winPassedThisTurn = false;
+    room.seats[0].controller = "TRUSTEE";
+    room.actionDeadlineAt = new Date(0).toISOString();
+
+    service.tick(Date.now());
+
+    expect(room.stage).toBe("ROUND_RESULT");
+    expect(activeRound(room).outcome).toMatchObject({
+      kind: "WIN",
+      winnerSeat: 0,
+      winType: "SOFT",
+    });
   });
 
   it("closes an active bot room immediately when the owner dissolves", () => {

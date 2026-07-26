@@ -61,7 +61,8 @@
   flex: 0 0 auto;
   height: calc(44px + env(safe-area-inset-top));
   box-sizing: border-box;
-  padding: env(safe-area-inset-top) calc(1vmin + env(safe-area-inset-right)) 0
+  padding: env(safe-area-inset-top)
+    calc(var(--menu-safe-right, 0px) + 1vmin + env(safe-area-inset-right)) 0
     calc(1vmin + env(safe-area-inset-left));
   display: flex;
   align-items: center;
@@ -230,7 +231,7 @@
   position: absolute;
   z-index: 20;
   top: calc(1.2vmin + env(safe-area-inset-top));
-  right: calc(1.2vmin + env(safe-area-inset-right));
+  right: calc(var(--menu-safe-right, 0px) + 1.2vmin + env(safe-area-inset-right));
   display: flex;
   align-items: center;
   gap: 0.9vmin;
@@ -495,6 +496,22 @@
   box-shadow: 0 2px 0 rgb(90 118 99 / 35%);
 }
 
+.lobby-bot-remove-button {
+  flex-shrink: 0;
+  margin: 0 !important;
+  min-width: 52px !important;
+  width: 52px !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  padding: 0 !important;
+  border: 1px solid #c9aaa2 !important;
+  border-radius: 10px !important;
+  background: #f7efea !important;
+  color: #80534a !important;
+  font-size: 11px !important;
+}
+
 .seat-avatar {
   border-radius: 50%;
   background: #fff;
@@ -537,8 +554,8 @@
   z-index: 2;
   top: 47%;
   left: 50%;
-  width: max(34vmin, 210px);
-  min-height: 96px;
+  width: max(38vmin, 238px);
+  min-height: 118px;
   box-sizing: border-box;
   display: flex;
   transform: translate(-50%, -50%);
@@ -580,6 +597,13 @@
   margin-top: 1vmin;
 }
 
+.lobby-settings {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5vmin;
+}
+
 .lobby-score-picker__label {
   margin-right: 0.4vmin;
   color: rgb(255 255 255 / 58%);
@@ -605,6 +629,16 @@
   border-color: #d6bd7c !important;
   background: #d6bd7c !important;
   color: #24392e !important;
+}
+
+.lobby-difficulty-button {
+  min-width: 42px !important;
+}
+
+.lobby-add-bot-button {
+  min-width: 74px !important;
+  border-color: rgb(214 189 124 / 72%) !important;
+  color: #f4dd9d !important;
 }
 
 .lobby-invite-tip {
@@ -797,9 +831,22 @@
 }
 
 .player-meld-rail.pos-opposite {
-  top: max(11.5vmin, 46px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: 1.2vmin;
+  right: calc(50% + max(15vmin, 66px) + 1vmin);
+  left: auto;
+  justify-content: end;
+  transform: none;
+}
+
+.player-meld-rail.pos-opposite.is-dense {
+  grid-auto-flow: row;
+  grid-auto-columns: auto;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: end;
+}
+
+.player-meld-rail.pos-opposite.public-groups-5 {
+  grid-template-columns: repeat(3, max-content);
 }
 
 .player-meld-rail.pos-left,
@@ -1084,6 +1131,33 @@
   font-size: 1.6vmin;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.spectator-banner {
+  position: absolute;
+  z-index: 18;
+  bottom: max(4vmin, 18px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 1vmin;
+  padding: 0.8vmin 1.6vmin;
+  border: 1px solid rgb(226 220 202 / 70%);
+  border-radius: 999px;
+  background: rgb(253 252 246 / 94%);
+  color: #27312b;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.spectator-banner__title {
+  font-size: clamp(11px, 2vmin, 13px);
+  font-weight: 700;
+}
+
+.spectator-banner__copy {
+  color: #687269;
+  font-size: clamp(9px, 1.7vmin, 11px);
 }
 
 /* First tap selects, second tap discards — spell that out the first time a

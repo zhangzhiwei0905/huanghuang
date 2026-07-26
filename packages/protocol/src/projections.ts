@@ -1,4 +1,4 @@
-import type { RoomMode, TurnTimeoutSeconds } from "./commands.js";
+import type { BotDifficulty, RoomMode, TurnTimeoutSeconds } from "./commands.js";
 import type { BaseScore, Meld, PersonalMultiplier, Seat, Tile, TileKind, WinType } from "./game.js";
 
 export type PlayerController = "HUMAN" | "BOT" | "TRUSTEE";
@@ -32,6 +32,7 @@ export type ChatMessageProjection = {
 
 export type LobbySeatProjection = {
   seat: Seat;
+  controller: "HUMAN" | "BOT" | null;
   nickname: string | null;
   avatarUrl: string | null;
   occupied: boolean;
@@ -40,6 +41,13 @@ export type LobbySeatProjection = {
   isOwner: boolean;
   isSelf: boolean;
   score: number;
+};
+
+export type SpectatorProjection = {
+  nickname: string;
+  avatarUrl: string | null;
+  connected: boolean;
+  isSelf: boolean;
 };
 
 export type RoundSettlementProjection = {
@@ -87,12 +95,14 @@ export type RoomProjection = {
   version: number;
   baseScore: BaseScore;
   turnTimeoutSeconds: TurnTimeoutSeconds;
+  botDifficulty: BotDifficulty;
   mode: RoomMode;
   stage: RoomStage;
   roundId: string | null;
   roundStartedAt: string | null;
   waitingExpiresAt: string | null;
   isOwner: boolean;
+  selfRole: "PLAYER" | "SPECTATOR";
   selfReady: boolean;
   selfSeat: Seat | null;
   selfDrawnTileId: string | null;
@@ -115,6 +125,7 @@ export type RoomProjection = {
   tingHints: DiscardTingProjection[];
   players: PlayerProjection[];
   lobbySeats: LobbySeatProjection[];
+  spectators: SpectatorProjection[];
 };
 
 export type RoomUpdate = {

@@ -363,7 +363,8 @@ h1 {
 }
 .waiting-panel {
   width: min(560px, calc(100% - var(--safe-left) - var(--safe-right) - 36px));
-  margin: 8vh auto 0;
+  margin: 3vh auto 0;
+  padding-bottom: 28px;
   text-align: center;
 }
 .waiting-panel h2 {
@@ -426,6 +427,18 @@ h1 {
   align-self: center;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.seat-bot-remove {
+  grid-column: 2;
+  justify-self: end;
+  min-height: 28px;
+  padding: 0 8px;
+  color: var(--danger);
+  font-size: 10px;
+}
+.bot-add-button {
+  min-height: 40px;
+  margin: -8px 0 14px;
 }
 .waiting-panel > button {
   width: 100%;
@@ -643,6 +656,15 @@ h1 {
   gap: 4px;
   padding: 10px;
 }
+.position-top .player-melds {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 10px);
+  width: max-content;
+  max-width: min(48vw, 520px);
+  justify-content: flex-end;
+  padding: 0;
+}
 .player-melds .meld-group {
   flex: 0 0 auto;
   margin: 1px;
@@ -672,6 +694,26 @@ h1 {
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
+}
+.spectator-banner {
+  position: absolute;
+  z-index: 14;
+  bottom: 18px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 7px 13px;
+  transform: translateX(-50%);
+  color: var(--ink);
+  background: var(--panel);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.spectator-banner span {
+  color: var(--muted);
 }
 .position-left {
   top: 50%;
@@ -1517,6 +1559,45 @@ h1 {
   :root {
     --game-header-height: 46px;
     --action-dock-height: 52px;
+  }
+
+  .home-shell {
+    padding: calc(10px + var(--safe-top)) calc(18px + var(--safe-right))
+      calc(10px + var(--safe-bottom)) calc(18px + var(--safe-left));
+  }
+  .home-panel {
+    gap: clamp(20px, 5vw, 44px);
+    padding: 10px 6px;
+  }
+  .home-panel h1 {
+    font-size: clamp(46px, 7vw, 64px);
+  }
+  .eyebrow {
+    margin-bottom: 10px;
+  }
+  .subtitle {
+    margin-top: 10px;
+  }
+  .entry-form {
+    gap: 6px;
+  }
+  .entry-form label {
+    gap: 3px;
+  }
+  .entry-form input {
+    height: 36px;
+  }
+  .entry-form legend {
+    margin-bottom: 3px;
+  }
+  .entry-form button {
+    min-height: 34px;
+  }
+  .form-actions {
+    margin-top: 2px;
+  }
+  .home-footnote {
+    display: none;
   }
 
   .game-shell {

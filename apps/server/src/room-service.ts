@@ -12,6 +12,7 @@ import {
   declareWin,
   discardTile,
   discardableTileIds,
+  evaluateWin,
   passResponse,
   releasableWildcardIds,
   releaseWildcard,
@@ -23,6 +24,7 @@ import {
 } from "@huanghuang/game-engine";
 import type {
   BaseScore,
+  BotDifficulty,
   ChatMessageProjection,
   CommandEnvelope,
   CommandResult,
@@ -37,7 +39,7 @@ import type {
   TileKind,
   TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
-import { DEFAULT_TURN_TIMEOUT_SECONDS } from "@huanghuang/protocol";
+import { DEFAULT_BOT_DIFFICULTY, DEFAULT_TURN_TIMEOUT_SECONDS } from "@huanghuang/protocol";
 import { randomInt, randomUUID } from "node:crypto";
 import type { AnonymousSession, GameDatabase } from "./database.js";
 
@@ -57,12 +59,21 @@ type LegacyWaitingHuman = {
   joinedAt: string;
 };
 
+type SpectatorState = {
+  sessionId: string;
+  nickname: string;
+  avatarUrl: string | null;
+  connected: boolean;
+  joinedAt: string;
+};
+
 type PersistedRoomState = {
   id: string;
   code: string;
   ownerSessionId: string;
   baseScore: BaseScore;
   turnTimeoutSeconds?: TurnTimeoutSeconds;
+  botDifficulty?: BotDifficulty;
   status: "ACTIVE" | "CLOSED";
   version: number;
   dissolveAfterRound: boolean;
@@ -70,6 +81,7 @@ type PersistedRoomState = {
   seats: Record<Seat, SeatController>;
   waitingHumans?: LegacyWaitingHuman[];
   readySessionIds?: string[];
+  spectators?: SpectatorState[];
   mode?: RoomMode;
   stage?: RoomStage;
   scores?: Record<Seat, number>;
@@ -87,6 +99,7 @@ export type RoomState = {
   ownerSessionId: string;
   baseScore: BaseScore;
   turnTimeoutSeconds: TurnTimeoutSeconds;
+  botDifficulty: BotDifficulty;
   status: "ACTIVE" | "CLOSED";
   version: number;
   dissolveAfterRound: boolean;
@@ -95,6 +108,7 @@ export type RoomState = {
   stage: RoomStage;
   seats: Record<Seat, SeatController>;
   readySessionIds: string[];
+  spectators: SpectatorState[];
   scores: Record<Seat, number>;
   nextDealerSeat: Seat;
   round: RoundState | null;
@@ -161,6 +175,21 @@ function humanSeat(
 
 function sessionSeat(room: RoomState, sessionId: string): Seat | null {
   return SEATS.find((seat) => room.seats[seat].sessionId === sessionId) ?? null;
+}
+
+function spectatorIndex(room: RoomState, sessionId: string): number {
+  return room.spectators.findIndex((spectator) => spectator.sessionId === sessionId);
+}
+
+function humanSessionIds(room: RoomState): string[] {
+  return SEATS.flatMap((seat) => {
+    const sessionId = room.seats[seat].sessionId;
+    return sessionId === null ? [] : [sessionId];
+  });
+}
+
+function memberHumanSessionIds(room: RoomState): string[] {
+  return [...humanSessionIds(room), ...room.spectators.map((spectator) => spectator.sessionId)];
 }
 
 function roundScores(round: RoundState): Record<Seat, number> {
@@ -285,7 +314,9 @@ export class RoomService {
       const seats = structuredClone(persisted.seats);
       if (mode === "FRIEND" && stage === "WAITING") {
         for (const seat of SEATS) {
-          if (seats[seat].sessionId === null) seats[seat] = emptySeat(seat);
+          if (seats[seat].sessionId === null && seats[seat].controller !== "BOT") {
+            seats[seat] = emptySeat(seat);
+          }
         }
       }
       return {
@@ -294,6 +325,7 @@ export class RoomService {
         ownerSessionId: persisted.ownerSessionId,
         baseScore: persisted.baseScore,
         turnTimeoutSeconds: persisted.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS,
+        botDifficulty: persisted.botDifficulty ?? DEFAULT_BOT_DIFFICULTY,
         status: persisted.status,
         version: persisted.version,
         dissolveAfterRound: persisted.dissolveAfterRound,
@@ -302,6 +334,7 @@ export class RoomService {
         stage,
         seats,
         readySessionIds: persisted.readySessionIds ?? [],
+        spectators: persisted.spectators ?? [],
         scores: persisted.scores ?? (round === null ? { ...ZERO_SCORES } : roundScores(round)),
         nextDealerSeat:
           persisted.nextDealerSeat ??
@@ -366,6 +399,7 @@ export class RoomService {
         ownerSessionId: persisted.ownerSessionId,
         baseScore: persisted.baseScore,
         turnTimeoutSeconds: persisted.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS,
+        botDifficulty: persisted.botDifficulty ?? DEFAULT_BOT_DIFFICULTY,
         status: persisted.status,
         version: persisted.version,
         dissolveAfterRound: persisted.dissolveAfterRound,
@@ -374,6 +408,7 @@ export class RoomService {
         stage: "WAITING",
         seats,
         readySessionIds: persisted.readySessionIds ?? [],
+        spectators: [],
         scores: { ...ZERO_SCORES },
         nextDealerSeat: randomInt(4) as Seat,
         round: null,
@@ -392,6 +427,7 @@ export class RoomService {
       ownerSessionId: persisted.ownerSessionId,
       baseScore: persisted.baseScore,
       turnTimeoutSeconds: persisted.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS,
+      botDifficulty: persisted.botDifficulty ?? DEFAULT_BOT_DIFFICULTY,
       status: persisted.status,
       version: persisted.version,
       dissolveAfterRound: persisted.dissolveAfterRound,
@@ -400,6 +436,7 @@ export class RoomService {
       stage,
       seats: structuredClone(persisted.seats),
       readySessionIds: persisted.readySessionIds ?? [],
+      spectators: persisted.spectators ?? [],
       scores: round === null ? { ...ZERO_SCORES } : roundScores(round),
       nextDealerSeat: round?.outcome?.nextDealerSeat ?? round?.dealerSeat ?? (randomInt(4) as Seat),
       round,
@@ -478,6 +515,20 @@ export class RoomService {
 
   private enterWaiting(room: RoomState, now = Date.now()): void {
     this.syncRoundResult(room);
+    for (const spectator of room.spectators) {
+      const botSeatIndex = SEATS.find((seat) => room.seats[seat].controller === "BOT");
+      if (botSeatIndex === undefined) break;
+      room.seats[botSeatIndex] = humanSeat(
+        botSeatIndex,
+        {
+          id: spectator.sessionId,
+          nickname: spectator.nickname,
+          avatarUrl: spectator.avatarUrl,
+        },
+        spectator.connected,
+      );
+    }
+    room.spectators = [];
     room.stage = "WAITING";
     room.round = null;
     room.readySessionIds = [];
@@ -486,7 +537,9 @@ export class RoomService {
     room.actionDeadlineAt = null;
     room.nextRoundAt = null;
     for (const seat of SEATS) {
-      if (room.seats[seat].sessionId === null) room.seats[seat] = emptySeat(seat);
+      if (room.seats[seat].sessionId === null && room.seats[seat].controller !== "BOT") {
+        room.seats[seat] = emptySeat(seat);
+      }
     }
   }
 
@@ -509,7 +562,9 @@ export class RoomService {
     return true;
   }
 
-  private botDecisionView(round: RoundState, seat: Seat): BotDecisionView {
+  private botDecisionView(room: RoomState, seat: Seat): BotDecisionView {
+    const round = room.round;
+    if (round === null) throw new Error("Cannot project a bot decision without an active round");
     const player = round.players[seat];
     const legalActions =
       round.phase === "DISCARD_RESPONSE"
@@ -519,6 +574,15 @@ export class RoomService {
       seat,
       phase: round.phase === "DISCARD_RESPONSE" ? "DISCARD_RESPONSE" : "TURN_DECISION",
       legalActions,
+      botDifficulty: room.botDifficulty,
+      winType: legalActions.includes("DECLARE_WIN")
+        ? evaluateWin({
+            concealedTiles: player.hand,
+            melds: player.melds,
+            wildcardKind: round.wildcardKind,
+            winningTileId: round.lastDrawnTileId,
+          }).winType
+        : null,
       hand: player.hand,
       melds: player.melds,
       releasedWildcards: player.releasedWildcards,
@@ -585,7 +649,7 @@ export class RoomService {
     const round = room.round;
     if (round === null) return { ok: false, code: "WRONG_PHASE" };
     if (room.seats[seat].controller !== "BOT") return this.trusteeAction(round, seat);
-    const action = chooseBotAction(this.botDecisionView(round, seat), randomIntFromCrypto);
+    const action = chooseBotAction(this.botDecisionView(room, seat), randomIntFromCrypto);
     return action === null
       ? { ok: false, code: "ACTION_NOT_AVAILABLE" }
       : this.executeBotAction(round, seat, action);
@@ -645,11 +709,12 @@ export class RoomService {
   }
 
   private nextRoomCode(): string {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
+    const start = randomInt(9_000);
+    for (let offset = 0; offset < 9_000; offset += 1) {
+      const code = String(1_000 + ((start + offset) % 9_000));
       if (!this.roomsByCode.has(code)) return code;
     }
-    throw new Error("Unable to allocate a unique room code");
+    throw new Error("All four-digit room codes are currently in use");
   }
 
   createRoom(
@@ -657,6 +722,7 @@ export class RoomService {
     baseScore: BaseScore,
     mode: RoomMode,
     turnTimeoutSeconds: TurnTimeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS,
+    botDifficulty: BotDifficulty = DEFAULT_BOT_DIFFICULTY,
   ): RoomState {
     const room: RoomState = {
       id: randomUUID(),
@@ -664,6 +730,7 @@ export class RoomService {
       ownerSessionId: session.id,
       baseScore,
       turnTimeoutSeconds,
+      botDifficulty,
       status: "ACTIVE",
       version: 0,
       dissolveAfterRound: false,
@@ -677,6 +744,7 @@ export class RoomService {
         3: mode === "FRIEND" ? emptySeat(3) : botSeat(3),
       },
       readySessionIds: [],
+      spectators: [],
       scores: { ...ZERO_SCORES },
       nextDealerSeat: randomInt(4) as Seat,
       round: null,
@@ -696,10 +764,27 @@ export class RoomService {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
     if (sessionSeat(room, session.id) !== null) return room;
-    if (room.mode !== "FRIEND" || room.stage !== "WAITING") return "ROOM_NOT_JOINABLE";
-    const seat = SEATS.find((candidate) => room.seats[candidate].sessionId === null);
-    if (seat === undefined) return "ROOM_FULL";
-    room.seats[seat] = humanSeat(seat, session);
+    if (spectatorIndex(room, session.id) >= 0) return room;
+    if (room.mode !== "FRIEND") return "ROOM_NOT_JOINABLE";
+
+    if (room.stage === "WAITING") {
+      const seat =
+        SEATS.find((candidate) => room.seats[candidate].controller === "EMPTY") ??
+        SEATS.find((candidate) => room.seats[candidate].controller === "BOT");
+      if (seat === undefined) return "ROOM_FULL";
+      room.seats[seat] = humanSeat(seat, session);
+    } else {
+      const currentHumans = humanSessionIds(room).length + room.spectators.length;
+      const hasReplaceableBot = SEATS.some((seat) => room.seats[seat].controller === "BOT");
+      if (currentHumans >= 4 || !hasReplaceableBot) return "ROOM_FULL";
+      room.spectators.push({
+        sessionId: session.id,
+        nickname: session.nickname,
+        avatarUrl: session.avatarUrl ?? null,
+        connected: true,
+        joinedAt: new Date().toISOString(),
+      });
+    }
     room.version += 1;
     this.save(room);
     return room;
@@ -717,9 +802,12 @@ export class RoomService {
     room.readySessionIds = ready
       ? [...room.readySessionIds, sessionId]
       : room.readySessionIds.filter((id) => id !== sessionId);
-    const occupiedSessions = SEATS.map((candidate) => room.seats[candidate].sessionId);
+    const allSeatsOccupied = SEATS.every(
+      (candidate) => room.seats[candidate].controller !== "EMPTY",
+    );
+    const occupiedSessions = humanSessionIds(room);
     if (
-      occupiedSessions.every((candidate): candidate is string => candidate !== null) &&
+      allSeatsOccupied &&
       ready &&
       occupiedSessions.every((candidate) => room.readySessionIds.includes(candidate))
     ) {
@@ -749,17 +837,68 @@ export class RoomService {
 
   hasMember(sessionId: string, code: string): boolean {
     const room = this.roomsByCode.get(code);
-    return room !== undefined && sessionSeat(room, sessionId) !== null;
+    return (
+      room !== undefined &&
+      (sessionSeat(room, sessionId) !== null || spectatorIndex(room, sessionId) >= 0)
+    );
   }
 
-  updateBaseScore(sessionId: string, code: string, baseScore: BaseScore): RoomSettingsResult {
+  updateSettings(
+    sessionId: string,
+    code: string,
+    settings: {
+      baseScore?: BaseScore | undefined;
+      botDifficulty?: BotDifficulty | undefined;
+    },
+  ): RoomSettingsResult {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
     if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
     if (room.mode !== "FRIEND" || room.stage !== "WAITING") return "ACTION_NOT_AVAILABLE";
-    if (room.baseScore === baseScore) return room;
+    const nextBaseScore = settings.baseScore ?? room.baseScore;
+    const nextBotDifficulty = settings.botDifficulty ?? room.botDifficulty;
+    if (room.baseScore === nextBaseScore && room.botDifficulty === nextBotDifficulty) return room;
 
-    room.baseScore = baseScore;
+    room.baseScore = nextBaseScore;
+    room.botDifficulty = nextBotDifficulty;
+    room.readySessionIds = [];
+    room.version += 1;
+    this.save(room);
+    return room;
+  }
+
+  updateBaseScore(sessionId: string, code: string, baseScore: BaseScore): RoomSettingsResult {
+    return this.updateSettings(sessionId, code, { baseScore });
+  }
+
+  addBot(sessionId: string, code: string): RoomSettingsResult {
+    const room = this.roomsByCode.get(code);
+    if (room?.status !== "ACTIVE") return null;
+    if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
+    if (room.mode !== "FRIEND" || room.stage !== "WAITING") return "ACTION_NOT_AVAILABLE";
+    const seat = SEATS.find((candidate) => room.seats[candidate].controller === "EMPTY");
+    if (seat === undefined) return "ACTION_NOT_AVAILABLE";
+
+    room.seats[seat] = botSeat(seat);
+    room.readySessionIds = [];
+    room.version += 1;
+    this.save(room);
+    return room;
+  }
+
+  removeBot(sessionId: string, code: string, seat: Seat): RoomSettingsResult {
+    const room = this.roomsByCode.get(code);
+    if (room?.status !== "ACTIVE") return null;
+    if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
+    if (
+      room.mode !== "FRIEND" ||
+      room.stage !== "WAITING" ||
+      room.seats[seat].controller !== "BOT"
+    ) {
+      return "ACTION_NOT_AVAILABLE";
+    }
+
+    room.seats[seat] = emptySeat(seat);
     room.readySessionIds = [];
     room.version += 1;
     this.save(room);
@@ -798,22 +937,24 @@ export class RoomService {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
     const seat = sessionSeat(room, sessionId);
-    if (seat === null) return room;
+    const waitingIndex = spectatorIndex(room, sessionId);
+    if (seat === null && waitingIndex < 0) return room;
 
     room.readySessionIds = room.readySessionIds.filter((id) => id !== sessionId);
-    if (room.mode === "BOT") {
+    if (room.mode === "BOT" && seat !== null) {
       this.closeRoom(room, "EMPTY_ROOM");
       room.version += 1;
       this.save(room);
       return room;
     }
 
-    room.seats[seat] = room.stage === "WAITING" ? emptySeat(seat) : botSeat(seat);
+    if (seat !== null) {
+      room.seats[seat] = room.stage === "WAITING" ? emptySeat(seat) : botSeat(seat);
+    } else {
+      room.spectators.splice(waitingIndex, 1);
+    }
     if (room.ownerSessionId === sessionId) {
-      const candidates = SEATS.flatMap((candidateSeat) => {
-        const candidate = room.seats[candidateSeat];
-        return candidate.sessionId === null ? [] : [candidate.sessionId];
-      });
+      const candidates = memberHumanSessionIds(room);
       const nextOwner = candidates[randomInt(Math.max(candidates.length, 1))];
       if (nextOwner === undefined) {
         this.closeRoom(room, "EMPTY_ROOM");
@@ -832,12 +973,21 @@ export class RoomService {
     for (const room of this.roomsByCode.values()) {
       if (room.status !== "ACTIVE") continue;
       const seat = sessionSeat(room, sessionId);
-      if (seat === null) continue;
-      const controller = room.seats[seat];
-      const nextController = room.stage === "WAITING" ? "HUMAN" : connected ? "HUMAN" : "TRUSTEE";
-      if (controller.connected === connected && controller.controller === nextController) continue;
-      controller.connected = connected;
-      controller.controller = nextController;
+      const waitingIndex = spectatorIndex(room, sessionId);
+      if (seat === null && waitingIndex < 0) continue;
+      if (seat !== null) {
+        const controller = room.seats[seat];
+        const nextController = room.stage === "WAITING" ? "HUMAN" : connected ? "HUMAN" : "TRUSTEE";
+        if (controller.connected === connected && controller.controller === nextController) {
+          continue;
+        }
+        controller.connected = connected;
+        controller.controller = nextController;
+      } else {
+        const spectator = room.spectators[waitingIndex];
+        if (spectator === undefined || spectator.connected === connected) continue;
+        spectator.connected = connected;
+      }
       room.version += 1;
       this.refreshDeadline(room);
       this.save(room);
@@ -950,12 +1100,14 @@ export class RoomService {
       version: room.version,
       baseScore: room.baseScore,
       turnTimeoutSeconds: room.turnTimeoutSeconds,
+      botDifficulty: room.botDifficulty,
       mode: room.mode,
       stage: room.stage,
       roundId: round?.id ?? null,
       roundStartedAt: room.roundStartedAt,
       waitingExpiresAt: room.waitingExpiresAt,
       isOwner: room.ownerSessionId === sessionId,
+      selfRole: selfSeat === null ? "SPECTATOR" : "PLAYER",
       selfReady: room.readySessionIds.includes(sessionId),
       selfSeat,
       selfDrawnTileId,
@@ -976,20 +1128,33 @@ export class RoomService {
       players,
       lobbySeats: SEATS.map((seat) => {
         const controller = room.seats[seat];
-        const occupied = controller.sessionId !== null;
+        const occupied = controller.controller !== "EMPTY";
         return {
           seat,
+          controller:
+            controller.controller === "EMPTY"
+              ? null
+              : controller.controller === "BOT"
+                ? "BOT"
+                : "HUMAN",
           nickname: occupied ? controller.nickname : null,
           avatarUrl: occupied ? controller.avatarUrl : null,
           occupied,
           ready:
-            controller.sessionId !== null && room.readySessionIds.includes(controller.sessionId),
+            controller.controller === "BOT" ||
+            (controller.sessionId !== null && room.readySessionIds.includes(controller.sessionId)),
           connected: occupied && controller.connected,
           isOwner: controller.sessionId === room.ownerSessionId,
           isSelf: controller.sessionId === sessionId,
           score: round?.players[seat].score ?? room.scores[seat],
         };
       }),
+      spectators: room.spectators.map((spectator) => ({
+        nickname: spectator.nickname,
+        avatarUrl: spectator.avatarUrl,
+        connected: spectator.connected,
+        isSelf: spectator.sessionId === sessionId,
+      })),
     };
   }
 

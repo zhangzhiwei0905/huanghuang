@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Form, Image, Input, Picker, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import type { BaseScore, RoomMode, RoomProjection, TurnTimeoutSeconds } from "@huanghuang/protocol";
+import type {
+  BaseScore,
+  BotDifficulty,
+  RoomMode,
+  RoomProjection,
+  TurnTimeoutSeconds,
+} from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
 import { ApiError, roomApi } from "../../api/http";
 import { API_BASE } from "../../config";
@@ -22,12 +28,13 @@ const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
 // locally type-constrained; the server still validates the authoritative
 // create-room schema.
 const TURN_TIMEOUT_OPTIONS = [20, 25, 30] satisfies TurnTimeoutSeconds[];
+const BOT_DIFFICULTY_OPTIONS = ["LOW", "HIGH"] satisfies BotDifficulty[];
 
 type Mode = "HOME" | "CREATE" | "JOIN" | "BOT";
 type IdentityState = "checking" | "loggedOut" | "loggedIn";
 
 function sharedRoomCode(code: string | undefined): string | null {
-  return code !== undefined && /^\d{6}$/u.test(code) ? code : null;
+  return code !== undefined && /^(?:[1-9]\d{3}|\d{6})$/u.test(code) ? code : null;
 }
 
 // A rejection here can come from two very different layers: our own API
@@ -208,6 +215,7 @@ export default function IndexPage() {
   const [roomCode, setRoomCode] = useState(sharedCode ?? "");
   const [baseScore, setBaseScore] = useState<BaseScore>(2);
   const [turnTimeoutSeconds, setTurnTimeoutSeconds] = useState<TurnTimeoutSeconds>(20);
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>("HIGH");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -233,8 +241,8 @@ export default function IndexPage() {
 
   async function submit(kind: "CREATE" | "JOIN" | "BOT") {
     if (identity === null) return;
-    if (kind === "JOIN" && !/^\d{6}$/u.test(roomCode)) {
-      setError("房间号需要是 6 位数字");
+    if (kind === "JOIN" && !/^(?:[1-9]\d{3}|\d{6})$/u.test(roomCode)) {
+      setError("请输入 4 位房间号");
       return;
     }
     setBusy(true);
@@ -248,6 +256,7 @@ export default function IndexPage() {
               baseScore,
               (kind === "BOT" ? "BOT" : "FRIEND") satisfies RoomMode,
               turnTimeoutSeconds,
+              botDifficulty,
             );
       Taro.setStorageSync("huanghuang_open_room", room);
       await Taro.navigateTo({ url: "/pages/room/index" });
@@ -406,7 +415,7 @@ export default function IndexPage() {
                   value={roomCode}
                   maxlength={6}
                   type="number"
-                  placeholder="6 位数字"
+                  placeholder="4 位数字"
                   onInput={(event) => setRoomCode(event.detail.value)}
                 />
               </View>
@@ -446,6 +455,22 @@ export default function IndexPage() {
                       <Text className="mp-field__select-arrow">⌄</Text>
                     </View>
                   </Picker>
+                </View>
+                <View className="mp-field">
+                  <Text className="mp-field__label">机器人难度</Text>
+                  <View className="mp-score-row">
+                    {BOT_DIFFICULTY_OPTIONS.map((difficulty) => (
+                      <Button
+                        hoverClass="is-pressed"
+                        key={difficulty}
+                        className={`mp-score${botDifficulty === difficulty ? " is-on" : ""}`}
+                        disabled={busy}
+                        onClick={() => setBotDifficulty(difficulty)}
+                      >
+                        {difficulty === "LOW" ? "低 · 只硬胡" : "高 · 可软胡"}
+                      </Button>
+                    ))}
+                  </View>
                 </View>
               </>
             )}

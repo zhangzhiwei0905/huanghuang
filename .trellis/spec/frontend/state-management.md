@@ -57,17 +57,22 @@ type RoomProjection = {
   actingSeat: Seat | null;
   tingHints: DiscardTingProjection[];
   lobbySeats: LobbySeatProjection[];
+  botDifficulty: "LOW" | "HIGH";
+  selfRole: "PLAYER" | "SPECTATOR";
+  spectators: SpectatorProjection[];
 };
 
 type TurnTimeoutSeconds = 20 | 25 | 30;
 
-POST /api/rooms                 { nickname, baseScore, mode, turnTimeoutSeconds }
+POST /api/rooms                 { nickname, baseScore, mode, turnTimeoutSeconds, botDifficulty }
 POST /api/rooms/:code/ready    { ready: boolean }
-PATCH /api/rooms/:code/settings { baseScore: 1 | 2 | 5 | 10 }
+PATCH /api/rooms/:code/settings { baseScore?: 1 | 2 | 5 | 10, botDifficulty?: "LOW" | "HIGH" }
+POST /api/rooms/:code/bots     {}
+DELETE /api/rooms/:code/bots/:seat
 POST /api/rooms/:code/continue {}
 
 room:chat {
-  roomCode: string; // six digits
+  roomCode: string; // new four-digit code or active legacy six-digit code
   message: string; // trimmed, 1..60 characters
 }
 
@@ -83,14 +88,29 @@ type ChatMessageProjection = {
 
 ### 3. Contracts
 
-- `FRIEND` rooms use `WAITING → PLAYING → ROUND_RESULT → WAITING`; four occupied seats must all be ready before `PLAYING`.
+- `FRIEND` rooms use `WAITING → PLAYING → ROUND_RESULT → WAITING`; all four
+  seats must be occupied and every seated human must be ready before `PLAYING`.
+  Bots are always ready and every human ready state is cleared between rounds.
+- In `FRIEND + WAITING`, a joining human fills an empty seat first and otherwise
+  replaces a bot. During `PLAYING` or `ROUND_RESULT`, a joining human becomes a
+  private-hand-safe spectator only when a bot can be replaced and the combined
+  seated/spectating human count is below four. At the next waiting transition,
+  spectators replace bots in FIFO order.
+- Spectators are room members for snapshot and Socket subscription purposes,
+  but have `selfSeat = null`, receive `hand = null` for all four players, have
+  no legal actions, and cannot send game commands or table chat.
 - `BOT` rooms start in `PLAYING`, reject joins, and remain in `ROUND_RESULT` until the owner calls `/continue` or leaves.
 - `currentSeat` preserves the game engine's turn/discarder seat. `actingSeat` is the player currently required to act, including a discard responder. Player highlights and arrows use `actingSeat`; response-tile derivation continues to use `currentSeat`.
 - `lobbySeats` is the only waiting-room seat source. Components must not reconstruct seats from `players` or a second waiting-player list.
 - Waiting projections have `roundId = null`, `players = []`, no legal actions, and no action deadline.
 - Every `FRIEND + WAITING` projection has a UTC ISO `waitingExpiresAt`; starting a round clears it, and returning from a round creates a fresh three-minute deadline. Join, readiness and base-score changes do not extend it.
 - Readiness is an explicit desired state. Repeating `{ ready: true }` or `{ ready: false }` is idempotent; the client must not ask the server to perform an implicit toggle.
-- Only the current friend-room owner can change `baseScore`, and only in `WAITING`. A successful change clears every ready state so all four players reconfirm the new score.
+- Only the current friend-room owner can change `baseScore` or
+  `botDifficulty`, add bots, or remove bots, and only in `WAITING`. Every
+  successful setting or bot-seat change clears human readiness.
+- `LOW` difficulty bots declare only `HARD` wins; `HIGH` difficulty bots may
+  declare `HARD` or `SOFT` wins. The room setting applies to BOT matches and
+  friend-room bots, but never changes trustee behavior for disconnected humans.
 - Room creation accepts `turnTimeoutSeconds` as `20 | 25 | 30`; legacy
   requests that omit it default to 20. The value is projected back to every
   member and remains fixed for the lifetime of the room.
@@ -109,8 +129,8 @@ type ChatMessageProjection = {
 |---|---|
 | Create body has no valid `mode` | `400 INVALID_INPUT` |
 | Create body has a timeout other than 20, 25 or 30 | `400 INVALID_INPUT` |
-| Join targets a bot room or an in-progress friend room | `409 ROOM_NOT_JOINABLE` |
-| Join targets a full friend waiting room | `409 ROOM_FULL` |
+| Join targets a bot room | `409 ROOM_NOT_JOINABLE` |
+| Join targets a full waiting room, four-human active room, or active room with no replaceable bot | `409 ROOM_FULL` |
 | Ready payload omits a boolean `ready` | `400 INVALID_INPUT` |
 | Ready outside `FRIEND + WAITING` | `409 ACTION_NOT_AVAILABLE` |
 | Non-owner updates base score | `403 OWNER_ONLY` |
@@ -126,10 +146,14 @@ type ChatMessageProjection = {
 ### 5. Good/Base/Bad Cases
 
 - Good: the fourth unique ready call starts exactly one friend round and the next projection has a new `roundId`.
+- Good: an in-round spectator sees all four public areas but no private hand,
+  then replaces the earliest bot at the next waiting transition and must ready.
 - Good: a current member sends a 60-character-or-shorter message during a friend round; all room subscribers receive server-derived identity, and no room version changes.
 - Base: one-player friend room stays in `WAITING` with three unoccupied `lobbySeats` and a server-owned three-minute deadline.
 - Base: sending the same desired ready state or selecting the current base score returns the current projection without duplicating a transition.
 - Bad: treating `selfSeat === null` as the waiting signal; seated friend players have a non-null seat while waiting.
+- Bad: rendering `selfSeat === null` as a rejected-room screen; it is the
+  intentional spectator role during an active friend round.
 - Bad: persisting chat in the room snapshot or trusting client-provided nickname/seat; this leaks transient data and permits identity spoofing.
 - Bad: resetting `waitingExpiresAt` whenever somebody joins or toggles ready; a room could then be kept alive forever without starting.
 

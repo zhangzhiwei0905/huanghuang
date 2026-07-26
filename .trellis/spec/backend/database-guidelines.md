@@ -24,7 +24,10 @@ connection.pragma("busy_timeout = 5000");
 ## Schema and naming
 
 - Tables and columns use lowercase `snake_case`; TypeScript domain fields use `camelCase`.
-- IDs are UUID strings, room codes are six-character strings and timestamps are UTC ISO-8601 strings.
+- IDs are UUID strings and timestamps are UTC ISO-8601 strings. Newly allocated
+  room codes are four digits in the inclusive range `1000–9999`; active legacy
+  snapshots may retain six-digit codes and must remain addressable until they
+  naturally close.
 - Schema creation is currently an idempotent startup migration in `GameDatabase.migrate`. New migrations must remain additive until a versioned migration runner replaces it.
 - A room closure is persisted long enough to serve the authoritative close projection, then the scheduler deletes the row after the bounded notification window. Startup also deletes stale `CLOSED` rows before restoring active rooms.
 

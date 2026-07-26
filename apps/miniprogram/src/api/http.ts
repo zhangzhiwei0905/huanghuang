@@ -1,10 +1,12 @@
 import Taro from "@tarojs/taro";
 import type {
   BaseScore,
+  BotDifficulty,
   CommandEnvelope,
   CommandResult,
   RoomMode,
   RoomProjection,
+  Seat,
   TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
 import { API_BASE } from "../config";
@@ -67,10 +69,11 @@ export const roomApi = {
     baseScore: BaseScore,
     mode: RoomMode,
     turnTimeoutSeconds: TurnTimeoutSeconds,
+    botDifficulty: BotDifficulty,
   ): Promise<RoomProjection> {
     return request("/api/rooms", {
       method: "POST",
-      data: { nickname, baseScore, mode, turnTimeoutSeconds },
+      data: { nickname, baseScore, mode, turnTimeoutSeconds, botDifficulty },
     });
   },
   join(nickname: string, roomCode: string): Promise<RoomProjection> {
@@ -93,6 +96,18 @@ export const roomApi = {
       method: "PATCH",
       data: { baseScore },
     });
+  },
+  updateBotDifficulty(roomCode: string, botDifficulty: BotDifficulty): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/settings`, {
+      method: "PATCH",
+      data: { botDifficulty },
+    });
+  },
+  addBot(roomCode: string): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/bots`, { method: "POST", data: {} });
+  },
+  removeBot(roomCode: string, seat: Seat): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/bots/${seat}`, { method: "DELETE" });
   },
   continueBot(roomCode: string): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/continue`, { method: "POST", data: {} });

@@ -58,6 +58,14 @@ For a landscape game page, keep `disableScroll: true`, set the scene root to
 overflow hidden. Reserve component-level overflow only where it is genuinely
 needed, such as the hand tray's horizontal fallback.
 
+For the room page, use `navigationStyle: "custom"` together with
+`pageOrientation: "landscape"` and `disableScroll: true` to remove the native
+white navigation strip. The WeChat capsule remains platform-owned even in
+custom-navigation mode: read `Taro.getMenuButtonBoundingClientRect()` at
+runtime, expose a right-inset CSS custom property, and keep the room capsule
+and exit control outside that reserved area. Never hide or paint over the
+capsule.
+
 ### Landscape notch: safe-area env values need a visual floor
 
 In the DevTools landscape simulator, the black left notch can still be drawn
@@ -265,7 +273,10 @@ state render as short wrapping stats inside the card. Render melds/released
 wildcards exactly once in seat-specific public rails rather than allowing them
 to grow the identity card.
 
-- Opposite/self rails use horizontal group bands in reserved top/bottom lanes.
+- The opposite rail belongs immediately left of the opposite player's avatar,
+  not in the centered top discard lane. Anchor its right edge to the left edge
+  of the top identity station; dense four/five-group layouts may use two/three
+  columns as long as they expand away from the central discard region.
 - The local identity card belongs in the right side of the reserved band above
   the hand, not on the same bottom baseline as the hand. On narrow landscape
   screens, a bottom-aligned identity card is eventually covered by the

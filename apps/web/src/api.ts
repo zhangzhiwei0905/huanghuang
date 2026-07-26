@@ -1,9 +1,12 @@
 import type {
   BaseScore,
+  BotDifficulty,
   CommandEnvelope,
   CommandResult,
   RoomMode,
   RoomProjection,
+  Seat,
+  TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
 
 type ErrorBody = { error?: string };
@@ -32,10 +35,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const roomApi = {
-  create(nickname: string, baseScore: BaseScore, mode: RoomMode): Promise<RoomProjection> {
+  create(
+    nickname: string,
+    baseScore: BaseScore,
+    mode: RoomMode,
+    turnTimeoutSeconds: TurnTimeoutSeconds,
+    botDifficulty: BotDifficulty,
+  ): Promise<RoomProjection> {
     return request("/api/rooms", {
       method: "POST",
-      body: JSON.stringify({ nickname, baseScore, mode }),
+      body: JSON.stringify({ nickname, baseScore, mode, turnTimeoutSeconds, botDifficulty }),
     });
   },
   join(nickname: string, roomCode: string): Promise<RoomProjection> {
@@ -58,6 +67,18 @@ export const roomApi = {
       method: "PATCH",
       body: JSON.stringify({ baseScore }),
     });
+  },
+  updateBotDifficulty(roomCode: string, botDifficulty: BotDifficulty): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/settings`, {
+      method: "PATCH",
+      body: JSON.stringify({ botDifficulty }),
+    });
+  },
+  addBot(roomCode: string): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/bots`, { method: "POST", body: "{}" });
+  },
+  removeBot(roomCode: string, seat: Seat): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/bots/${seat}`, { method: "DELETE" });
   },
   continueBot(roomCode: string): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/continue`, { method: "POST", body: "{}" });

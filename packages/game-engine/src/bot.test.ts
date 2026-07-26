@@ -27,6 +27,8 @@ function view(options: Partial<BotDecisionView> & Pick<BotDecisionView, "hand">)
     seat: 0,
     phase: "TURN_DECISION",
     legalActions: ["DISCARD_TILE"],
+    botDifficulty: "HIGH",
+    winType: null,
     melds: [],
     releasedWildcards: [],
     wildcardKind: { suit: "TIAO", rank: 8 },
@@ -56,6 +58,8 @@ function botView(state: RoundState, seat: Seat): BotDecisionView {
       state.phase === "DISCARD_RESPONSE"
         ? [...(state.pendingResponse?.actions ?? []), "PASS_RESPONSE"]
         : availableTurnActions(state, seat),
+    botDifficulty: "HIGH",
+    winType: null,
     hand: state.players[seat].hand,
     melds: state.players[seat].melds,
     releasedWildcards: state.players[seat].releasedWildcards,
@@ -132,7 +136,10 @@ describe("balanced bot strategy", () => {
   it("declares a win and releases an excess wildcard before discarding", () => {
     const normalHand = [tile("normal", "WAN", 1)];
     expect(
-      chooseBotAction(view({ hand: normalHand, legalActions: ["DECLARE_WIN", "DISCARD_TILE"] }), first),
+      chooseBotAction(
+        view({ hand: normalHand, legalActions: ["DECLARE_WIN", "DISCARD_TILE"] }),
+        first,
+      ),
     ).toEqual({ type: "DECLARE_WIN" });
 
     const wildcardKind: TileKind = { suit: "TIAO", rank: 8 };
@@ -151,6 +158,32 @@ describe("balanced bot strategy", () => {
         first,
       ),
     ).toEqual({ type: "RELEASE_WILDCARD", tileId: "wildcard-a" });
+  });
+
+  it("lets low difficulty bots take hard wins but decline soft wins", () => {
+    const normalHand = [tile("normal", "WAN", 1)];
+    expect(
+      chooseBotAction(
+        view({
+          hand: normalHand,
+          legalActions: ["DECLARE_WIN", "DISCARD_TILE"],
+          botDifficulty: "LOW",
+          winType: "HARD",
+        }),
+        first,
+      ),
+    ).toEqual({ type: "DECLARE_WIN" });
+    expect(
+      chooseBotAction(
+        view({
+          hand: normalHand,
+          legalActions: ["DECLARE_WIN", "DISCARD_TILE"],
+          botDifficulty: "LOW",
+          winType: "SOFT",
+        }),
+        first,
+      ),
+    ).toEqual({ type: "DISCARD_TILE", tileId: "normal" });
   });
 
   it("passes a pong that would leave a worse post-claim hand", () => {
@@ -208,11 +241,7 @@ describe("balanced bot strategy", () => {
   it("takes guaranteed kong value during a discard response", () => {
     const discard = tile("discard", "TONG", 5);
     const responseView = view({
-      hand: [
-        tile("match-a", "TONG", 5),
-        tile("match-b", "TONG", 5),
-        tile("match-c", "TONG", 5),
-      ],
+      hand: [tile("match-a", "TONG", 5), tile("match-b", "TONG", 5), tile("match-c", "TONG", 5)],
       phase: "DISCARD_RESPONSE",
       legalActions: ["CLAIM_EXPOSED_KONG", "CLAIM_PONG", "PASS_RESPONSE"],
       pendingDiscard: discard,

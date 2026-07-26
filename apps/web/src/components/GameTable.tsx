@@ -1,5 +1,6 @@
 import type {
   BaseScore,
+  BotDifficulty,
   ChatMessageProjection,
   CommandEnvelope,
   Meld,
@@ -44,6 +45,9 @@ type GameTableProps = {
   chatMessages: ChatMessageProjection[];
   onReady: () => Promise<void>;
   onBaseScoreChange: (baseScore: BaseScore) => Promise<void>;
+  onBotDifficultyChange: (difficulty: BotDifficulty) => Promise<void>;
+  onAddBot: () => Promise<void>;
+  onRemoveBot: (seat: Seat) => Promise<void>;
   onContinue: () => Promise<void>;
   onChat: (message: string) => Promise<boolean>;
   onLeave: () => Promise<void>;
@@ -225,11 +229,7 @@ function PlayerStation({
               className={`released-wildcard-zone ${landedCategory === "wildcard" ? "is-landed" : ""}`}
               aria-label={`已放赖 ${player.releasedWildcards.length} 次，当前倍率 ${player.personalMultiplier} 倍`}
             >
-              <MahjongTile
-                tile={latestReleasedWildcard}
-                wildcardKind={wildcardKind}
-                compact
-              />
+              <MahjongTile tile={latestReleasedWildcard} wildcardKind={wildcardKind} compact />
               <b aria-hidden="true">×{player.releasedWildcards.length}</b>
             </div>
           )}
@@ -316,7 +316,7 @@ function TurnMarker({
   pendingAction,
 }: {
   room: RoomProjection;
-  selfSeat: Seat;
+  selfSeat: Seat | null;
   connectionStatus: ConnectionStatus;
   pendingAction: CommandEnvelope["type"] | null;
 }) {
@@ -455,9 +455,7 @@ function signedScore(value: number): string {
 }
 
 function sortedTiles(tiles: readonly Tile[]): Tile[] {
-  return [...tiles].sort(
-    (a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.rank - b.rank,
-  );
+  return [...tiles].sort((a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.rank - b.rank);
 }
 
 function RoundSettlementModal({
@@ -524,14 +522,12 @@ function RoundSettlementModal({
                   <strong>{playerName(finalHand.seat)}</strong>
                   <small>{winner ? "本局赢家" : `座位 ${finalHand.seat + 1}`}</small>
                 </div>
-                <div className="settlement-hand" aria-label={`${playerName(finalHand.seat)}的终局手牌`}>
+                <div
+                  className="settlement-hand"
+                  aria-label={`${playerName(finalHand.seat)}的终局手牌`}
+                >
                   {sortedTiles(finalHand.tiles).map((tile) => (
-                    <MahjongTile
-                      key={tile.id}
-                      tile={tile}
-                      wildcardKind={wildcardKind}
-                      compact
-                    />
+                    <MahjongTile key={tile.id} tile={tile} wildcardKind={wildcardKind} compact />
                   ))}
                 </div>
                 <div className="settlement-player-multiplier">
@@ -672,6 +668,9 @@ export function GameTable({
   chatMessages,
   onReady,
   onBaseScoreChange,
+  onBotDifficultyChange,
+  onAddBot,
+  onRemoveBot,
   onContinue,
   onChat,
   onLeave,
@@ -781,8 +780,7 @@ export function GameTable({
     previousDrawnTileIdRef.current = room.selfDrawnTileId;
   }, [connectionStatus, room.players, room.selfDrawnTileId]);
   const sortedHand = useMemo(
-    () =>
-      sortedTiles((self?.hand ?? []).filter((tile) => tile.id !== room.selfDrawnTileId)),
+    () => sortedTiles((self?.hand ?? []).filter((tile) => tile.id !== room.selfDrawnTileId)),
     [room.selfDrawnTileId, self?.hand],
   );
   const latestChatBySeat = useMemo(() => {
@@ -874,8 +872,8 @@ export function GameTable({
         </header>
         <section className="waiting-panel">
           <p className="eyebrow">WAITING ROOM</p>
-          <h2>等待四位真人准备</h2>
-          <p>进入房间后会固定占据一个座位。四位玩家全部入座并准备后，本局自动开始。</p>
+          <h2>等待玩家准备</h2>
+          <p>房主可用机器人补齐空位。所有真人准备后自动开始，机器人默认已准备。</p>
           <WaitingRoomExpiry expiresAt={room.waitingExpiresAt} />
           {connectionStatus === "connected" ? null : (
             <p className="network-inline-status" role="status">
@@ -896,17 +894,39 @@ export function GameTable({
                 <small>
                   {!seat.occupied
                     ? "空位"
-                    : seat.ready
-                      ? "已准备"
-                      : seat.connected
-                        ? "未准备"
-                        : "离线"}
+                    : seat.controller === "BOT"
+                      ? "机器人 · 自动准备"
+                      : seat.ready
+                        ? "已准备"
+                        : seat.connected
+                          ? "未准备"
+                          : "离线"}
                   {seat.isOwner ? " · 房主" : ""}
                 </small>
                 <b>{seat.score} 分</b>
+                {room.isOwner && seat.controller === "BOT" ? (
+                  <button
+                    type="button"
+                    className="seat-bot-remove"
+                    disabled={interactionLocked}
+                    onClick={() => void onRemoveBot(seat.seat)}
+                  >
+                    移除
+                  </button>
+                ) : null}
               </article>
             ))}
           </div>
+          {room.isOwner && room.lobbySeats.some((seat) => !seat.occupied) ? (
+            <button
+              type="button"
+              className="bot-add-button"
+              disabled={interactionLocked}
+              onClick={() => void onAddBot()}
+            >
+              添加机器人
+            </button>
+          ) : null}
           <fieldset className="room-score-settings">
             <legend>本房间底分</legend>
             <div className="score-options">
@@ -923,6 +943,25 @@ export function GameTable({
               ))}
             </div>
             <small>{room.isOwner ? "修改底分后全员需要重新准备" : "仅房主可修改底分"}</small>
+          </fieldset>
+          <fieldset className="room-score-settings">
+            <legend>机器人难度</legend>
+            <div className="score-options">
+              {(["LOW", "HIGH"] as const).map((difficulty) => (
+                <button
+                  type="button"
+                  key={difficulty}
+                  className={difficulty === room.botDifficulty ? "is-active" : ""}
+                  disabled={interactionLocked || !room.isOwner}
+                  onClick={() => void onBotDifficultyChange(difficulty)}
+                >
+                  {difficulty === "LOW" ? "低 · 只硬胡" : "高 · 可软胡"}
+                </button>
+              ))}
+            </div>
+            <small>
+              {room.isOwner ? "难度修改后全员需要重新准备" : "本房间机器人使用统一难度"}
+            </small>
           </fieldset>
           <button
             type="button"
@@ -955,23 +994,11 @@ export function GameTable({
     );
   }
 
-  if (selfSeat === null) {
-    return (
-      <main className="waiting-shell">
-        <section className="waiting-panel">
-          <h2>你不在当前牌局中</h2>
-          <button type="button" className="primary-action" onClick={() => void onLeave()}>
-            返回主页
-          </button>
-        </section>
-      </main>
-    );
-  }
-
+  const viewSeat = selfSeat ?? 0;
   const actions = room.legalActions as CommandEnvelope["type"][];
   const dockActions = actions.filter((action) => !isPrimaryGameAction(action));
   const canSelectHand = actions.some((action) => TILE_ACTIONS.includes(action));
-  const selfTurn = room.actingSeat === selfSeat;
+  const selfTurn = selfSeat !== null && room.actingSeat === selfSeat;
   const statusMessage =
     connectionStatus === "connecting"
       ? "正在连接牌局…"
@@ -1017,8 +1044,8 @@ export function GameTable({
             key={seat}
             player={playerAt(room, seat)}
             active={room.actingSeat === seat}
-            self={seat === selfSeat}
-            position={relativePosition(seat, selfSeat)}
+            self={selfSeat !== null && seat === selfSeat}
+            position={relativePosition(seat, viewSeat)}
             wildcardKind={room.wildcardKind}
             chatMessage={latestChatBySeat.get(seat) ?? null}
             landedMeldId={landedHighlight?.seat === seat ? landedHighlight.meldId : null}
@@ -1065,7 +1092,7 @@ export function GameTable({
         {actionNotice === null ? null : (
           <div
             key={`${room.version}-${actionNotice.seat}-${actionNotice.action}`}
-            className={`player-action-notice ${ACTION_NOTICE_POSITION_CLASS[relativePosition(actionNotice.seat, selfSeat)] ?? ""}`}
+            className={`player-action-notice ${ACTION_NOTICE_POSITION_CLASS[relativePosition(actionNotice.seat, viewSeat)] ?? ""}`}
             role="status"
             aria-label={playerActionNoticeLabel(room, actionNotice)}
           >
@@ -1084,11 +1111,18 @@ export function GameTable({
           <DiscardZone
             key={`discards-${seat}`}
             player={playerAt(room, seat)}
-            position={relativePosition(seat, selfSeat)}
+            position={relativePosition(seat, viewSeat)}
             wildcardKind={room.wildcardKind}
             recentDiscardId={recentDiscardIds.get(seat) ?? null}
           />
         ))}
+
+        {selfSeat === null ? (
+          <div className="spectator-banner" role="status">
+            <strong>观战中</strong>
+            <span>本局结束后自动替换机器人入座</span>
+          </div>
+        ) : null}
 
         <section className={`self-area ${selfTurn ? "is-self-turn" : ""}`}>
           {self === null ? null : (
@@ -1154,7 +1188,7 @@ export function GameTable({
       </section>
 
       <div className="action-dock" aria-live="polite">
-        {room.mode === "FRIEND" ? (
+        {room.mode === "FRIEND" && selfSeat !== null ? (
           <>
             <div className="action-status">
               {statusMessage ??
@@ -1183,10 +1217,12 @@ export function GameTable({
           </>
         ) : (
           <div className="action-status">
-            {statusMessage ??
-              (room.actingSeat === selfSeat || actions.length > 0
-                ? "请选择牌或操作"
-                : "等待其他玩家")}
+            {selfSeat === null
+              ? `观战候补 ${room.spectators.findIndex((spectator) => spectator.isSelf) + 1} · 本局结束后自动入座`
+              : (statusMessage ??
+                (room.actingSeat === selfSeat || actions.length > 0
+                  ? "请选择牌或操作"
+                  : "等待其他玩家"))}
           </div>
         )}
         <div className="action-buttons">
