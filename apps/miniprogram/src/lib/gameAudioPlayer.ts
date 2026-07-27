@@ -49,23 +49,48 @@ const AUDIO_WINDOWS: Record<GameAudioFileName, AudioWindow> = {
 
 const AUDIO_FILE_NAMES = Object.keys(AUDIO_WINDOWS) as GameAudioFileName[];
 
+/* Two warm contexts cover the common overlap (tile callout + action stinger)
+   without keeping the whole 37-clip set alive. */
+const POOL_SIZE = 2;
+
 type AudioContext = ReturnType<typeof Taro.createInnerAudioContext>;
 type PlaybackTimer = ReturnType<typeof setTimeout>;
 type ActivePlayback = {
   context: AudioContext;
   timer: PlaybackTimer | null;
+  pooled: boolean;
   destroyed: boolean;
 };
 
 export type GameAudioPlayer = {
   play: (fileName: GameAudioFileName) => void;
+  /** Pre-resolve cloud URLs and pre-create the context pool. Silent no-op on
+      failure — playback keeps its lazy fallback path. */
+  warmup: () => void;
   destroy: () => void;
 };
 
+function configureContext(context: AudioContext): void {
+  context.autoplay = false;
+  context.loop = false;
+  context.obeyMuteSwitch = true;
+}
+
 export function createGameAudioPlayer(): GameAudioPlayer {
   const activePlaybacks = new Set<ActivePlayback>();
+  const pool: AudioContext[] = [];
   const leadInSafetySeconds = 0.05;
   let playerDestroyed = false;
+
+  function releaseContext(context: AudioContext): void {
+    if (playerDestroyed || pool.length >= POOL_SIZE) {
+      context.destroy();
+      return;
+    }
+    context.stop();
+    context.src = "";
+    pool.push(context);
+  }
 
   function dispose(playback: ActivePlayback, stop: boolean): void {
     if (playback.destroyed) return;
@@ -76,7 +101,20 @@ export function createGameAudioPlayer(): GameAudioPlayer {
     }
     activePlaybacks.delete(playback);
     if (stop) playback.context.stop();
-    playback.context.destroy();
+    if (playback.pooled && !stop) {
+      releaseContext(playback.context);
+    } else {
+      playback.context.destroy();
+    }
+  }
+
+  function acquireContext(): { context: AudioContext; pooled: boolean } {
+    const pooledContext = pool.pop();
+    if (pooledContext !== undefined) return { context: pooledContext, pooled: true };
+    return {
+      context: Taro.createInnerAudioContext({ useWebAudioImplement: true }),
+      pooled: false,
+    };
   }
 
   return {
@@ -87,17 +125,16 @@ export function createGameAudioPlayer(): GameAudioPlayer {
         const src = urls.get(fileName);
         if (src === undefined) return;
 
-        const context = Taro.createInnerAudioContext({ useWebAudioImplement: true });
+        const { context, pooled } = acquireContext();
         const playback: ActivePlayback = {
           context,
           timer: null,
+          pooled,
           destroyed: false,
         };
         activePlaybacks.add(playback);
 
-        context.autoplay = false;
-        context.loop = false;
-        context.obeyMuteSwitch = true;
+        configureContext(context);
         context.startTime = Math.max(0, clip.startTime - leadInSafetySeconds);
         context.src = src;
         context.onEnded(() => dispose(playback, false));
@@ -120,10 +157,29 @@ export function createGameAudioPlayer(): GameAudioPlayer {
         }
       });
     },
+    warmup() {
+      // Kick the shared URL cache now so the first in-round play() skips the
+      // cloud round-trip; then pre-create the pool contexts.
+      void resolveAudioFileUrls(AUDIO_FILE_NAMES).then(() => {
+        if (playerDestroyed) return;
+        while (pool.length < POOL_SIZE) {
+          try {
+            const context = Taro.createInnerAudioContext({ useWebAudioImplement: true });
+            configureContext(context);
+            pool.push(context);
+          } catch {
+            break;
+          }
+        }
+      });
+    },
     destroy() {
       playerDestroyed = true;
       for (const playback of [...activePlaybacks]) {
         dispose(playback, true);
+      }
+      for (const context of pool.splice(0)) {
+        context.destroy();
       }
     },
   };

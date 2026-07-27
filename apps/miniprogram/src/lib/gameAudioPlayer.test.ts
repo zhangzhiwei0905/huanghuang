@@ -147,4 +147,72 @@ describe("game audio player", () => {
 
     expect(Taro.createInnerAudioContext).not.toHaveBeenCalled();
   });
+
+  it("warmup pre-creates pool contexts and play() reuses them", async () => {
+    const pooledAudio = createAudioContextMock();
+    vi.mocked(Taro.createInnerAudioContext).mockReturnValue(
+      pooledAudio as unknown as ReturnType<typeof Taro.createInnerAudioContext>,
+    );
+    const player = createGameAudioPlayer();
+
+    player.warmup();
+    await vi.waitFor(() => {
+      expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(2);
+    });
+
+    player.play("action-pong.mp3");
+    await vi.waitFor(() => {
+      expect(pooledAudio.play).toHaveBeenCalledTimes(1);
+    });
+    // Pool reuse means no third context was created for the first play.
+    expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(2);
+
+    player.destroy();
+    // One context is idle in the pool; the playing one is stopped + destroyed
+    // (destroy path uses stop=true which never releases back to the pool).
+    expect(pooledAudio.destroy).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a pooled context to the pool on natural end instead of destroying it", async () => {
+    const pooledAudio = createAudioContextMock();
+    vi.mocked(Taro.createInnerAudioContext).mockReturnValue(
+      pooledAudio as unknown as ReturnType<typeof Taro.createInnerAudioContext>,
+    );
+    const player = createGameAudioPlayer();
+
+    player.warmup();
+    await vi.waitFor(() => {
+      expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(2);
+    });
+
+    player.play("tile-wan-1.mp3");
+    await vi.waitFor(() => {
+      expect(pooledAudio.play).toHaveBeenCalledTimes(1);
+    });
+    pooledAudio.emitEnded();
+    expect(pooledAudio.destroy).not.toHaveBeenCalled();
+    expect(pooledAudio.stop).toHaveBeenCalled();
+
+    // Next play reuses the returned context — still no new creation.
+    player.play("tile-wan-2.mp3");
+    await vi.waitFor(() => {
+      expect(pooledAudio.play).toHaveBeenCalledTimes(2);
+    });
+    expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(2);
+
+    player.destroy();
+  });
+
+  it("warmup is a silent no-op when the cloud resolve fails", async () => {
+    vi.mocked(Taro.cloud.getTempFileURL).mockRejectedValueOnce(new Error("network down"));
+    const player = createGameAudioPlayer();
+
+    expect(() => player.warmup()).not.toThrow();
+    await vi.waitFor(() => {
+      expect(Taro.cloud.getTempFileURL).toHaveBeenCalledTimes(1);
+    });
+    // The shared cache resolved to an empty map; warmup still fills the pool
+    // so later plays skip context creation even though URLs are missing.
+    player.destroy();
+  });
 });
