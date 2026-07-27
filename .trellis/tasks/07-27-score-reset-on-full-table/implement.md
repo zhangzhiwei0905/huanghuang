@@ -4,7 +4,7 @@
 
 - [ ] 1. `packages/protocol/src/projections.ts`：`RoomProjection` 新增 `scoreResetPending: boolean`，`schemaVersion` 从 `6` 改为 `7`。
 - [ ] 2. `apps/server/src/room-service.ts`：
-  - [ ] 2.1 `RoomState` 与 `PersistedRoomState` 新增 `scoresIncludeBotRounds`（持久化侧为可选）。
+  - [ ] 2.1 `RoomState` 与 `PersistedRoomState` 新增 `fullTableScoreResetDone`（持久化侧为可选）。
   - [ ] 2.2 `createRoom()` 初始化为 `false`（`BOT` 模式在随后的 `startRound()` 里自然被置为 `true`）。
   - [ ] 2.3 `normalizeRoom()` 两个分支补默认值，按 design 的保守推断。
   - [ ] 2.4 `startRound()` 开头加入清零 + 标记维护，位置在 `createRound()` 之前。

@@ -17,26 +17,25 @@
 `RoomState` 新增：
 
 ```ts
-scoresIncludeBotRounds: boolean;
+fullTableScoreResetDone: boolean;
 ```
 
-含义：当前 `room.scores` 里是否累计过「至少一个座位不是真人」的局。它是清零的必要条件，也是清零后要复位的标记。
+含义：本房间是否已经做过那唯一一次满座清零。`createRoom` 初始化为 `false`，只会 `false → true` 单向翻转。
 
-`startRound()` 在创建新局前按顺序做两件事：
+`startRound()` 在创建新局前：
 
 ```ts
-const allHuman = SEATS.every((seat) => room.seats[seat].controller === "HUMAN");
-if (allHuman && room.scoresIncludeBotRounds) {
+if (!room.fullTableScoreResetDone && isAllHumanTable(room.seats)) {
   room.scores = { ...ZERO_SCORES };
-  room.scoresIncludeBotRounds = false;
+  room.fullTableScoreResetDone = true;
 }
-room.scoresIncludeBotRounds = room.scoresIncludeBotRounds || !allHuman;
 room.round = createRound({ ..., startingScores: room.scores });
 ```
 
-- 纯真人连续局：`scoresIncludeBotRounds` 一直是 `false`，不清零，满足 R2 / AC2。
-- `BOT` 模式房：每局都有机器人，标记恒为 `true`，`continueBotRound` 不清零，满足 AC3。
-- 机器人局 → 真人满座：第一局把标记置 `true`，顶替后满座开局时清零并复位，之后回到纯真人累计，满足 R1 / AC1。
+- 机器人局 → 真人满座：机器人局开局不满足全真人，标记保持 `false`；顶替后满座开局清零并置 `true`，满足 R1 / AC1。
+- 纯真人连续局：第一局就把这次清零消耗在一个本来就是 0 的账本上，之后正常累计，满足 R2 / AC2。
+- `BOT` 模式房：永远坐着机器人且不能被加入，标记恒为 `false`，`continueBotRound` 不清零，满足 AC3。
+- 掉线顶替 → 重连：标记已是 `true`，不再清零，掉线前的积分继续有效。
 
 `EMPTY` 座位不可能进入 `startRound`（开局条件要求四座非 `EMPTY`），因此判定只需要区分 `HUMAN` 与 `BOT`。
 
@@ -48,7 +47,7 @@ room.round = createRound({ ..., startingScores: room.scores });
 scoreResetPending: boolean;
 ```
 
-计算式：`room.scoresIncludeBotRounds && SEATS.every((seat) => room.seats[seat].controller === "HUMAN")`。
+计算式：`!room.fullTableScoreResetDone && isAllHumanTable(room.seats)`。
 
 语义是「下一局开局时会清零」，为真的前提是牌桌已经全真人。客户端只读这个布尔量渲染提示，不做任何座位或分数推导，满足 R3。
 
@@ -56,15 +55,15 @@ scoreResetPending: boolean;
 
 ## 持久化兼容
 
-`PersistedRoomState` 新增可选字段 `scoresIncludeBotRounds?: boolean`。`normalizeRoom()` 的两个分支都要给默认值：
+`PersistedRoomState` 新增可选字段 `fullTableScoreResetDone?: boolean`。`normalizeRoom()` 的三个返回分支都要给默认值：
 
 ```ts
-scoresIncludeBotRounds:
-  persisted.scoresIncludeBotRounds ??
-  SEATS.some((seat) => persisted.seats[seat].controller === "BOT"),
+fullTableScoreResetDone:
+  persisted.fullTableScoreResetDone ??
+  !SEATS.some((seat) => seats[seat].controller === "BOT"),
 ```
 
-对旧快照做保守推断：当前坐着机器人的房间视为「积分含机器人局」，将来满座后清零；已经全真人的旧房间视为 `false`，不会凭空清掉玩家已有积分（满足 R5 / AC5）。legacy `waitingHumans` 分支重建座位时没有机器人，取 `false`。
+对旧快照做保守推断：已经全真人的旧房间视为「清零已完成」，不会凭空清掉玩家已有积分；当前坐着机器人的房间视为还欠一次清零，将来满座时补上（满足 R5 / AC5）。legacy `waitingHumans` 分支重建出的座位全是真人且积分归零，直接取 `true`。
 
 ## 客户端
 
@@ -75,15 +74,17 @@ scoresIncludeBotRounds:
 
 纯展示，无本地状态，符合 `frontend/state-management.md` 里「`lobbySeats` 是唯一等待房座位来源、客户端只做投影派生」的约定。
 
-## 已知副作用：中途掉线被机器人顶替
+## 已确认：清零是房间级一次性行为
 
-标记在**开局时刻**计算（`!allHuman`），不是局末。这带来一个需求文字没描述的分支：
+标记语义经用户确认为「本房间是否已经做过那唯一一次清零」，不是「本局有没有机器人」。
 
-四真人房打了几局（标记 `false`，积分累计），某人 `leaveRoom` 后座位被 `botSeat()` 顶替，接着又开了一局 → 该局开局时有机器人 → 标记变 `true`。之后新真人补进来满座准备，会把**包括之前纯真人局在内的全部积分**清零。
+- 触发：某局开局时四座全是真人，且本房间还没清零过 → 清零并置 `true`。
+- 之后永不再触发。玩家掉线被 `botSeat()` 顶替、打完几局、玩家重连回到该座位，四座重新全真人，**不清零**，掉线前的积分继续有效。
+- 想要全新的计分账本只能重新创建房间。
 
-这与父任务确认的「清零重新开始计分」是一致的（该口径本身就是整体清零，不做分局拆分），但它的触发场景比"先带机器人练手"更宽。如果希望掉线顶替不触发清零，需要把标记的语义从「本局有机器人」改成「本局是机器人练手局」，那需要额外区分 `addBot` 补位与 `leaveRoom` 顶替，属于新的需求决策。
+早期版本用的是「本局有机器人则重新武装标记」（`scoresIncludeBotRounds = !allHuman`），会让一次掉线顶替导致后续满座把纯真人局的积分也清掉。这是错的，已废弃。
 
 ## 风险
 
 - 唯一的行为回归风险是误清零纯真人房积分。由 AC2 / AC3 的既有测试守住。
-- `scoresIncludeBotRounds` 是新的持久化字段，写入 `save(room)` 的 JSON。`database.ts` 存的是整体 JSON，不需要 schema 迁移。
+- `fullTableScoreResetDone` 是新的持久化字段，写入 `save(room)` 的 JSON。`database.ts` 存的是整体 JSON，不需要 schema 迁移。

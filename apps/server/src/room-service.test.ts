@@ -1457,7 +1457,7 @@ describe("RoomService", () => {
     service.setReady(owner.id, room.code, true);
 
     expect(room.stage).toBe("PLAYING");
-    expect(room.scoresIncludeBotRounds).toBe(true);
+    expect(room.fullTableScoreResetDone).toBe(false);
 
     const guests: AnonymousSession[] = [
       { id: "guest-1", nickname: "甲" },
@@ -1489,8 +1489,52 @@ describe("RoomService", () => {
     expect(room.stage).toBe("PLAYING");
     expect(room.scores).toEqual({ 0: 0, 1: 0, 2: 0, 3: 0 });
     expect(activeRound(room).startingScores).toEqual({ 0: 0, 1: 0, 2: 0, 3: 0 });
-    expect(room.scoresIncludeBotRounds).toBe(false);
+    expect(room.fullTableScoreResetDone).toBe(true);
     expect(service.project(room, owner.id).scoreResetPending).toBe(false);
+  });
+
+  it("never resets again after a disconnect, bot substitution and reconnect", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) {
+      service.joinRoom(guest, room.code);
+      service.setReady(guest.id, room.code, true);
+    }
+    service.setReady(owner.id, room.code, true);
+    expect(room.fullTableScoreResetDone).toBe(true);
+
+    // A seated human leaves mid-round, so a bot takes the seat for the next round.
+    const leaver = guests[2] ?? { id: "", nickname: "" };
+    service.leaveRoom(leaver.id, room.code);
+    expect(room.seats[3].controller).toBe("BOT");
+
+    const botRound = activeRound(room);
+    botRound.players[0].score = 20;
+    botRound.players[1].score = -6;
+    botRound.players[2].score = -7;
+    botRound.players[3].score = -7;
+    botRound.phase = "ROUND_OVER";
+    botRound.outcome = { kind: "DRAW", nextDealerSeat: 0 };
+    room.stage = "ROUND_RESULT";
+    room.nextRoundAt = new Date(0).toISOString();
+    service.tick(Date.now());
+    expect(room.stage).toBe("WAITING");
+
+    // The player reconnects into the bot seat and the table is all-human again.
+    expect(service.joinRoom(leaver, room.code)).toBe(room);
+    expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
+    expect(service.project(room, owner.id).scoreResetPending).toBe(false);
+
+    for (const guest of guests) service.setReady(guest.id, room.code, true);
+    service.setReady(owner.id, room.code, true);
+
+    expect(room.stage).toBe("PLAYING");
+    expect(activeRound(room).startingScores).toEqual({ 0: 20, 1: -6, 2: -7, 3: -7 });
   });
 
   it("keeps cumulative scores across consecutive all-human friend rounds", () => {
@@ -1506,7 +1550,9 @@ describe("RoomService", () => {
       service.setReady(guest.id, room.code, true);
     }
     service.setReady(owner.id, room.code, true);
-    expect(room.scoresIncludeBotRounds).toBe(false);
+    // The one-shot reset is spent on this first all-human round, where the
+    // ledger is already zero.
+    expect(room.fullTableScoreResetDone).toBe(true);
 
     const firstRound = activeRound(room);
     firstRound.players[0].score = 9;
@@ -1527,7 +1573,7 @@ describe("RoomService", () => {
     expect(activeRound(room).startingScores).toEqual({ 0: 9, 1: -3, 2: -3, 3: -3 });
   });
 
-  it("infers whether legacy snapshots carry bot-era scores from their seats", () => {
+  it("infers whether legacy snapshots still owe their full-table reset", () => {
     const database = new GameDatabase(":memory:");
     databases.push(database);
     const service = new RoomService(database);
@@ -1537,7 +1583,7 @@ describe("RoomService", () => {
     const botSnapshot = JSON.parse(JSON.stringify(botRoom)) as Record<string, unknown>;
     botSnapshot.code = "100001";
     botSnapshot.scores = { 0: 7, 1: -7, 2: 0, 3: 0 };
-    delete botSnapshot.scoresIncludeBotRounds;
+    delete botSnapshot.fullTableScoreResetDone;
     database.saveRoom(
       { id: botRoom.id, code: "100001", status: botRoom.status, version: botRoom.version },
       JSON.stringify(botSnapshot),
@@ -1554,7 +1600,7 @@ describe("RoomService", () => {
     const humanSnapshot = JSON.parse(JSON.stringify(humanRoom)) as Record<string, unknown>;
     humanSnapshot.code = "100002";
     humanSnapshot.scores = { 0: 5, 1: -5, 2: 0, 3: 0 };
-    delete humanSnapshot.scoresIncludeBotRounds;
+    delete humanSnapshot.fullTableScoreResetDone;
     database.saveRoom(
       { id: humanRoom.id, code: "100002", status: humanRoom.status, version: humanRoom.version },
       JSON.stringify(humanSnapshot),
@@ -1567,9 +1613,9 @@ describe("RoomService", () => {
       throw new Error("Expected both legacy rooms to restore");
     }
 
-    expect(restoredBotRoom.scoresIncludeBotRounds).toBe(true);
+    expect(restoredBotRoom.fullTableScoreResetDone).toBe(false);
     expect(restoredBotRoom.scores).toEqual({ 0: 7, 1: -7, 2: 0, 3: 0 });
-    expect(restoredHumanRoom.scoresIncludeBotRounds).toBe(false);
+    expect(restoredHumanRoom.fullTableScoreResetDone).toBe(true);
     expect(restoredHumanRoom.scores).toEqual({ 0: 5, 1: -5, 2: 0, 3: 0 });
     expect(restoredService.project(restoredHumanRoom, owner.id).scoreResetPending).toBe(false);
   });

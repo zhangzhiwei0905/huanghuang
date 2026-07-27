@@ -92,7 +92,7 @@ type PersistedRoomState = {
   mode?: RoomMode;
   stage?: RoomStage;
   scores?: Record<Seat, number>;
-  scoresIncludeBotRounds?: boolean;
+  fullTableScoreResetDone?: boolean;
   nextDealerSeat?: Seat;
   round: RoundState | null;
   roundStartedAt?: string | null;
@@ -120,11 +120,12 @@ export type RoomState = {
   spectators: SpectatorState[];
   scores: Record<Seat, number>;
   /**
-   * Whether `scores` accumulated any round where at least one seat was not a
-   * human. It gates the one-shot reset performed in `startRound` once the
-   * table becomes all-human.
+   * Whether this room has already performed its one-and-only full-table score
+   * reset. It flips the first time a round starts with all four seats human and
+   * never flips back, so a later disconnect/bot substitution and reconnect does
+   * not wipe scores again. Only creating a new room starts a fresh ledger.
    */
-  scoresIncludeBotRounds: boolean;
+  fullTableScoreResetDone: boolean;
   nextDealerSeat: Seat;
   round: RoundState | null;
   roundStartedAt: string | null;
@@ -222,7 +223,7 @@ function isAllHumanTable(seats: Readonly<Record<Seat, SeatController>>): boolean
 }
 
 function scoreResetPending(room: RoomState): boolean {
-  return room.scoresIncludeBotRounds && isAllHumanTable(room.seats);
+  return !room.fullTableScoreResetDone && isAllHumanTable(room.seats);
 }
 
 function roundScores(round: RoundState): Record<Seat, number> {
@@ -447,12 +448,12 @@ export class RoomService {
         spectators: persisted.spectators ?? [],
         scores: persisted.scores ?? (round === null ? { ...ZERO_SCORES } : roundScores(round)),
         // Conservative inference for snapshots written before this field
-        // existed: a table that currently seats a bot is treated as having
-        // bot-era totals, while an all-human table keeps its scores so we never
-        // wipe totals real players already earned.
-        scoresIncludeBotRounds:
-          persisted.scoresIncludeBotRounds ??
-          SEATS.some((seat) => seats[seat].controller === "BOT"),
+        // existed: an all-human table is treated as already reset so we never
+        // wipe totals real players earned, while a bot-seated table still owes
+        // its one-shot reset.
+        fullTableScoreResetDone:
+          persisted.fullTableScoreResetDone ??
+          !SEATS.some((seat) => seats[seat].controller === "BOT"),
         nextDealerSeat:
           persisted.nextDealerSeat ??
           round?.outcome?.nextDealerSeat ??
@@ -528,9 +529,9 @@ export class RoomService {
         readySessionIds: persisted.readySessionIds ?? [],
         spectators: [],
         scores: { ...ZERO_SCORES },
-        // Seats are rebuilt from humans only and scores start at zero, so there
-        // is no bot-era total to discard.
-        scoresIncludeBotRounds: false,
+        // Seats are rebuilt from humans only and scores start at zero, so the
+        // reset has nothing left to do.
+        fullTableScoreResetDone: true,
         nextDealerSeat: randomInt(4) as Seat,
         round: null,
         roundStartedAt: null,
@@ -560,7 +561,7 @@ export class RoomService {
       readySessionIds: persisted.readySessionIds ?? [],
       spectators: persisted.spectators ?? [],
       scores: round === null ? { ...ZERO_SCORES } : roundScores(round),
-      scoresIncludeBotRounds: SEATS.some((seat) => persisted.seats[seat].controller === "BOT"),
+      fullTableScoreResetDone: !SEATS.some((seat) => persisted.seats[seat].controller === "BOT"),
       nextDealerSeat: round?.outcome?.nextDealerSeat ?? round?.dealerSeat ?? (randomInt(4) as Seat),
       round,
       roundStartedAt: null,
@@ -629,15 +630,15 @@ export class RoomService {
   }
 
   private startRound(room: RoomState, now = Date.now()): void {
-    // `startRound` is the only place a round receives `startingScores`, so it
-    // is also the single choke point for the bot-to-human score reset. Doing it
-    // here covers every entry point (friend readiness, bot continue, room
-    // creation) instead of one command handler.
-    const allHuman = isAllHumanTable(room.seats);
-    if (allHuman && room.scoresIncludeBotRounds) {
+    // `startRound` is the only place a round receives `startingScores`, so it is
+    // also the single choke point for the one-shot full-table reset. Firing here
+    // rather than when the fourth human takes a seat matters: a seat can turn
+    // back into a bot while still waiting, and we must not spend the reset on a
+    // round that ends up including a bot.
+    if (!room.fullTableScoreResetDone && isAllHumanTable(room.seats)) {
       room.scores = { ...ZERO_SCORES };
+      room.fullTableScoreResetDone = true;
     }
-    room.scoresIncludeBotRounds = !allHuman;
     room.pendingEffectTransition = null;
     room.round = createRound({
       id: randomUUID(),
@@ -908,7 +909,7 @@ export class RoomService {
       readySessionIds: [],
       spectators: [],
       scores: { ...ZERO_SCORES },
-      scoresIncludeBotRounds: false,
+      fullTableScoreResetDone: false,
       nextDealerSeat: randomInt(4) as Seat,
       round: null,
       roundStartedAt: null,

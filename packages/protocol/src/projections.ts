@@ -130,10 +130,10 @@ export type RoomProjection = {
   selfSeat: Seat | null;
   selfDrawnTileId: string | null;
   /**
-   * True when the next round will zero every seat's cumulative score because
-   * the table is now all-human but the running totals still include rounds
-   * played with a bot. Clients render a notice from this flag and must never
-   * derive the reset themselves.
+   * True when the next round will zero every seat's cumulative score. That
+   * happens exactly once per room, the first time a round starts with all four
+   * seats human. Clients render a notice from this flag and must never derive
+   * the reset themselves.
    */
   scoreResetPending: boolean;
   status: "ACTIVE" | "CLOSED";
