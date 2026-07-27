@@ -927,3 +927,36 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: 来由与积分清零上线生产
+
+**Date**: 2026-07-27
+**Task**: 来由与积分清零上线生产
+**Branch**: `miniprogram`
+
+### Summary
+
+把来由玩法与房间级一次性积分清零部署到阿里云生产。构建 huanghuang-app:2656638-laiyou-20260727-1741，停机前对 huanghuang_game_data 卷做一致性备份（sqlite+wal+shm 三件），换容器下线约 4 秒，健康检查本地与公网均 200，生产临时房投影确认 schemaVersion 8 与 scoreResetPending 字段。回滚镜像 1c2639d-lottie-20260727-1215 保留。发现三个基础设施问题并记录在父任务 PRD：README 部署章节与生产实际不符（实际是 docker run + 宿主机 nginx + huanghuang_game_data 卷，非 compose+caddy）、阿里云专属 Docker 加速器对 node:24-alpine 返 403 需回退 daocloud 源、服务器无 rsync 且非 git 仓库故用 git archive 推送。小程序端仍需单独构建上传。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `86bff4e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
