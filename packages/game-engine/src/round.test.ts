@@ -432,6 +432,46 @@ describe("round state machine", () => {
     });
   });
 
+  it("treats a hard win that keeps a wildcard at its own face value as hard laiyou", () => {
+    const id = "round-hard-laiyou-retained-wildcard";
+    const releasedWildcard = makeTile(`${id}-wildcard-b`, LAIYOU_WILDCARD_KIND);
+    const hand = [
+      makeTile(`${id}-wan-3`, { suit: "WAN", rank: 3 }),
+      makeTile(`${id}-wan-4`, { suit: "WAN", rank: 4 }),
+      // Stays in hand and completes WAN 3-4-5 as an ordinary 5 WAN, not as a
+      // substitute for another tile. That is what makes the win hard.
+      makeTile(`${id}-wildcard-a`, LAIYOU_WILDCARD_KIND),
+      ...tripletTiles(`${id}-tiao-2`, { suit: "TIAO", rank: 2 }),
+      ...tripletTiles(`${id}-tong-3`, { suit: "TONG", rank: 3 }),
+      makeTile(`${id}-tong-7-a`, { suit: "TONG", rank: 7 }),
+      makeTile(`${id}-tong-7-b`, { suit: "TONG", rank: 7 }),
+      makeTile(`${id}-wan-9-a`, { suit: "WAN", rank: 9 }),
+      makeTile(`${id}-wan-9-b`, { suit: "WAN", rank: 9 }),
+      releasedWildcard,
+    ];
+    const state = laiyouSetup(id, hand, [makeTile(`${id}-draw`, { suit: "TONG", rank: 7 })]);
+
+    const released = releaseWildcard(state, 0, releasedWildcard.id);
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+    // One wildcard is still in hand; that must not downgrade the laiyou class.
+    expect(
+      released.state.players[0].hand.filter((tile) =>
+        sameTileKind(tile, released.state.wildcardKind),
+      ),
+    ).toHaveLength(1);
+
+    const win = declareWin(released.state, 0);
+    expect(win.ok).toBe(true);
+    if (!win.ok) return;
+    expect(win.state.outcome).toMatchObject({
+      kind: "WIN",
+      winnerSeat: 0,
+      winType: "HARD",
+      laiyou: true,
+    });
+  });
+
   it("cannot claim laiyou after passing the win on the post-release draw", () => {
     const { state, wildcardId } = hardLaiyouSetup("round-laiyou-passed");
 
