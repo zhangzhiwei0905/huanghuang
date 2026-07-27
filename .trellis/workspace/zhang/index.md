@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
+- **Total Sessions**: 23
 - **Last Active**: 2026-07-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~859 | Active |
+| `journal-1.md` | ~892 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-07-27 | 接入并优化麻将特效动画 | `2c16abe` | `miniprogram` |
 | 22 | 2026-07-27 | Miniprogram audio overhaul + cloud storage migration | `e8cb1e9`, `4fbd6b7` | `miniprogram` |
 | 21 | 2026-07-26 | 小程序牌局音效与即时播放上线 | `e8bfeff` | `miniprogram` |
 | 20 | 2026-07-26 | 四位房间码与机器人好友房上线 | `6072d40` | `miniprogram` |

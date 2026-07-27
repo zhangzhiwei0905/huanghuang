@@ -857,3 +857,36 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: 接入并优化麻将特效动画
+
+**Date**: 2026-07-27
+**Task**: 接入并优化麻将特效动画
+**Branch**: `miniprogram`
+
+### Summary
+
+接入服务端权威节奏控制的麻将 Lottie 特效与音频同步，优化碰动画为贴近头像的无牌面轻量反馈，修复胡牌横屏拉伸并完成全仓质量验证与生产构建。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2c16abe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
