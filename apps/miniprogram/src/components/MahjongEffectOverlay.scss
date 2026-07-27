@@ -4,14 +4,84 @@
   inset: 0;
   pointer-events: none;
   opacity: 0;
+  /* Preemption cross-fade: the overlay fades out while the incoming animation
+     starts on the same canvas (which shows its first frames immediately). */
+  transition: opacity 150ms ease-out;
 }
 
 .mahjong-effect-overlay.is-visible {
   opacity: 1;
 }
 
+.mahjong-effect-overlay.is-fading {
+  opacity: 0;
+}
+
 .mahjong-effect-overlay.is-win {
   background: rgb(11 28 21 / 38%);
+}
+
+/* Laiyou (来由) wins swap the cool jade scrim for a warm gold edge glow so
+   the signature rule of this variant reads visually, not just in audio. */
+.mahjong-effect-overlay.is-win.is-laiyou {
+  background: rgb(60 42 8 / 42%);
+  box-shadow: inset 0 0 12vmin rgb(214 189 124 / 45%);
+}
+
+/* Win-type badge: floats above the celebration canvas, bottom-center of the
+   stage so it never covers the animation's focal art. */
+.mahjong-effect-overlay__badge {
+  position: absolute;
+  left: 50%;
+  bottom: 6vmin;
+  transform: translateX(-50%);
+  padding: 0.9vmin 3.2vmin;
+  border-radius: 999px;
+  font-size: 3vmin;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #fdfcf6;
+  background: var(--scrim-72, rgb(20 24 15 / 72%));
+  border: 1px solid rgb(214 189 124 / 55%);
+  animation: effect-badge-pop 320ms 220ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
+}
+
+.mahjong-effect-overlay__badge.is-hard {
+  color: #f4d98b;
+  border-color: rgb(244 217 139 / 80%);
+  box-shadow: 0 0 2.4vmin rgb(244 217 139 / 35%);
+}
+
+.mahjong-effect-overlay__badge.is-laiyou {
+  font-size: 3.6vmin;
+  color: #2a1c04;
+  background: linear-gradient(160deg, #f7e3a1 0%, var(--gold, #d6bd7c) 100%);
+  border-color: #f4d98b;
+  box-shadow:
+    0 0 3vmin rgb(244 217 139 / 55%),
+    0 0.5vmin 0 rgb(143 117 65 / 60%);
+}
+
+@keyframes effect-badge-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.6);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mahjong-effect-overlay__badge {
+    animation: none;
+  }
+
+  .mahjong-effect-overlay {
+    transition: none;
+  }
 }
 
 .mahjong-effect-overlay__stage {
