@@ -33,28 +33,11 @@ wrapped text** even with `white-space: nowrap`. Force an explicit width:
 
 ```scss
 .leave-fab {
-  min-width: 12vmin;
-  width: 12vmin;
-  white-space: nowrap;
+  min-width: 12vmin !important;
+  width: 12vmin !important;
+  white-space: nowrap !important;
 }
 ```
-
-**No `!important` needed**: since task `07-27-mahjong-ux-optimizations` the
-global `button { margin:0; padding:0; border:none; background:transparent;
-line-height:normal } button::after { border:none }` reset in
-`src/styles/theme.scss` neutralizes the WeChat UA styles, so page classes
-win on specificity alone. The codebase went 200 → 0 `!important`; **do not
-reintroduce it** — if a style seems ignored, check specificity/order first,
-and only extend the global reset if a *new* UA property is the culprit.
-
-### Theme tokens: `theme.scss` is tokens-only
-
-`src/styles/theme.scss` owns CSS custom properties (`--accent`, `--gold`,
-`--scrim-*`, …), the button reset above, and `.is-pressed`. **Never define
-component classes there** — a previous version carried `.game-shell` /
-`.btn-accent` / `.btn-ghost` that silently fought the room page's same-named
-classes (build-order-dependent winner). Page/component styles live next to
-their tsx. When you need a shared color, add a token, not a class.
 
 ### Layout math: px floors beat vmin on phones
 
@@ -120,69 +103,6 @@ Fastify's JSON `addContentTypeParser` to treat an empty body as `undefined`
 instead of throwing `FST_ERR_CTP_EMPTY_JSON_BODY`. Any bodyless
 POST/PATCH/DELETE route needs this — don't reintroduce a client-only "fix"
 for the same symptom.
-
----
-
-## Mahjong Effect System (lottie)
-
-Conventions for `src/components/MahjongEffectOverlay.tsx` +
-`src/lib/effectAnchors.ts` + `src/effects/mahjong/`.
-
-### Placement: derive anchors, never query mid-animation
-
-Do not locate a player station with `createSelectorQuery().boundingClientRect()`
-when the effect can fire during the `station-in` entrance — the async query
-races the animation and the effect lands offset. The stations are absolutely
-positioned in a landscape-locked layout, so `stationAnchor(position, viewport)`
-in `src/lib/effectAnchors.ts` derives the rect from the same constants as
-`pages/room/index.scss` (the `station-in` animation is opacity-only, so a
-computed anchor is exact at every frame). **If the scss station geometry
-changes, update `effectAnchors.ts`** — both files cite each other.
-
-### Cue handling: queue, don't destroy
-
-`room.effectCue` is server-serialized (one `pendingEffectTransition` at a
-time), but follow-ups (classic kong→win) still arrive while an animation is
-playing. `enqueueEffect` keeps a depth-≤2 queue with priority preemption
-(WIN > kong-family > PONG); preemption cross-fades the outgoing animation
-(150ms overlay opacity) instead of hard-destroying it. A local `setTimeout`
-mirrors the cue's `endsAt` so a throttled tab still tears down.
-
-### Timing: animations play at authored 60fps
-
-Server cue windows (2.0–2.8s) are longer than the animations (1.3–2.1s).
-`loadMahjongAnimationData` no longer stretches framerate to fill the window
-(that made everything look "meaty" at 60–80% speed); the animation plays at
-its authored 60fps and the **final frame holds** until the cue expires.
-`stretchLottieTiming` survives in `lib/mahjongEffect.ts` for frame-space
-resume math only — don't call it from the playback path. Server
-`EFFECT_DURATION_MS` is deliberately unchanged (table-pace decision).
-
-### Canvas: backing store follows DPR
-
-`CANVAS_SIZE` is not a constant: `512 × clamp(pixelRatio, 1, 2)`, capped at
-1024. A fixed 512 store is visibly blurry when the win stage scales to
-`viewport.width × 0.66` on a 3x phone.
-
-### Data pipeline: offline compression, in-repo originals are gone
-
-`scripts/compress-lottie.mjs` rounds numbers to 2 decimals and drops AE
-cruft layers (visually lossless, ~3.4%). Run it after any re-export from
-After Effects. It used to keep an `originals/` backup — removed; git history
-is the backup.
-
-## Game Audio (cloud-streamed)
-
-- `createGameAudioPlayer()` owns a **2-slot `InnerAudioContext` pool**:
-  natural-end playbacks return to the pool (stop + clear src) instead of
-  destroy/recreate per clip. `destroy()` tears down pool + active playbacks.
-- Call `player.warmup()` as soon as the room stream connects: it pre-resolves
-  all 37 cloud URLs (one batched `getTempFileURL`) and pre-creates the pool,
-  so the first in-round callout skips the cloud round-trip. Warmup fails
-  silently — the lazy per-`play()` path is the fallback.
-- `obeyMuteSwitch: true` means iOS muted phones stay silent; the sound-toggle
-  toast says so on first enable. Haptics (`lib/haptics.ts`) are mapped from
-  the same `updateGameAudioTracker` event stream and stay on when muted.
 
 ---
 

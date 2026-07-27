@@ -302,10 +302,6 @@ export default function IndexPage() {
       <View className="mp-home">
         <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
         <View className="mp-home__overlay" />
-        <View className="mp-home__checking">
-          <View className="mp-spinner" aria-hidden />
-          <Text className="mp-home__checking-text">正在进入…</Text>
-        </View>
       </View>
     );
   }
@@ -323,13 +319,7 @@ export default function IndexPage() {
             disabled={loginEntryBusy}
             onClick={() => void beginWechatLogin()}
           >
-            {loginEntryBusy ? (
-              <>
-                <View className="mp-spinner mp-spinner--inline" aria-hidden /> 正在登录…
-              </>
-            ) : (
-              "微信登录"
-            )}
+            {loginEntryBusy ? "正在登录…" : "微信登录"}
           </Button>
           {loginEntryError !== null ? (
             <Text className="mp-login-entry__error">{loginEntryError}</Text>

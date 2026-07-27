@@ -50,11 +50,9 @@ describe("mahjong effects", () => {
     expect(effectProgress(cue(), Date.parse("2026-07-27T00:00:03.000Z"))).toBe(1);
   });
 
-  it("keeps the authored frame rate (native-speed playback inside the cue window)", () => {
+  it("stretches the source frame rate and resumes at the matching frame", () => {
     const data = stretchLottieTiming({ ip: 10, op: 70, fr: 60 }, 3_000);
 
-    // stretchLottieTiming survives for any future window-stretching caller;
-    // production playback (runtime.ts) no longer calls it.
     expect(data.fr).toBe(20);
     expect(lottieResumeFrame(data, 0.5)).toBe(40);
   });
@@ -78,10 +76,10 @@ describe("mahjong effects", () => {
   });
 
   it("uses a compact text-only pong animation without runtime tile layers", () => {
-    const data = loadMahjongAnimationData("peng", { suit: "WAN", rank: 1 });
+    const data = loadMahjongAnimationData("peng", { suit: "WAN", rank: 1 }, 2_000);
 
     expect(data.ip).toBe(18);
-    expect(data.fr).toBe(60); // authored frame rate preserved — no stretching
+    expect(data.fr).toBe(30);
     expect(data.meta?.presentation).toBe("compact-text-only");
     expect(data.layers?.map((layer) => layer.nm)).toEqual([
       "碰 · 动作章",
@@ -97,7 +95,7 @@ describe("mahjong effects", () => {
   });
 
   it("continues substituting authoritative tiles for effects that display them", () => {
-    const data = loadMahjongAnimationData("gang", { suit: "WAN", rank: 1 });
+    const data = loadMahjongAnimationData("gang", { suit: "WAN", rank: 1 }, 2_200);
     const tileLayers = data.layers?.filter((layer) => layer.meta?.tileSlot === "claim") ?? [];
 
     expect(tileLayers).toHaveLength(4);
