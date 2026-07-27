@@ -8,17 +8,15 @@ vi.mock("@tarojs/taro", () => ({
     createInnerAudioContext: vi.fn(),
     cloud: {
       init: vi.fn(),
-      getTempFileURL: vi.fn(
-        async ({ fileList }: { fileList: string[] }) => ({
-          fileList: fileList.map((fileID) => ({
-            fileID,
-            tempFileURL: `https://mock.example/${encodeURIComponent(fileID)}`,
-            maxAge: 600,
-            status: 0,
-            errMsg: "getTempFileURL:ok",
-          })),
-        }),
-      ),
+      getTempFileURL: vi.fn(async ({ fileList }: { fileList: string[] }) => ({
+        fileList: fileList.map((fileID) => ({
+          fileID,
+          tempFileURL: `https://mock.example/${encodeURIComponent(fileID)}`,
+          maxAge: 600,
+          status: 0,
+          errMsg: "getTempFileURL:ok",
+        })),
+      })),
     },
   },
 }));

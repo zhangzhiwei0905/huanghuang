@@ -668,10 +668,8 @@ export default function RoomPage() {
               hoverClass="is-pressed"
               disabled={roomCtrl.busy}
               onClick={() =>
-                void confirmDangerAction(
-                  "leave",
-                  { inProgress: room.stage === "PLAYING" },
-                  () => roomCtrl.leaveRoom(),
+                void confirmDangerAction("leave", { inProgress: room.stage === "PLAYING" }, () =>
+                  roomCtrl.leaveRoom(),
                 )
               }
             >

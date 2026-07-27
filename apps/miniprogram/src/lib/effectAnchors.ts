@@ -38,7 +38,10 @@ export type AnchorRect = {
 /* Mirrors room/index.scss `.player-station`: width max(30vmin,132px) capped
    by min(36vmin,156px); self variant max(27vmin,118px) / min(31vmin,136px).
    Landscape-locked page ⇒ vmin = height/100. */
-function stationSize(position: RelativePosition, viewport: AnchorViewport): {
+function stationSize(
+  position: RelativePosition,
+  viewport: AnchorViewport,
+): {
   width: number;
   height: number;
 } {
@@ -58,10 +61,7 @@ function stationSize(position: RelativePosition, viewport: AnchorViewport): {
  * same 1vmin base offset as the scss, which is close enough for effect
  * anchoring (the placement logic clamps into the viewport anyway).
  */
-export function stationAnchor(
-  position: RelativePosition,
-  viewport: AnchorViewport,
-): AnchorRect {
+export function stationAnchor(position: RelativePosition, viewport: AnchorViewport): AnchorRect {
   const { width, height } = stationSize(position, viewport);
   const vmin = Math.min(viewport.width, viewport.height) / 100;
   switch (position) {

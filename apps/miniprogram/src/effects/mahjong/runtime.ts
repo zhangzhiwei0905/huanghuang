@@ -1,9 +1,5 @@
 import type { TileKind } from "@huanghuang/protocol";
-import {
-  tileKindCode,
-  type LottieTiming,
-  type MahjongEffectKey,
-} from "../../lib/mahjongEffect";
+import { tileKindCode, type LottieTiming, type MahjongEffectKey } from "../../lib/mahjongEffect";
 
 type MahjongAnimationLayer = Record<string, unknown> & {
   nm?: string;
