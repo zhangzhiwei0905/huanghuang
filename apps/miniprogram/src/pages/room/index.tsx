@@ -30,6 +30,8 @@ import {
   handHighlightGroups,
 } from "../../lib/actionEligibility";
 import { decideTilePress } from "../../lib/handInteraction";
+import { confirmDangerAction } from "../../lib/confirmAction";
+import { hapticsForAudioFiles, hapticTap, hapticWarn } from "../../lib/haptics";
 import {
   createGameAudioTracker,
   updateGameAudioTracker,
@@ -267,10 +269,18 @@ function useGameAudio(
     const tracker = trackerRef.current;
     if (tracker === null) return;
     const files = updateGameAudioTracker(tracker, room, connectionStatus === "connected");
+    // Haptics ride the same event stream but stay on when sound is muted.
+    hapticsForAudioFiles(files);
     if (!enabled) {
       playerRef.current?.destroy();
       playerRef.current = null;
       return;
+    }
+    // Warm the URL cache + context pool as soon as the room stream is live so
+    // the first callout doesn't pay the cloud round-trip latency.
+    if (room !== null && connectionStatus === "connected") {
+      if (playerRef.current === null) playerRef.current = createGameAudioPlayer();
+      playerRef.current.warmup();
     }
     if (files.length === 0) return;
     if (playerRef.current === null) playerRef.current = createGameAudioPlayer();
@@ -412,6 +422,17 @@ export default function RoomPage() {
     return () => clearInterval(timer);
   }, [actionDeadlineAt]);
 
+  /* One long buzz per countdown window when it first turns urgent — the ref
+     keys on the deadline so a fresh turn re-arms the warning. */
+  const urgentBuzzedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (actionDeadlineAt === null || secondsRemaining === null) return;
+    if (secondsRemaining > 5 || secondsRemaining <= 0) return;
+    if (urgentBuzzedForRef.current === actionDeadlineAt) return;
+    urgentBuzzedForRef.current = actionDeadlineAt;
+    hapticWarn();
+  }, [actionDeadlineAt, secondsRemaining]);
+
   useEffect(() => {
     if (selectedTileId === null) return;
     const tileStillHeld = self?.hand?.some((tile) => tile.id === selectedTileId) === true;
@@ -472,6 +493,10 @@ export default function RoomPage() {
     setGameAudioEnabled((current) => {
       const next = !current;
       setStoredGameAudioEnabled(next);
+      if (next) {
+        // iOS 静音键会压掉 obeyMuteSwitch 的播放——提前说明，免得误以为坏了。
+        void Taro.showToast({ title: "已开启音效（iOS 静音键下无声）", icon: "none" });
+      }
       return next;
     });
   }
@@ -529,6 +554,7 @@ export default function RoomPage() {
       locked,
     });
     if (decision.kind === "select" || decision.kind === "keep-selection") {
+      hapticTap();
       setSelectedTileId(decision.tileId);
     } else if (decision.kind === "discard") {
       void roomCtrl.send("DISCARD_TILE", { tileId: decision.tileId });
@@ -569,7 +595,9 @@ export default function RoomPage() {
               className="lobby-toolbar__button"
               hoverClass="is-pressed"
               disabled={roomCtrl.busy}
-              onClick={() => void roomCtrl.leaveRoom()}
+              onClick={() =>
+                void confirmDangerAction("leave", { inProgress: false }, () => roomCtrl.leaveRoom())
+              }
             >
               离开
             </Button>
@@ -622,7 +650,11 @@ export default function RoomPage() {
                   className="lobby-toolbar__button lobby-toolbar__button--danger"
                   hoverClass="is-pressed"
                   disabled={roomCtrl.busy}
-                  onClick={() => void roomCtrl.dissolve()}
+                  onClick={() =>
+                    void confirmDangerAction("dissolve", { inProgress: false }, () =>
+                      roomCtrl.dissolve(),
+                    )
+                  }
                 >
                   解散
                 </Button>
@@ -635,7 +667,13 @@ export default function RoomPage() {
               className="leave-fab"
               hoverClass="is-pressed"
               disabled={roomCtrl.busy}
-              onClick={() => void roomCtrl.leaveRoom()}
+              onClick={() =>
+                void confirmDangerAction(
+                  "leave",
+                  { inProgress: room.stage === "PLAYING" },
+                  () => roomCtrl.leaveRoom(),
+                )
+              }
             >
               离开
             </Button>
@@ -677,7 +715,13 @@ export default function RoomPage() {
                   className="info-capsule__btn info-capsule__btn--danger"
                   hoverClass="is-pressed"
                   disabled={roomCtrl.busy}
-                  onClick={() => void roomCtrl.dissolve()}
+                  onClick={() =>
+                    void confirmDangerAction(
+                      "dissolve",
+                      { inProgress: room.stage === "PLAYING" },
+                      () => roomCtrl.dissolve(),
+                    )
+                  }
                 >
                   解散
                 </Button>
@@ -1059,7 +1103,7 @@ export default function RoomPage() {
               ) : null}
             </View>
 
-            <MahjongEffectOverlay cue={room.effectCue} />
+            <MahjongEffectOverlay cue={room.effectCue} selfSeat={room.selfSeat ?? 0} />
 
             {room.roundSettlement !== null ? (
               <RoundSettlementModal
@@ -1069,7 +1113,11 @@ export default function RoomPage() {
                 mode={room.mode}
                 busy={roomCtrl.busy}
                 onContinue={() => void roomCtrl.continueBot()}
-                onLeave={() => void roomCtrl.leaveRoom()}
+                onLeave={() =>
+                  void confirmDangerAction("leave", { inProgress: false }, () =>
+                    roomCtrl.leaveRoom(),
+                  )
+                }
               />
             ) : null}
           </>

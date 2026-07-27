@@ -41,6 +41,60 @@
   padding-bottom: 2vmin;
 }
 
+/* ---- Session checking / busy spinner ---- */
+
+.mp-home__checking {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.6vmin;
+}
+
+.mp-home__checking-text {
+  font-size: max(2.6vmin, 13px);
+  color: var(--accent, #2f6a4c);
+  letter-spacing: 0.2em;
+}
+
+.mp-spinner {
+  width: 6vmin;
+  height: 6vmin;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 50%;
+  border: 0.7vmin solid rgb(47 106 76 / 22%);
+  border-top-color: var(--accent, #2f6a4c);
+  animation: mp-spin 0.9s linear infinite;
+}
+
+.mp-spinner--inline {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  min-width: 0;
+  min-height: 0;
+  border-width: 2px;
+  margin-right: 0.5em;
+  vertical-align: -0.15em;
+  border-color: rgb(255 255 255 / 35%);
+  border-top-color: #fff;
+}
+
+@keyframes mp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+
 .mp-home__logo {
   display: flex;
   gap: 1.6vmin;
@@ -107,7 +161,7 @@
 .mp-home__tagline {
   padding: 0.7vmin 2.4vmin;
   border-radius: 999px;
-  background: rgb(20 24 15 / 45%);
+  background: var(--scrim-45, rgb(20 24 15 / 45%));
   color: #fff;
   font-size: clamp(11px, 2.5vmin, 15px);
   letter-spacing: 0.14em;
@@ -122,7 +176,7 @@
 }
 
 .mp-login-entry__button {
-  min-width: max(30vmin, 144px) !important;
+  min-width: max(30vmin, 144px);
   animation: home-rise 380ms cubic-bezier(0.34, 1.4, 0.64, 1) 160ms backwards;
 }
 
@@ -165,18 +219,18 @@
 /* ---- Chunky jade buttons (shared by menu and forms) ---- */
 
 .mp-btn {
-  margin: 0 !important;
+  margin: 0;
   min-width: 22vmin;
-  min-height: max(10.5vmin, 42px) !important;
-  height: max(10.5vmin, 42px) !important;
-  padding: 0 3.6vmin !important;
-  line-height: max(10.5vmin, 42px) !important;
-  font-size: clamp(14px, 3.6vmin, 20px) !important;
-  font-weight: 700 !important;
-  border-radius: 2.2vmin !important;
-  border: 1px solid var(--line-strong, #9cbfa9) !important;
-  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%) !important;
-  color: var(--ink, #272925) !important;
+  min-height: max(10.5vmin, 42px);
+  height: max(10.5vmin, 42px);
+  padding: 0 3.6vmin;
+  line-height: max(10.5vmin, 42px);
+  font-size: clamp(14px, 3.6vmin, 20px);
+  font-weight: 700;
+  border-radius: 2.2vmin;
+  border: 1px solid var(--line-strong, #9cbfa9);
+  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%);
+  color: var(--ink, #272925);
   box-shadow:
     0 0.7vmin 0 rgb(122 148 130 / 70%),
     0 1.2vmin 2vmin rgb(0 0 0 / 14%);
@@ -186,11 +240,11 @@
 }
 
 .mp-btn--primary {
-  border-color: #1f4834 !important;
-  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%) !important;
-  color: var(--accent-ink, #f5fbf6) !important;
+  border-color: var(--accent-deep, #1f4834);
+  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%);
+  color: var(--accent-ink, #f5fbf6);
   box-shadow:
-    0 0.7vmin 0 #1f4834,
+    0 0.7vmin 0 var(--accent-deep, #1f4834),
     0 1.2vmin 2vmin rgb(0 0 0 / 18%);
 }
 
@@ -205,7 +259,7 @@
 
 .mp-btn--primary.is-pressed {
   box-shadow:
-    0 0.2vmin 0 #1f4834,
+    0 0.2vmin 0 var(--accent-deep, #1f4834),
     0 0.4vmin 1vmin rgb(0 0 0 / 14%);
 }
 
@@ -251,10 +305,10 @@
 
 .mp-home__form-actions .mp-btn {
   min-width: 18vmin;
-  min-height: max(8.8vmin, 36px) !important;
-  height: max(8.8vmin, 36px) !important;
-  line-height: max(8.8vmin, 36px) !important;
-  font-size: clamp(13px, 3.1vmin, 18px) !important;
+  min-height: max(8.8vmin, 36px);
+  height: max(8.8vmin, 36px);
+  line-height: max(8.8vmin, 36px);
+  font-size: clamp(13px, 3.1vmin, 18px);
 }
 
 .mp-field {
@@ -319,25 +373,25 @@
 }
 
 .mp-score {
-  margin: 0 !important;
+  margin: 0;
   min-width: 8vmin;
-  min-height: max(6.5vmin, 26px) !important;
-  height: max(6.5vmin, 26px) !important;
-  line-height: max(6.5vmin, 26px) !important;
-  padding: 0 1.6vmin !important;
-  border-radius: 1.2vmin !important;
-  font-size: clamp(12px, 2.8vmin, 16px) !important;
-  font-weight: 600 !important;
-  background: var(--surface, #dcece1) !important;
-  color: var(--ink, #272925) !important;
-  border: 1px solid var(--line, #cde0d3) !important;
+  min-height: max(6.5vmin, 26px);
+  height: max(6.5vmin, 26px);
+  line-height: max(6.5vmin, 26px);
+  padding: 0 1.6vmin;
+  border-radius: 1.2vmin;
+  font-size: clamp(12px, 2.8vmin, 16px);
+  font-weight: 600;
+  background: var(--surface, #dcece1);
+  color: var(--ink, #272925);
+  border: 1px solid var(--line, #cde0d3);
   transition: transform 110ms ease;
 }
 
 .mp-score.is-on {
-  background: var(--accent, #2f6a4c) !important;
-  color: var(--accent-ink, #f5fbf6) !important;
-  border-color: var(--accent, #2f6a4c) !important;
+  background: var(--accent, #2f6a4c);
+  color: var(--accent-ink, #f5fbf6);
+  border-color: var(--accent, #2f6a4c);
 }
 
 .mp-score.is-pressed {
@@ -383,17 +437,17 @@
 }
 
 .mp-login__avatar-btn {
-  margin: 0 !important;
-  width: 20vmin !important;
-  height: 20vmin !important;
-  min-width: 72px !important;
-  min-height: 72px !important;
-  max-width: 96px !important;
-  max-height: 96px !important;
-  padding: 0 !important;
-  border-radius: 50% !important;
-  border: 1px solid var(--line, #cde0d3) !important;
-  background: #fff !important;
+  margin: 0;
+  width: 20vmin;
+  height: 20vmin;
+  min-width: 72px;
+  min-height: 72px;
+  max-width: 96px;
+  max-height: 96px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line, #cde0d3);
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -432,8 +486,8 @@
 }
 
 .mp-login__cancel {
-  background: rgb(249 250 244 / 92%) !important;
-  box-shadow: 0 0.4vmin 0 rgb(122 148 130 / 52%) !important;
+  background: rgb(249 250 244 / 92%);
+  box-shadow: 0 0.4vmin 0 rgb(122 148 130 / 52%);
 }
 
 /* ---- Signed-in account controls ---- */
@@ -502,19 +556,19 @@
 .mp-account__logout {
   position: relative;
   z-index: 0;
-  margin: 0 !important;
-  min-width: 54px !important;
-  width: 54px !important;
-  min-height: 44px !important;
-  height: 44px !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 1.4vmin !important;
-  background: transparent !important;
-  color: #fff8ef !important;
-  font-size: clamp(10px, 2vmin, 12px) !important;
-  font-weight: 600 !important;
-  line-height: 44px !important;
+  margin: 0;
+  min-width: 54px;
+  width: 54px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 1.4vmin;
+  background: transparent;
+  color: #fff8ef;
+  font-size: clamp(10px, 2vmin, 12px);
+  font-weight: 600;
+  line-height: 44px;
   text-shadow: 0 1px 2px rgb(38 19 16 / 48%);
 }
 
