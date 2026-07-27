@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 25
+- **Total Sessions**: 26
 - **Last Active**: 2026-07-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~962 | Active |
+| `journal-1.md` | ~1031 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 26 | 2026-07-27 | 麻将小程序 UX 优化实施、回退与 dist 陈旧产物排查 | `74c859a` | `miniprogram` |
 | 25 | 2026-07-27 | 来由与积分清零上线生产 | `86bff4e` | `miniprogram` |
 | 24 | 2026-07-27 | 机器人转真人积分清零与来由玩法 | `3d91f2e`, `00536fd`, `84d8ad7`, `fa8b4a9`, `730c355` | `miniprogram` |
 | 23 | 2026-07-27 | 接入并优化麻将特效动画 | `2c16abe` | `miniprogram` |

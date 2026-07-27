@@ -996,3 +996,36 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - 若真机回归曾发现具体问题，按现象定位到单批 commit 单独恢复/修复，避免整批推翻
+
+
+## Session 26: 麻将小程序 UX 优化实施、回退与 dist 陈旧产物排查
+
+**Date**: 2026-07-27
+**Task**: 麻将小程序 UX 优化实施、回退与 dist 陈旧产物排查
+**Branch**: `miniprogram`
+
+### Summary
+
+实施 07-27-mahjong-ux-optimizations 全部 7 项前端优化（7 commits，80 测试全过），随后应用户要求以单 revert commit(74c859a)整体回退，代码与 0b6d9b6 逐字节一致。回退后用户反馈开发者工具仍震动，定位为 dist/ 陈旧编译产物（源码 vibrate 已为 0，但 19:40 旧 dist 仍编着震动代码），重新 pnpm build:weapp 后 dist 三处 vibrate 计数归零，提醒清缓存重编译。原始 7 commits(39b363c..d61efb8)留存历史可恢复。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74c859a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
