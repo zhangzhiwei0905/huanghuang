@@ -15,6 +15,7 @@ import tableBackground from "../../assets/background.optimized.jpg";
 import { API_BASE } from "../../config";
 import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
+import { MahjongEffectOverlay } from "../../components/MahjongEffectOverlay";
 import { RoundSettlementModal } from "../../components/RoundSettlementModal";
 import { TingHintCard } from "../../components/TingHintCard";
 import { useRoom, type ConnectionStatus } from "../../hooks/useRoom";
@@ -397,7 +398,8 @@ export default function RoomPage() {
   useEffect(() => {
     if (!quickMessageAvailable) setQuickMessageOpen(false);
   }, [quickMessageAvailable]);
-  const locked = roomCtrl.busy || roomCtrl.connectionStatus !== "connected";
+  const locked =
+    roomCtrl.busy || roomCtrl.connectionStatus !== "connected" || room?.effectCue !== null;
   const actionDeadlineAt = room?.actionDeadlineAt ?? null;
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(() =>
     deadlineSeconds(actionDeadlineAt),
@@ -790,6 +792,7 @@ export default function RoomPage() {
                 return (
                   <Fragment key={seat}>
                     <View
+                      id={`player-station-${seat}`}
                       className={`player-station ${pos}${active ? " is-active" : ""}${
                         seat === room.selfSeat ? " is-self" : ""
                       }`}
@@ -1052,6 +1055,8 @@ export default function RoomPage() {
                 </>
               ) : null}
             </View>
+
+            <MahjongEffectOverlay cue={room.effectCue} />
 
             {room.roundSettlement !== null ? (
               <RoundSettlementModal

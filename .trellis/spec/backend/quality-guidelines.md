@@ -221,6 +221,128 @@ applyScoreDeltas(state, calculateKongSettlement({ baseScore, actorSeat, kind, so
 - Changing `personalMultiplier` from pong or kong reducers.
 - Catching an error and returning success.
 
+## Scenario: Authoritative effect-paced transitions
+
+### 1. Scope / Trigger
+
+Any accepted rule result that creates a pong, kong, added kong, released
+wildcard or win must publish a room-wide effect phase before exposing the
+resulting round. This is a cross-layer protocol and persisted-room contract,
+not a client-only delay.
+
+### 2. Signatures
+
+```ts
+type GameEffectAction = MeldKind | "RELEASE_WILDCARD" | "WIN";
+
+type GameEffectCue = {
+  id: string;
+  action: GameEffectAction;
+  actorSeat: Seat;
+  tileKind: TileKind | null;
+  winType: WinType | null;
+  startedAt: string;
+  endsAt: string;
+};
+
+type PendingEffectTransition = {
+  cue: GameEffectCue;
+  nextRound: RoundState;
+};
+
+type RoomProjection = {
+  schemaVersion: 6;
+  effectCue: GameEffectCue | null;
+};
+```
+
+There is no new HTTP route, command payload or environment key. Existing game
+commands can schedule a cue; `RoomService.tick(now)` is the only completion
+entry point.
+
+### 3. Contracts
+
+- The game engine still returns one complete `RuleResult`. `RoomService`
+  compares the current and accepted rounds, then either applies a non-effect
+  result immediately or persists `{ old round, cue, nextRound }`.
+- Durations are server-owned: pong 2000 ms; exposed, concealed and indicator
+  kong 2200 ms; added kong 2300 ms; wildcard release 2500 ms; win 2800 ms.
+- Cue identity, actor, tile and win type come from the accepted round delta,
+  never from the command payload.
+- Scheduling and completion each increment room version once. The accepted
+  command result and pending transition snapshot are committed together by
+  `saveRoomAndProcessedRequest`.
+- While pending, projections keep the old public round and expose the cue with
+  `legalActions = []`, `actingSeat = null` and `actionDeadlineAt = null`.
+  The private `nextRound` is never projected.
+- `tick(now < endsAt)` does nothing. The first `tick(now >= endsAt)` replaces
+  the live round, clears the transition, refreshes the real next deadline,
+  persists and broadcasts. Later ticks cannot apply it again.
+- Startup restores an active transition. Bot, trustee and human command paths
+  cannot advance it early. Lifecycle paths that discard/end the active round
+  clear irrelevant pending state.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| New command has correct current version while a cue is pending | `ACTION_NOT_AVAILABLE` |
+| Repeated already-processed request | Return stored `CommandResult`; do not schedule again |
+| Accepted result contains no paced delta | Apply immediately; `effectCue: null` |
+| Accepted result contains more than one paced delta | Throw invariant error; do not silently drop an effect |
+| Tick is one millisecond before `endsAt` | Keep old round and cue |
+| Tick reaches/passes `endsAt` | Apply once, clear cue, increment version |
+| Legacy room snapshot lacks the pending field | Normalize to `null` |
+| Restart restores an expired transition | First tick applies it once |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a kong cue is visible to every member while the replacement tile
+  remains private pending state; the draw and next action deadline appear only
+  after cue completion.
+- Good: a win cue projects no settlement, then the completion version exposes
+  the already-calculated settlement.
+- Base: discard and pass transitions still apply immediately because they have
+  no supplied effect.
+- Bad: applying `nextRound` immediately and asking each client to hide it for
+  2.2 seconds; reconnects and bots would observe different authoritative
+  states.
+- Bad: using a client timer to send a “finish animation” command; a disconnected
+  actor could stall the whole room.
+
+### 6. Tests Required
+
+- Service tests cover every action-to-cue mapping and exact duration.
+- Boundary assertions compare the public old state at `endsAt - 1` with the
+  applied next state at `endsAt`, including replacement draws/next actor.
+- Win tests assert `roundSettlement === null` during the cue and authoritative
+  settlement after completion.
+- Pending-phase tests assert empty actions/actor/deadline, command rejection,
+  no bot/trustee advance and stable cue ID across unrelated room updates.
+- Persistence tests restart `RoomService` on the same database and assert no
+  loss, early application or duplicate application.
+- Deduplication tests repeat the accepted request and assert the room/cue
+  version does not change.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+room.round = result.state;
+setTimeout(() => broadcastSettlement(room), 2_800);
+```
+
+Correct:
+
+```ts
+room.pendingEffectTransition = {
+  cue: createEffectCue(descriptor, now),
+  nextRound: result.state,
+};
+// tick() later applies nextRound and starts the next authoritative deadline.
+```
+
 ## Scenario: Member-specific discard ting guidance
 
 ### 1. Scope / Trigger
@@ -252,7 +374,7 @@ type DiscardTingProjection = {
 };
 
 type RoomProjection = {
-  schemaVersion: 5;
+  schemaVersion: 6;
   tingHints: DiscardTingProjection[];
 };
 ```

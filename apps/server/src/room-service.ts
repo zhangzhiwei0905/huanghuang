@@ -29,6 +29,8 @@ import type {
   CommandEnvelope,
   CommandResult,
   DiscardTingProjection,
+  GameEffectAction,
+  GameEffectCue,
   PlayerController,
   RoomMode,
   RoomCloseReason,
@@ -67,6 +69,11 @@ type SpectatorState = {
   joinedAt: string;
 };
 
+type PendingEffectTransition = {
+  cue: GameEffectCue;
+  nextRound: RoundState;
+};
+
 type PersistedRoomState = {
   id: string;
   code: string;
@@ -91,6 +98,7 @@ type PersistedRoomState = {
   waitingExpiresAt?: string | null;
   actionDeadlineAt?: string | null;
   nextRoundAt?: string | null;
+  pendingEffectTransition?: PendingEffectTransition | null;
 };
 
 export type RoomState = {
@@ -116,6 +124,7 @@ export type RoomState = {
   waitingExpiresAt: string | null;
   actionDeadlineAt: string | null;
   nextRoundAt: string | null;
+  pendingEffectTransition: PendingEffectTransition | null;
 };
 
 export type JoinRoomResult = RoomState | "ROOM_FULL" | "ROOM_NOT_JOINABLE" | null;
@@ -133,6 +142,15 @@ const randomIntFromCrypto = (max: number): number => randomInt(max);
 const BOT_DELAY_MS = 650;
 const RESPONSE_TIMEOUT_MS = 5_000;
 const ROUND_RESULT_MS = 4_000;
+const EFFECT_DURATION_MS = {
+  PONG: 2_000,
+  EXPOSED_KONG: 2_200,
+  CONCEALED_KONG: 2_200,
+  ADDED_KONG: 2_300,
+  INDICATOR_PONG_KONG: 2_200,
+  RELEASE_WILDCARD: 2_500,
+  WIN: 2_800,
+} satisfies Record<GameEffectAction, number>;
 export const WAITING_ROOM_TIMEOUT_MS = 3 * 60_000;
 export const CLOSED_ROOM_EVICTION_MS = 30_000;
 
@@ -206,6 +224,63 @@ function ensureStartingScores(round: RoundState): void {
     startingScores?: Record<Seat, number>;
   };
   legacyRound.startingScores ??= roundScores(round);
+}
+
+type EffectDescriptor = Pick<GameEffectCue, "action" | "actorSeat" | "tileKind" | "winType">;
+
+function detectEffectDescriptor(previous: RoundState, next: RoundState): EffectDescriptor | null {
+  const candidates: EffectDescriptor[] = [];
+
+  for (const seat of SEATS) {
+    const previousMeldKinds = new Map(
+      previous.players[seat].melds.map((meld) => [meld.id, meld.kind] as const),
+    );
+    for (const meld of next.players[seat].melds) {
+      if (previousMeldKinds.get(meld.id) === meld.kind) continue;
+      candidates.push({
+        action: meld.kind,
+        actorSeat: seat,
+        tileKind: meld.tileKind,
+        winType: null,
+      });
+    }
+
+    const previousReleasedIds = new Set(
+      previous.players[seat].releasedWildcards.map((tile) => tile.id),
+    );
+    for (const tile of next.players[seat].releasedWildcards) {
+      if (previousReleasedIds.has(tile.id)) continue;
+      candidates.push({
+        action: "RELEASE_WILDCARD",
+        actorSeat: seat,
+        tileKind: { suit: tile.suit, rank: tile.rank },
+        winType: null,
+      });
+    }
+  }
+
+  if (previous.outcome?.kind !== "WIN" && next.outcome?.kind === "WIN") {
+    candidates.push({
+      action: "WIN",
+      actorSeat: next.outcome.winnerSeat,
+      tileKind: null,
+      winType: next.outcome.winType,
+    });
+  }
+
+  if (candidates.length > 1) {
+    throw new Error("A single rule transition produced multiple game effects");
+  }
+  return candidates[0] ?? null;
+}
+
+function createEffectCue(descriptor: EffectDescriptor, now: number): GameEffectCue {
+  return {
+    id: randomUUID(),
+    ...descriptor,
+    startedAt: new Date(now).toISOString(),
+    endsAt: new Date(now + EFFECT_DURATION_MS[descriptor.action]).toISOString(),
+  };
 }
 
 function stringField(payload: CommandPayload, key: string): string | null {
@@ -305,6 +380,8 @@ export class RoomService {
   private normalizeRoom(persisted: PersistedRoomState): RoomState {
     const round = persisted.round;
     if (round !== null) ensureStartingScores(round);
+    const persistedTransition = persisted.pendingEffectTransition ?? null;
+    if (persistedTransition !== null) ensureStartingScores(persistedTransition.nextRound);
 
     if (persisted.mode !== undefined) {
       const mode = persisted.mode;
@@ -350,6 +427,7 @@ export class RoomService {
             : null,
         actionDeadlineAt: persisted.actionDeadlineAt ?? null,
         nextRoundAt: persisted.nextRoundAt ?? null,
+        pendingEffectTransition: stage === "WAITING" ? null : persistedTransition,
       };
     }
 
@@ -416,6 +494,7 @@ export class RoomService {
         waitingExpiresAt: new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString(),
         actionDeadlineAt: null,
         nextRoundAt: null,
+        pendingEffectTransition: null,
       };
     }
 
@@ -444,12 +523,15 @@ export class RoomService {
       waitingExpiresAt: null,
       actionDeadlineAt: persisted.actionDeadlineAt ?? null,
       nextRoundAt: persisted.nextRoundAt ?? null,
+      pendingEffectTransition: null,
     };
   }
 
   private actingSeat(room: RoomState): Seat | null {
     const round = room.round;
-    if (room.stage !== "PLAYING" || round === null) return null;
+    if (room.stage !== "PLAYING" || round === null || room.pendingEffectTransition !== null) {
+      return null;
+    }
     if (round.phase === "TURN_DECISION") return round.currentSeat;
     if (round.phase === "DISCARD_RESPONSE") return round.pendingResponse?.seat ?? null;
     return null;
@@ -465,6 +547,11 @@ export class RoomService {
   private refreshDeadline(room: RoomState, now = Date.now()): void {
     const round = room.round;
     if (room.status !== "ACTIVE" || room.stage === "WAITING" || round === null) {
+      room.actionDeadlineAt = null;
+      room.nextRoundAt = null;
+      return;
+    }
+    if (room.pendingEffectTransition !== null) {
       room.actionDeadlineAt = null;
       room.nextRoundAt = null;
       return;
@@ -498,6 +585,7 @@ export class RoomService {
   }
 
   private startRound(room: RoomState, now = Date.now()): void {
+    room.pendingEffectTransition = null;
     room.round = createRound({
       id: randomUUID(),
       dealerSeat: room.nextDealerSeat,
@@ -530,6 +618,7 @@ export class RoomService {
     }
     room.spectators = [];
     room.stage = "WAITING";
+    room.pendingEffectTransition = null;
     room.round = null;
     room.readySessionIds = [];
     room.roundStartedAt = null;
@@ -548,17 +637,26 @@ export class RoomService {
     room.closeReason = reason;
     room.dissolveAfterRound = false;
     room.readySessionIds = [];
+    room.pendingEffectTransition = null;
     room.actionDeadlineAt = null;
     room.nextRoundAt = null;
     room.waitingExpiresAt = null;
     this.closedRoomEvictionAt.set(room.code, now + CLOSED_ROOM_EVICTION_MS);
   }
 
-  private acceptRule(room: RoomState, result: RuleResult): boolean {
-    if (!result.ok || room.round === null) return false;
-    room.round = result.state;
+  private acceptRule(room: RoomState, result: RuleResult, now = Date.now()): boolean {
+    if (!result.ok || room.round === null || room.pendingEffectTransition !== null) return false;
+    const effect = detectEffectDescriptor(room.round, result.state);
+    if (effect === null) {
+      room.round = result.state;
+    } else {
+      room.pendingEffectTransition = {
+        cue: createEffectCue(effect, now),
+        nextRound: result.state,
+      };
+    }
     room.version += 1;
-    this.refreshDeadline(room);
+    this.refreshDeadline(room, now);
     return true;
   }
 
@@ -667,6 +765,17 @@ export class RoomService {
         }
         continue;
       }
+      const pendingTransition = room.pendingEffectTransition;
+      if (pendingTransition !== null) {
+        if (Date.parse(pendingTransition.cue.endsAt) > now) continue;
+        room.round = pendingTransition.nextRound;
+        room.pendingEffectTransition = null;
+        room.version += 1;
+        this.refreshDeadline(room, now);
+        this.save(room);
+        updates.push({ roomId: room.id, version: room.version });
+        continue;
+      }
       if (room.stage === "WAITING") {
         if (
           room.mode === "FRIEND" &&
@@ -696,7 +805,7 @@ export class RoomService {
       if (room.actionDeadlineAt === null || Date.parse(room.actionDeadlineAt) > now) continue;
       const seat = this.actingSeat(room);
       if (seat === null) continue;
-      const changed = this.acceptRule(room, this.automaticAction(room, seat));
+      const changed = this.acceptRule(room, this.automaticAction(room, seat), now);
       if (!changed) this.refreshDeadline(room, now);
       this.save(room);
       updates.push({ roomId: room.id, version: room.version });
@@ -753,6 +862,7 @@ export class RoomService {
         mode === "FRIEND" ? new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString() : null,
       actionDeadlineAt: null,
       nextRoundAt: null,
+      pendingEffectTransition: null,
     };
     if (mode === "BOT") this.startRound(room);
     this.roomsByCode.set(room.code, room);
@@ -1031,7 +1141,10 @@ export class RoomService {
             };
           });
     const legalActions =
-      room.stage !== "PLAYING" || selfSeat === null || round === null
+      room.stage !== "PLAYING" ||
+      selfSeat === null ||
+      round === null ||
+      room.pendingEffectTransition !== null
         ? []
         : round.phase === "DISCARD_RESPONSE" && round.pendingResponse?.seat === selfSeat
           ? [...round.pendingResponse.actions, "PASS_RESPONSE"]
@@ -1094,7 +1207,7 @@ export class RoomService {
         : [];
 
     return {
-      schemaVersion: 5,
+      schemaVersion: 6,
       roomId: room.id,
       roomCode: room.code,
       version: room.version,
@@ -1123,6 +1236,7 @@ export class RoomService {
       actionDeadlineAt: room.stage === "PLAYING" ? room.actionDeadlineAt : null,
       roundOutcome,
       roundSettlement,
+      effectCue: room.pendingEffectTransition?.cue ?? null,
       legalActions,
       tingHints,
       players,
@@ -1170,6 +1284,9 @@ export class RoomService {
     }
     const seat = sessionSeat(room, sessionId);
     if (seat === null) return this.storeRejected(sessionId, command, room.version, "NOT_A_MEMBER");
+    if (room.pendingEffectTransition !== null) {
+      return this.storeRejected(sessionId, command, room.version, "ACTION_NOT_AVAILABLE");
+    }
     const round = room.round;
     if (room.stage !== "PLAYING" || round === null) {
       return this.storeRejected(sessionId, command, room.version, "WRONG_PHASE");

@@ -12,6 +12,7 @@ import { ApiError, createCommand, roomApi, type CommandAcknowledge } from "../ap
 import { getStoredSessionToken } from "../api/session";
 import { API_BASE } from "../config";
 import { errorLabel } from "../lib/errors";
+import { normalizeRoomProjection } from "../lib/roomProjection";
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting";
 
@@ -90,15 +91,18 @@ export function useRoom(): RoomController {
 
   const replaceProjection = useCallback(
     (next: RoomProjection) => {
-      if (next.status === "CLOSED") {
+      const normalized = normalizeRoomProjection(next);
+      if (normalized.status === "CLOSED") {
         clearLocalRoom(
-          next.closeReason === null
+          normalized.closeReason === null
             ? "房间已关闭，请重新创建或加入房间"
-            : ROOM_CLOSE_NOTICES[next.closeReason],
+            : ROOM_CLOSE_NOTICES[normalized.closeReason],
         );
         return;
       }
-      setRoom((current) => (current === null || next.version >= current.version ? next : current));
+      setRoom((current) =>
+        current === null || normalized.version >= current.version ? normalized : current,
+      );
       setError(null);
     },
     [clearLocalRoom],

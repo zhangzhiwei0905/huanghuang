@@ -76,6 +76,18 @@ export type RoundSettlementProjection = {
   }[];
 };
 
+export type GameEffectAction = Meld["kind"] | "RELEASE_WILDCARD" | "WIN";
+
+export type GameEffectCue = {
+  id: string;
+  action: GameEffectAction;
+  actorSeat: Seat;
+  tileKind: TileKind | null;
+  winType: WinType | null;
+  startedAt: string;
+  endsAt: string;
+};
+
 export type TingWaitProjection = {
   tileKind: TileKind;
   winType: WinType;
@@ -89,7 +101,7 @@ export type DiscardTingProjection = {
 };
 
 export type RoomProjection = {
-  schemaVersion: 5;
+  schemaVersion: 6;
   roomId: string;
   roomCode: string;
   version: number;
@@ -121,6 +133,7 @@ export type RoomProjection = {
     | { kind: "DRAW"; nextDealerSeat: Seat }
     | null;
   roundSettlement: RoundSettlementProjection | null;
+  effectCue: GameEffectCue | null;
   legalActions: string[];
   tingHints: DiscardTingProjection[];
   players: PlayerProjection[];

@@ -1,4 +1,4 @@
-import type { MeldKind, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
+import type { GameEffectCue, MeldKind, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
 
 type TileRank = Tile["rank"];
 
@@ -29,6 +29,7 @@ export type GameAudioSnapshot = {
   version: number;
   players: Partial<Record<Seat, PlayerAudioSnapshot>>;
   settlementRoundId: string | null;
+  effectCue: Pick<GameEffectCue, "id" | "action" | "winType"> | null;
 };
 
 export type GameAudioTracker = {
@@ -53,9 +54,15 @@ function meldAudioFileName(kind: MeldKind): GameAudioFileName {
   return "action-kong.mp3";
 }
 
+function effectAudioFileName(cue: GameEffectCue): GameAudioFileName {
+  if (cue.action === "RELEASE_WILDCARD") return "action-release-wildcard.mp3";
+  if (cue.action === "WIN") return cue.winType === "HARD" ? "yinghu.mp3" : "ruanhu.mp3";
+  return meldAudioFileName(cue.action);
+}
+
 const VOICE_MESSAGE_AUDIO: Record<string, GameAudioFileName> = {
-  "搞快点搞快点": "gaokuaidian.mp3",
-  "我已经听牌啦": "woyijingtingle.mp3",
+  搞快点搞快点: "gaokuaidian.mp3",
+  我已经听牌啦: "woyijingtingle.mp3",
 };
 
 export function voiceMessageAudioFileName(message: string): GameAudioFileName | null {
@@ -83,6 +90,14 @@ export function createGameAudioSnapshot(room: RoomProjection): GameAudioSnapshot
       ]),
     ) as Partial<Record<Seat, PlayerAudioSnapshot>>,
     settlementRoundId: room.roundSettlement?.roundId ?? null,
+    effectCue:
+      room.effectCue === null
+        ? null
+        : {
+            id: room.effectCue.id,
+            action: room.effectCue.action,
+            winType: room.effectCue.winType,
+          },
   };
 }
 
@@ -100,6 +115,14 @@ export function detectGameAudioFiles(
   }
 
   const files: GameAudioFileName[] = [];
+  const newEffectCue =
+    room.effectCue !== null && room.effectCue.id !== previous.effectCue?.id ? room.effectCue : null;
+  if (newEffectCue !== null) files.push(effectAudioFileName(newEffectCue));
+
+  // The server publishes the cue first, then applies the already-accepted
+  // state transition in the next room version. The cue start owns the action
+  // voice; suppress the matching public-state diff when the cue completes.
+  const completingEffect = previous.effectCue !== null && room.effectCue === null;
   for (const player of room.players) {
     const before = previous.players[player.seat];
     if (before === undefined) continue;
@@ -107,20 +130,26 @@ export function detectGameAudioFiles(
     for (const tile of player.discards) {
       if (!before.discardIds.has(tile.id)) files.push(tileAudioFileName(tile));
     }
-    for (const tile of player.releasedWildcards) {
-      if (!before.releasedWildcardIds.has(tile.id)) {
-        files.push("action-release-wildcard.mp3");
+    if (!completingEffect) {
+      for (const tile of player.releasedWildcards) {
+        if (!before.releasedWildcardIds.has(tile.id)) {
+          files.push("action-release-wildcard.mp3");
+        }
       }
-    }
-    for (const meld of player.melds) {
-      if (before.meldKinds.get(meld.id) !== meld.kind) {
-        files.push(meldAudioFileName(meld.kind));
+      for (const meld of player.melds) {
+        if (before.meldKinds.get(meld.id) !== meld.kind) {
+          files.push(meldAudioFileName(meld.kind));
+        }
       }
     }
   }
 
   const settlement = room.roundSettlement;
-  if (settlement?.kind === "WIN" && settlement.roundId !== previous.settlementRoundId) {
+  if (
+    !completingEffect &&
+    settlement?.kind === "WIN" &&
+    settlement.roundId !== previous.settlementRoundId
+  ) {
     files.push(settlement.winType === "HARD" ? "yinghu.mp3" : "ruanhu.mp3");
   }
   return files;

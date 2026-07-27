@@ -65,6 +65,9 @@ importers:
       '@tarojs/taro':
         specifier: 4.2.1
         version: 4.2.1(@tarojs/components@4.2.1(@tarojs/helper@4.2.1)(@types/react@18.3.31)(html-webpack-plugin@5.6.7(webpack@5.91.0(@swc/core@1.3.96)(esbuild@0.27.7)(lightningcss@1.32.0)(postcss@8.5.19)))(postcss@8.5.19)(rollup@3.30.0)(webpack-chain@6.5.1)(webpack-dev-server@4.15.2(webpack@5.91.0(@swc/core@1.3.96)(esbuild@0.27.7)(lightningcss@1.32.0)(postcss@8.5.19)))(webpack@5.91.0(@swc/core@1.3.96)(esbuild@0.27.7)(lightningcss@1.32.0)(postcss@8.5.19)))(@tarojs/helper@4.2.1)(@tarojs/shared@4.2.1)(@types/react@18.3.31)(html-webpack-plugin@5.6.7(webpack@5.91.0(@swc/core@1.3.96)(esbuild@0.27.7)(lightningcss@1.32.0)(postcss@8.5.19)))(postcss@8.5.19)(rollup@3.30.0)(webpack-chain@6.5.1)(webpack-dev-server@4.15.2(webpack@5.91.0(@swc/core@1.3.96)(esbuild@0.27.7)(lightningcss@1.32.0)(postcss@8.5.19)))(webpack@5.91.0(@swc/core@1.3.96)(esbuild@0.27.7)(lightningcss@1.32.0)(postcss@8.5.19))
+      lottie-miniprogram:
+        specifier: 1.0.12
+        version: 1.0.12
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -4613,6 +4616,9 @@ packages:
   loose-envify@1.4.0:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
+
+  lottie-miniprogram@1.0.12:
+    resolution: {integrity: sha512-2ITtXAyeDXbftvYYe5w0ayl8jTV8laylWMCdJofpka1q205NkjRNj7kX+iIZZ/YjKh1f8plWxb9gSFHkC7BLUQ==}
 
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
@@ -11478,6 +11484,8 @@ snapshots:
   loose-envify@1.4.0:
     dependencies:
       js-tokens: 4.0.0
+
+  lottie-miniprogram@1.0.12: {}
 
   loupe@3.2.1: {}
 

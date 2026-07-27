@@ -142,11 +142,15 @@ updateGameAudioTracker(
   events accumulated between the two visible projections.
 - Detect discards by physical tile ID, not only pile length. A claimed discard
   and a later new discard can leave the pile at the same length.
-- New pong, kong, added-kong and released-wildcard state comes only from public
-  player projection diffs. A new winning `roundSettlement.roundId` triggers
-  win audio (`yinghu.mp3` for `winType === "HARD"`, `ruanhu.mp3` for `"SOFT"`;
-  `action-win.mp3` stays bundled/typed but nothing triggers it anymore); a draw
-  remains silent. `Meld.kind === "INDICATOR_PONG_KONG"` (碰亮牌/朝天杠) plays
+- A new `effectCue.id` plays pong, kong, added-kong, released-wildcard or win
+  audio at the start of the server-owned animation phase. Win uses the cue's
+  authoritative `winType` (`yinghu.mp3` for `"HARD"`, `ruanhu.mp3` for
+  `"SOFT"`); a draw has no cue and stays silent.
+- When the server removes a cue and publishes the accepted meld, released
+  wildcard or settlement in the next room version, suppress the matching
+  projection-diff audio so the same action is not spoken twice. Continue
+  detecting normal discards from physical tile IDs.
+- `GameEffectAction === "INDICATOR_PONG_KONG"` (碰亮牌/朝天杠) plays
   `chaotiangang.mp3`, not the generic `action-pong.mp3`/`action-kong.mp3`.
 - Create a separate `Taro.createInnerAudioContext` with
   `useWebAudioImplement: true` for each short cue. Keep
@@ -162,10 +166,10 @@ updateGameAudioTracker(
   tile or action asset fails type-check/build instead of becoming a silent
   runtime hole.
 
-Tests must cover equal-length discard replacement, every meld-to-audio mapping,
-wildcard release, win versus draw (both `winType`s), initial-load silence,
-reconnect silence, immediate concurrent playback, active-context cleanup and
-stored mute preference.
+Tests must cover equal-length discard replacement, every cue-to-audio mapping,
+cue-completion suppression, wildcard release, both win types, initial-load
+silence, reconnect silence, immediate concurrent playback, active-context
+cleanup and stored mute preference.
 Production verification must assert all 37 MP3 files exist in `dist` and that
 the complete main package remains below WeChat's size limit.
 
@@ -178,6 +182,61 @@ pair. Only `chaotiangang.mp3` still follows the short-peak-window convention
 (`{ startTime: 0.62, duration: 0.7 }`) — do not default new action-style cues
 to full-length playback on the assumption it's now the norm; check with the
 user per-clip.
+
+### Pattern: server-timed Mahjong Lottie overlay
+
+`RoomProjection.effectCue` is the only trigger for the mini-program's
+`MahjongEffectOverlay`. A successful button click never starts an effect
+optimistically. The shared mapping is:
+
+| Cue action | Local animation | Placement |
+|---|---|---|
+| `PONG` | compact text-only `peng` | actor station |
+| exposed/concealed/indicator kong | `gang` | actor station |
+| `ADDED_KONG` | `bu-gang` | actor station |
+| `RELEASE_WILDCARD` | `fang-lai` | actor station |
+| `WIN` | `hu-pai` | full viewport |
+
+- Pin `lottie-miniprogram` and initialize it with one native
+  `<Canvas type="2d">`. Load local CommonJS `animationData`; the package's
+  `path` mode is network-only.
+- Keep generated modules under `src/effects/mahjong/`. Use the supplied
+  `tile-faces.cjs` to clone and substitute the authoritative `TileKind` before
+  playback for tile-bearing effects; protocol suits map to `WAN → m`,
+  `TONG → p`, `TIAO → s`. Pong is intentionally text-only: clone its source,
+  remove every tile layer, retain only the action badge, two rings and a small
+  particle set, and trim `ip` to the first visible effect frame.
+- Stretch the Lottie frame rate to `endsAt - startedAt`. On initial room load
+  or reconnect, seek to the elapsed fraction of a still-active cue and play
+  only its remainder. Do not replay an expired cue.
+- Non-win effects query `#player-station-${actorSeat}` using the absolute
+  server seat, then position beside its rectangle with a centered fallback.
+  Pong uses the smallest stage and slightly overlaps the station edge so its
+  visible center stays close to the avatar. Win renders inside a centered
+  square stage derived from viewport height; a separate full-viewport scrim
+  provides focus without stretching the authored 512×512 composition.
+- The overlay is fixed, pointer-transparent and above table content. Keep the
+  completed final frame until the server removes the cue; cue change and page
+  unmount must destroy the prior animation instance.
+- Include `effectCue !== null` in the room interaction lock even though the
+  projection also has empty legal actions. Canvas/playback failure hides the
+  visual and logs the failure; it never changes the authoritative timer.
+- Pass every REST, Socket and storage-restored projection through
+  `normalizeRoomProjection` before placing it in React state. During a
+  staggered schema 5 → 6 rollout, an older server projection has no
+  `effectCue`; normalize that missing field to `null` once at the boundary.
+  Downstream audio, overlay and interaction code may then keep the strict
+  `GameEffectCue | null` contract and must not treat `undefined` as an active
+  effect.
+- Production verification must run the real WeChat build and measure all files
+  under `dist`. If the package remains below 2 MiB, keep the effects local.
+  Cloud fallback, if ever required, uploads only the five raw animation JSON
+  files under a versioned prefix and keeps the tile-face runtime local.
+
+Pure helper tests must cover all action mappings, suit codes, duration
+stretching, reconnect seek frames, actor-adjacent placement and full-screen win
+placement. The production build must contain all five animation modules and
+the Lottie runtime.
 
 ### Pattern: quick voice messages reuse `room:chat`, audio-only
 

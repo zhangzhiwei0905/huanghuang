@@ -27,6 +27,12 @@ function activeRound(room: RoomState): RoundState {
   return room.round;
 }
 
+function finishPendingEffect(service: RoomService, room: RoomState): void {
+  const transition = room.pendingEffectTransition;
+  if (transition === null) throw new Error("Expected a pending effect transition");
+  service.tick(Date.parse(transition.cue.endsAt));
+}
+
 describe("RoomService", () => {
   const databases: GameDatabase[] = [];
 
@@ -474,7 +480,7 @@ describe("RoomService", () => {
     const projection = service.project(room, owner.id);
     const hints = projection.tingHints.find((hint) => hint.discardTileId === discarded.id);
 
-    expect(projection.schemaVersion).toBe(5);
+    expect(projection.schemaVersion).toBe(6);
     expect(hints?.waits).toContainEqual({
       tileKind: { suit: "TONG", rank: 1 },
       winType: "HARD",
@@ -777,7 +783,26 @@ describe("RoomService", () => {
     room.seats[0].controller = "TRUSTEE";
     room.actionDeadlineAt = new Date(0).toISOString();
 
-    service.tick(Date.now());
+    const effectStartedAt = Date.now();
+    service.tick(effectStartedAt);
+
+    expect(room.stage).toBe("PLAYING");
+    expect(activeRound(room).outcome).toBeNull();
+    expect(service.project(room, owner.id)).toMatchObject({
+      actingSeat: null,
+      actionDeadlineAt: null,
+      legalActions: [],
+      effectCue: {
+        action: "WIN",
+        actorSeat: 0,
+        tileKind: null,
+        winType: "SOFT",
+        startedAt: new Date(effectStartedAt).toISOString(),
+        endsAt: new Date(effectStartedAt + 2_800).toISOString(),
+      },
+      roundSettlement: null,
+    });
+    finishPendingEffect(service, room);
 
     expect(room.stage).toBe("ROUND_RESULT");
     expect(activeRound(room).outcome).toMatchObject({
@@ -831,13 +856,152 @@ describe("RoomService", () => {
     );
     room.actionDeadlineAt = new Date(0).toISOString();
     const versionBefore = room.version;
+    const handCountBefore = round.players[1].hand.length;
 
-    service.tick(Date.now());
+    const effectStartedAt = Date.now();
+    service.tick(effectStartedAt);
 
+    expect(activeRound(room).players[1].melds.at(-1)).toBeUndefined();
+    expect(service.project(room, owner.id).effectCue).toMatchObject({
+      action: "EXPOSED_KONG",
+      actorSeat: 1,
+      tileKind: kind,
+      winType: null,
+      startedAt: new Date(effectStartedAt).toISOString(),
+      endsAt: new Date(effectStartedAt + 2_200).toISOString(),
+    });
+    expect(room.version).toBe(versionBefore + 1);
+
+    service.tick(effectStartedAt + 2_199);
+    expect(activeRound(room).players[1].melds.at(-1)).toBeUndefined();
+
+    service.tick(effectStartedAt + 2_200);
     expect(activeRound(room).players[1].melds.at(-1)?.kind).toBe("EXPOSED_KONG");
+    expect(activeRound(room).players[1].hand).toHaveLength(handCountBefore - 2);
+    expect(activeRound(room).currentSeat).toBe(1);
+    expect(activeRound(room).lastDrawSeat).toBe(1);
     expect(activeRound(room).players[1].score).toBe(6);
     expect(activeRound(room).players[0].score).toBe(-6);
-    expect(room.version).toBe(versionBefore + 1);
+    expect(room.version).toBe(versionBefore + 2);
+  });
+
+  it("maps concealed, added and indicator kongs to their authoritative cue kinds", () => {
+    const concealedService = createService();
+    const concealedRoom = concealedService.createRoom(owner, 2, "BOT");
+    const concealedRound = activeRound(concealedRoom);
+    const concealedKind = { suit: "WAN" as const, rank: 2 as const };
+    concealedRound.wildcardKind = { suit: "TONG", rank: 9 };
+    const concealedTiles = ["a", "b", "c", "d"].map((suffix) => ({
+      id: `concealed-effect-${suffix}`,
+      ...concealedKind,
+    }));
+    concealedRound.players[0].hand.splice(0, 4, ...concealedTiles);
+    concealedRound.phase = "TURN_DECISION";
+    concealedRound.currentSeat = 0;
+    concealedRound.lastDrawSeat = 0;
+    concealedRound.lastDrawnTileId = concealedTiles[3]?.id ?? "";
+    const concealedResult = concealedService.execute(owner.id, {
+      type: "DECLARE_CONCEALED_KONG",
+      requestId: randomUUID(),
+      roomId: concealedRoom.id,
+      roundId: concealedRound.id,
+      expectedVersion: concealedRoom.version,
+      payload: concealedKind,
+    });
+    expect(concealedResult.accepted).toBe(true);
+    expect(concealedRoom.pendingEffectTransition?.cue).toMatchObject({
+      action: "CONCEALED_KONG",
+      actorSeat: 0,
+      tileKind: concealedKind,
+    });
+    expect(
+      Date.parse(concealedRoom.pendingEffectTransition?.cue.endsAt ?? "") -
+        Date.parse(concealedRoom.pendingEffectTransition?.cue.startedAt ?? ""),
+    ).toBe(2_200);
+
+    const addedService = createService();
+    const addedRoom = addedService.createRoom(owner, 2, "BOT");
+    const addedRound = activeRound(addedRoom);
+    const addedKind = { suit: "TONG" as const, rank: 7 as const };
+    addedRound.wildcardKind = { suit: "WAN", rank: 9 };
+    const addedTile = { id: "added-effect-tile", ...addedKind };
+    addedRound.players[0].melds = [
+      {
+        id: "added-effect-pong",
+        kind: "PONG",
+        tileIds: ["added-effect-a", "added-effect-b", "added-effect-c"],
+        tileKind: addedKind,
+        sourcePlayerId: "seat-1",
+        sourceDiscardId: "added-effect-discard",
+        createdAtVersion: 1,
+      },
+    ];
+    addedRound.players[0].hand[0] = addedTile;
+    addedRound.phase = "TURN_DECISION";
+    addedRound.currentSeat = 0;
+    addedRound.lastDrawSeat = 0;
+    addedRound.lastDrawnTileId = addedTile.id;
+    const addedResult = addedService.execute(owner.id, {
+      type: "DECLARE_ADDED_KONG",
+      requestId: randomUUID(),
+      roomId: addedRoom.id,
+      roundId: addedRound.id,
+      expectedVersion: addedRoom.version,
+      payload: { meldId: "added-effect-pong", tileId: addedTile.id },
+    });
+    expect(addedResult.accepted).toBe(true);
+    expect(addedRoom.pendingEffectTransition?.cue).toMatchObject({
+      action: "ADDED_KONG",
+      actorSeat: 0,
+      tileKind: addedKind,
+    });
+    expect(
+      Date.parse(addedRoom.pendingEffectTransition?.cue.endsAt ?? "") -
+        Date.parse(addedRoom.pendingEffectTransition?.cue.startedAt ?? ""),
+    ).toBe(2_300);
+
+    const indicatorService = createService();
+    const indicatorRoom = indicatorService.createRoom(owner, 2, "BOT");
+    const indicatorRound = activeRound(indicatorRoom);
+    const indicatorKind = {
+      suit: indicatorRound.indicatorTile.suit,
+      rank: indicatorRound.indicatorTile.rank,
+    };
+    indicatorRound.phase = "DISCARD_RESPONSE";
+    indicatorRound.currentSeat = 1;
+    indicatorRound.lastDiscard = {
+      id: "indicator-effect-discard",
+      tile: { id: "indicator-effect-discard-tile", ...indicatorKind },
+      sourceSeat: 1,
+    };
+    indicatorRound.pendingResponse = {
+      seat: 0,
+      actions: ["CLAIM_INDICATOR_PONG_KONG"],
+    };
+    indicatorRound.players[0].hand.splice(
+      0,
+      2,
+      { id: "indicator-effect-a", ...indicatorKind },
+      { id: "indicator-effect-b", ...indicatorKind },
+    );
+    const indicatorResult = indicatorService.execute(owner.id, {
+      type: "CLAIM_INDICATOR_PONG_KONG",
+      requestId: randomUUID(),
+      roomId: indicatorRoom.id,
+      roundId: indicatorRound.id,
+      expectedVersion: indicatorRoom.version,
+      payload: {},
+    });
+    expect(indicatorResult.accepted).toBe(true);
+    expect(indicatorRoom.pendingEffectTransition?.cue).toMatchObject({
+      action: "INDICATOR_PONG_KONG",
+      actorSeat: 0,
+      tileKind: indicatorKind,
+    });
+    expect(
+      Date.parse(indicatorRoom.pendingEffectTransition?.cue.endsAt ?? "") -
+        Date.parse(indicatorRoom.pendingEffectTransition?.cue.startedAt ?? ""),
+    ).toBe(2_200);
   });
 
   it("projects reducer-driven kong and self-draw transfers as one round delta", () => {
@@ -1034,6 +1198,117 @@ describe("RoomService", () => {
       { seat: 3, roundDelta: -2, totalScore: -2 },
     ]);
     expect(settlement?.finalHands.map((hand) => hand.personalMultiplier)).toEqual([1, 1, 1, 1]);
+  });
+
+  it("persists a pong cue across restart and applies the accepted transition only on expiry", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const service = new RoomService(database);
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    const kind = { suit: "WAN" as const, rank: 4 as const };
+    const discardTile = { id: "persisted-pong-discard-tile", ...kind };
+    round.phase = "DISCARD_RESPONSE";
+    round.currentSeat = 1;
+    round.lastDiscard = {
+      id: "persisted-pong-discard",
+      tile: discardTile,
+      sourceSeat: 1,
+    };
+    round.pendingResponse = { seat: 0, actions: ["CLAIM_PONG"] };
+    round.players[1].discards.push(discardTile);
+    round.players[0].hand.splice(
+      0,
+      2,
+      { id: "persisted-pong-a", ...kind },
+      { id: "persisted-pong-b", ...kind },
+    );
+    const versionBefore = room.version;
+    const command = {
+      type: "CLAIM_PONG",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: versionBefore,
+      payload: {},
+    } as const;
+    const result = service.execute(owner.id, command);
+
+    expect(result.accepted).toBe(true);
+    expect(activeRound(room).players[0].melds.at(-1)).toBeUndefined();
+    expect(room.version).toBe(versionBefore + 1);
+    expect(service.project(room, owner.id)).toMatchObject({
+      actingSeat: null,
+      actionDeadlineAt: null,
+      legalActions: [],
+      effectCue: {
+        action: "PONG",
+        actorSeat: 0,
+        tileKind: kind,
+        winType: null,
+      },
+    });
+    expect(
+      Date.parse(room.pendingEffectTransition?.cue.endsAt ?? "") -
+        Date.parse(room.pendingEffectTransition?.cue.startedAt ?? ""),
+    ).toBe(2_000);
+    expect(service.execute(owner.id, command)).toEqual(result);
+    expect(room.version).toBe(versionBefore + 1);
+    const blocked = service.execute(owner.id, {
+      type: "PASS_RESPONSE",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: room.version,
+      payload: {},
+    });
+    expect(blocked).toMatchObject({ accepted: false, errorCode: "ACTION_NOT_AVAILABLE" });
+
+    const restoredService = new RoomService(database);
+    const restored = restoredService.getRoom(room.code);
+    if (restored === null) throw new Error("Expected the room with its pending cue to restore");
+    const endsAt = Date.parse(restored.pendingEffectTransition?.cue.endsAt ?? "");
+    restoredService.tick(endsAt - 1);
+    expect(activeRound(restored).players[0].melds.at(-1)).toBeUndefined();
+
+    restoredService.tick(endsAt);
+    expect(restored.pendingEffectTransition).toBeNull();
+    expect(activeRound(restored).players[0].melds.at(-1)?.kind).toBe("PONG");
+    expect(restored.version).toBe(versionBefore + 2);
+  });
+
+  it("keeps a wildcard in hand until its 2.5-second release effect completes", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    const wildcard = { id: "release-effect-wildcard", ...round.wildcardKind };
+    round.phase = "TURN_DECISION";
+    round.currentSeat = 0;
+    round.players[0].hand[0] = wildcard;
+    const releasedBefore = round.players[0].releasedWildcards.length;
+    const result = service.execute(owner.id, {
+      type: "RELEASE_WILDCARD",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: room.version,
+      payload: { tileId: wildcard.id },
+    });
+
+    expect(result.accepted).toBe(true);
+    const transition = room.pendingEffectTransition;
+    if (transition === null) throw new Error("Expected a release effect transition");
+    expect(transition.cue.action).toBe("RELEASE_WILDCARD");
+    expect(Date.parse(transition.cue.endsAt) - Date.parse(transition.cue.startedAt)).toBe(2_500);
+    expect(activeRound(room).players[0].releasedWildcards).toHaveLength(releasedBefore);
+    expect(activeRound(room).players[0].hand.some((tile) => tile.id === wildcard.id)).toBe(true);
+
+    finishPendingEffect(service, room);
+    expect(activeRound(room).players[0].releasedWildcards).toHaveLength(releasedBefore + 1);
+    expect(activeRound(room).players[0].releasedWildcards.at(-1)?.id).toBe(wildcard.id);
+    expect(activeRound(room).players[0].hand).toHaveLength(round.players[0].hand.length);
+    expect(activeRound(room).lastDrawSeat).toBe(0);
+    expect(activeRound(room).lastDrawnTileId).not.toBe(wildcard.id);
   });
 
   it("deduplicates a repeated command and rejects a stale new request", () => {

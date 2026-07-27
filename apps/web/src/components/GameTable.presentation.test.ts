@@ -59,7 +59,7 @@ function player(seat: Seat): PlayerProjection {
 function resultRoom(): RoomProjection {
   const players = ([0, 1, 2, 3] as const).map(player);
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     roomId: "room-1",
     roomCode: "123456",
     version: 12,
@@ -113,6 +113,7 @@ function resultRoom(): RoomProjection {
         { seat: 3, roundDelta: -4, totalScore: -4 },
       ],
     },
+    effectCue: null,
     legalActions: [],
     tingHints: [],
     players,

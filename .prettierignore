@@ -3,3 +3,4 @@ dist
 coverage
 .trellis
 pnpm-lock.yaml
+apps/miniprogram/src/effects/mahjong/**/*.cjs

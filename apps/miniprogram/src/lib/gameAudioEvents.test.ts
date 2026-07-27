@@ -1,4 +1,5 @@
 import type {
+  GameEffectCue,
   Meld,
   PlayerProjection,
   RoomProjection,
@@ -55,7 +56,7 @@ function settlement(
 
 function room(overrides: Partial<RoomProjection> = {}): RoomProjection {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     roomId: "room-1",
     roomCode: "1234",
     version: 1,
@@ -84,11 +85,28 @@ function room(overrides: Partial<RoomProjection> = {}): RoomProjection {
     actionDeadlineAt: null,
     roundOutcome: null,
     roundSettlement: null,
+    effectCue: null,
     legalActions: [],
     tingHints: [],
     players: [player(0), player(1), player(2), player(3)],
     lobbySeats: [],
     spectators: [],
+    ...overrides,
+  };
+}
+
+function cue(
+  action: GameEffectCue["action"],
+  overrides: Partial<GameEffectCue> = {},
+): GameEffectCue {
+  return {
+    id: `effect-${action}`,
+    action,
+    actorSeat: 1,
+    tileKind: action === "WIN" ? null : { suit: "TIAO", rank: 3 },
+    winType: action === "WIN" ? "HARD" : null,
+    startedAt: "2026-07-26T00:00:01.000Z",
+    endsAt: "2026-07-26T00:00:03.000Z",
     ...overrides,
   };
 }
@@ -146,6 +164,48 @@ describe("game audio projection events", () => {
     expect(detectGameAudioFiles(createGameAudioSnapshot(before), after)).toEqual([fileName]);
   });
 
+  it.each([
+    ["PONG", "action-pong.mp3"],
+    ["EXPOSED_KONG", "action-kong.mp3"],
+    ["CONCEALED_KONG", "action-kong.mp3"],
+    ["INDICATOR_PONG_KONG", "chaotiangang.mp3"],
+    ["ADDED_KONG", "action-added-kong.mp3"],
+    ["RELEASE_WILDCARD", "action-release-wildcard.mp3"],
+  ] as const)("plays the %s voice when its effect cue starts", (action, fileName) => {
+    const before = room();
+    const after = room({ version: 2, effectCue: cue(action) });
+
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), after)).toEqual([fileName]);
+  });
+
+  it("plays the matching hard/soft voice when a win cue starts", () => {
+    const before = room();
+    const hard = room({ version: 2, effectCue: cue("WIN", { winType: "HARD" }) });
+    const soft = room({ version: 2, effectCue: cue("WIN", { winType: "SOFT" }) });
+
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), hard)).toEqual(["yinghu.mp3"]);
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), soft)).toEqual(["ruanhu.mp3"]);
+  });
+
+  it("does not replay action audio when the cued state transition becomes visible", () => {
+    const before = room({ effectCue: cue("PONG") });
+    const after = room({
+      version: 2,
+      effectCue: null,
+      players: [player(0), player(1, { melds: [meld("meld-1", "PONG")] }), player(2), player(3)],
+    });
+
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), after)).toEqual([]);
+  });
+
+  it("does not replay the same cue across connection-only room versions", () => {
+    const activeCue = cue("ADDED_KONG");
+    const before = room({ effectCue: activeCue });
+    const after = room({ version: 2, effectCue: activeCue });
+
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), after)).toEqual([]);
+  });
+
   it("detects wildcard release and a new win but keeps a draw silent", () => {
     const before = room();
     const released = room({
@@ -164,12 +224,8 @@ describe("game audio projection events", () => {
     expect(detectGameAudioFiles(createGameAudioSnapshot(before), released)).toEqual([
       "action-release-wildcard.mp3",
     ]);
-    expect(detectGameAudioFiles(createGameAudioSnapshot(before), wonHard)).toEqual([
-      "yinghu.mp3",
-    ]);
-    expect(detectGameAudioFiles(createGameAudioSnapshot(before), wonSoft)).toEqual([
-      "ruanhu.mp3",
-    ]);
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), wonHard)).toEqual(["yinghu.mp3"]);
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), wonSoft)).toEqual(["ruanhu.mp3"]);
     expect(detectGameAudioFiles(createGameAudioSnapshot(before), drawn)).toEqual([]);
   });
 
@@ -218,6 +274,23 @@ describe("game audio projection events", () => {
     expect(updateGameAudioTracker(tracker, disconnectedUpdate, false)).toEqual([]);
     expect(updateGameAudioTracker(tracker, reconnectedUpdate, true)).toEqual([]);
     expect(updateGameAudioTracker(tracker, liveUpdate, true)).toEqual(["tile-tong-7.mp3"]);
+  });
+
+  it("does not speak an effect first discovered while disconnected or reconnecting", () => {
+    const tracker = createGameAudioTracker();
+    const initial = room();
+    const activeCue = cue("PONG");
+
+    expect(updateGameAudioTracker(tracker, initial, true)).toEqual([]);
+    expect(
+      updateGameAudioTracker(tracker, room({ version: 2, effectCue: activeCue }), false),
+    ).toEqual([]);
+    expect(
+      updateGameAudioTracker(tracker, room({ version: 3, effectCue: activeCue }), true),
+    ).toEqual([]);
+    expect(updateGameAudioTracker(tracker, room({ version: 4, effectCue: null }), true)).toEqual(
+      [],
+    );
   });
 
   it("stays silent when a full snapshot skips room versions", () => {
