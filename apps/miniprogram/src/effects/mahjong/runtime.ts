@@ -1,6 +1,5 @@
 import type { TileKind } from "@huanghuang/protocol";
 import {
-  stretchLottieTiming,
   tileKindCode,
   type LottieTiming,
   type MahjongEffectKey,
@@ -69,7 +68,6 @@ function compactPongAnimation(animationData: MahjongAnimationData): MahjongAnima
 export function loadMahjongAnimationData(
   key: MahjongEffectKey,
   tileKind: TileKind | null,
-  durationMs: number,
 ): MahjongAnimationData {
   const source = animationLoaders[key]();
   let animationData: MahjongAnimationData;
@@ -91,5 +89,10 @@ export function loadMahjongAnimationData(
     });
   }
 
-  return stretchLottieTiming(animationData, durationMs);
+  // Animations play at their authored frame rate (60fps). The server cue
+  // window is longer than the animation; the final frame simply holds until
+  // the cue expires. `stretchLottieTiming` survives only for mid-cue resume
+  // math in lib/mahjongEffect (lottieResumeFrame works in frame space and is
+  // framerate-independent).
+  return animationData;
 }
