@@ -960,3 +960,39 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+---
+
+**Date**: 2026-07-27
+**Task**: 麻将小程序高优先级样式与体验优化（已回退）
+**Branch**: `miniprogram`
+
+### Summary
+
+完成 07-27-mahjong-ux-optimizations 任务的全部 7 项方案实施（危险操作确认、震动反馈、loading/音频预热、特效锚点/队列/DPR、定速播放与来由徽标、theme.scss 清理、!important 清零），分 7 个 commit 提交，80 测试全过 + typecheck 干净。随后用户要求整体回退，以单个 revert commit（74c859a）撤销全部改动，代码回到 0b6d9b6 逐字节一致。7 个原始 commit 保留在 git 历史中（39b363c..d61efb8），可用 revert-of-revert 或 cherry-pick 按需恢复；方案文档留在 archive/2026-07/07-27-mahjong-ux-optimizations/。
+
+### Main Changes
+
+- 全部改动已回退，工作区与 0b6d9b6 一致（diff 0 行）
+- 回退后测试回到基线 54 个并全过
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `39b363c`..`d61efb8` | 7 个优化 commit（保留在历史中，未生效） |
+| `74c859a` | Revert all 7 frontend commits |
+| `fd094b7` | 任务归档 |
+
+### Testing
+
+- [OK] 回退前：80 tests passed, typecheck clean, dist wxss 零 !important
+- [OK] 回退后：54 tests passed（基线）
+
+### Status
+
+[OK] **Reverted**（任务已归档，改动未保留）
+
+### Next Steps
+
+- 若真机回归曾发现具体问题，按现象定位到单批 commit 单独恢复/修复，避免整批推翻
