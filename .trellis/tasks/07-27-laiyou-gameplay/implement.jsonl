@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Entry point for apps/server, packages/protocol and packages/game-engine conventions"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Keeps the laiyou rule in the pure engine and out of the server gateway"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Settlement/bot/command scenarios and the zero-sum invariant the laiyou multiplier must preserve"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "RoundState gains laiyouCandidate, so persisted round snapshots need compatible defaults"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Settlement modal must remain a projection renderer with no client-side rule judgement"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Conventions for the web settlement modal, themes and motion"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Projection versioning and local-vs-server state ownership for the new laiyou fields"}
+{"file": ".trellis/spec/frontend/miniprogram.md", "reason": "Taro/WXSS constraints for the mini-program settlement modal and audio pipeline"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Win-audio mapping is currently duplicated in two branches; collapse it into one table"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Change spans engine, protocol, server projection, audio channel and two clients"}

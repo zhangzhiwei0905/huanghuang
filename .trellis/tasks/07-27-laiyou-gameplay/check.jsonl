@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required backend checks plus settlement zero-sum and bot scenarios"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify persisted round snapshots without laiyou fields still normalize correctly"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend checks, a11y and forbidden client-side rule derivation"}
+{"file": ".trellis/spec/frontend/miniprogram.md", "reason": "Verify the mini-program audio mapping and settlement modal against Taro constraints"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check the win/laiyou audio mapping was not duplicated again"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer review checklist across engine, protocol, server and clients"}

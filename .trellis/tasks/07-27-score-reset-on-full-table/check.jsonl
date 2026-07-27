@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required backend checks plus command/bot/settlement scenarios to verify"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify persisted snapshot compatibility for the new RoomState field"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend checks, a11y and forbidden client-side rule derivation"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Confirm clients only read scoreResetPending and never derive the reset locally"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer review checklist for the projection field rollout"}

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Server/protocol/engine conventions entry point; the reset logic lives in apps/server/src/room-service.ts"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Decides where the room-state field and reset helper belong"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "A new persisted RoomState field changes room snapshot serialization and lifecycle"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Settlement and room-lifecycle scenarios that the score reset must not regress"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Web waiting-room hint must stay a pure projection renderer"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Projection versioning rules and the lobbySeats-only waiting-room constraint"}
+{"file": ".trellis/spec/frontend/miniprogram.md", "reason": "Taro/WXSS constraints for the mini-program waiting-room hint"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Change spans engine input, server state, protocol projection and two clients"}

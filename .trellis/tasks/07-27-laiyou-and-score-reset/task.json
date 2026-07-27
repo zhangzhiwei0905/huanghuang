@@ -1,0 +1,29 @@
+{
+  "id": "laiyou-and-score-reset",
+  "name": "laiyou-and-score-reset",
+  "title": "机器人转真人积分重算与来由玩法",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "zhang",
+  "assignee": "zhang",
+  "createdAt": "2026-07-27",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "miniprogram",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-27-score-reset-on-full-table",
+    "07-27-laiyou-gameplay"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
