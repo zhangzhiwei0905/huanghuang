@@ -48,3 +48,42 @@
 - 不替换实际的来由音频文件，只预留映射。
 - 不引入新的房间模式或重构 `FRIEND` / `BOT` 模式语义。
 - 不改动放赖操作本身的时机与合法性规则。
+## 集成审查结果
+
+两个子任务都已实现、检查并归档。共同接触点确认没有互相覆盖：`packages/protocol/src/projections.ts` 的 `schemaVersion` 按计划顺序推进（6 → 7 清零任务 → 8 来由任务），`apps/server/src/room-service.ts` 的 `project()` 里两组新字段各自独立，无覆盖或重复定义。
+
+| 跨子任务验收标准 | 结果 |
+|---|---|
+| 1. lint / typecheck / test / build 全绿 | 通过（212 项测试） |
+| 2. 结算零和不变量成立 | 通过（`assertZeroSum` 未抛错；新增来由倍率与 64 倍上限的零和断言） |
+| 3. 客户端不自行判定胡型 / 来由 / 倍率 | 通过（两端只读投影字段；Web 的胡型文案收敛到单个 `winTypeLabel`） |
+| 4. 历史房间快照可反序列化、新字段有兼容默认值 | 通过（`normalizeRoom` 三个分支 + `normalizeRoundState` 覆盖，含对应测试） |
+| 5. 两端结算语义一致、小程序音效不重复不漏播 | **仅测试层面验证，真机未走查** |
+
+标准 5 只在单测层面成立：小程序音效映射与「一次胡只播一次」由 `gameAudioEvents.test.ts` 覆盖，Web 结算文案由 `GameTable.presentation.test.ts` 覆盖，但真机上的云存储音频实际播放与小程序结算弹窗布局没有验证过。
+
+## 需求变更记录
+
+规划期的两条决策在实现后被用户修正：
+
+1. **积分清零**由「含机器人的历史局分不计入战绩」改为**房间级一次性**：本房间首次四真人满座开局时清零一次，之后玩家掉线被机器人顶替、重连回座位都不再清零，换账本只能重建房间。实现从 `scoresIncludeBotRounds`（每局重新武装）改为 `fullTableScoreResetDone`（单向翻转），见提交 `fa8b4a9`。
+2. **硬来由边界**确认：手上原有 2 张赖子、放掉 1 张后摸牌构成硬胡（剩下那张赖子作为自身牌面参与构型），算硬来由。原实现按引擎 `winType` 判定，本身已正确，补测试固定，见提交 `730c355`。
+
+## 部署记录
+
+| 项 | 值 |
+|---|---|
+| 生产镜像 | `huanghuang-app:2656638-laiyou-20260727-1741` |
+| 上线提交 | `2656638` |
+| 回滚镜像 | `huanghuang-app:1c2639d-lottie-20260727-1215` |
+| 数据备份 | `~/backups/huanghuang-pre-laiyou-20260727-180453-safe.sqlite`（含 `-wal` / `-shm`，需三件一起恢复） |
+| 下线时长 | 约 4 秒 |
+| 线上验证 | `/health/live`、`/health/ready` 本地与公网均 200；生产临时好友房投影 `schemaVersion: 8`、`scoreResetPending` 字段存在 |
+
+Web 产物随服务端镜像一同上线（`apps/web/dist` 被 COPY 进镜像）。**小程序端仍需单独构建上传**，否则看不到来由展示、听不到来由音效。
+
+### 部署过程中发现的基础设施问题（未根治）
+
+1. `README.md` 的阿里云部署章节与生产实际不符：文档写 `docker compose up -d --build` + caddy 容器 + `deploy_game_data` 卷，生产实际是 `docker run` + 宿主机 nginx（`/etc/nginx/conf.d/huanghuang.conf` → `127.0.0.1:13000`）+ `huanghuang_game_data` 卷。照文档执行会起出平行 stack 并抢占 80/443。
+2. Docker 专属加速器 `eznmnf0f.mirror.aliyuncs.com` 对 `node:24-alpine` 返回 403，构建直接失败。本次绕过方式：先 `docker pull node:24-alpine` 让 daemon 回退到备用源 `docker.m.daocloud.io`，再用 `docker build --pull=false`。根治需要改 `/etc/docker/daemon.json` 并重启 Docker，会连带重启同机的其他项目容器，需要维护窗口。
+3. 生产服务器没有 `rsync`，且 `~/huanghuang` 不是 git 仓库。本次用 `git archive HEAD | ssh … tar -x` 推送提交树，注意这种方式不会删除服务器上已从 git 移除的旧文件。
