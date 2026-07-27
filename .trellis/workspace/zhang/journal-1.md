@@ -823,3 +823,37 @@ Operator verified core path in WeChat DevTools: realtime works after socket.io-m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Miniprogram audio overhaul + cloud storage migration
+
+**Date**: 2026-07-27
+**Task**: Miniprogram audio overhaul + cloud storage migration
+**Branch**: `miniprogram`
+
+### Summary
+
+Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for indicator-tile pongs, and a quick-message voice feature (custom in-game speech-bubble picker, not the system action sheet) reusing the existing room:chat socket event. Polished room-table styling: tighter meld-rail spacing, full-height ting-hint card (no scroll), score/multiplier/hand-count color hierarchy, stronger active-seat highlight. Hit WeChat's 2MB main-package upload limit after adding 5 new audio files; resolved by migrating all 37 game sound effects to WeChat Cloud Storage (env cloud1-d6g7jl5kade1bad81) with runtime temp-URL resolution, dropping the package from ~2.36MB to ~964KB.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e8cb1e9` | (see git log) |
+| `4fbd6b7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

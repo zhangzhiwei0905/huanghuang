@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
-- **Last Active**: 2026-07-26
+- **Total Sessions**: 22
+- **Last Active**: 2026-07-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~825 | Active |
+| `journal-1.md` | ~859 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-07-27 | Miniprogram audio overhaul + cloud storage migration | `e8cb1e9`, `4fbd6b7` | `miniprogram` |
 | 21 | 2026-07-26 | 小程序牌局音效与即时播放上线 | `e8bfeff` | `miniprogram` |
 | 20 | 2026-07-26 | 四位房间码与机器人好友房上线 | `6072d40` | `miniprogram` |
 | 19 | 2026-07-25 | 小程序牌桌引导、公开牌布局与可配置出牌时长 | `9c560aa` | `miniprogram` |
