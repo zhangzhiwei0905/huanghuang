@@ -15,6 +15,7 @@ import {
   tileAudioFileName,
   updateGameAudioTracker,
   voiceMessageAudioFileName,
+  winAudioFileName,
 } from "./gameAudioEvents.js";
 
 function player(seat: Seat, overrides: Partial<PlayerProjection> = {}): PlayerProjection {
@@ -38,6 +39,7 @@ function player(seat: Seat, overrides: Partial<PlayerProjection> = {}): PlayerPr
 function settlement(
   kind: "WIN" | "DRAW",
   winType: "HARD" | "SOFT" = "HARD",
+  laiyou = false,
 ): RoundSettlementProjection {
   return {
     roundId: "round-1",
@@ -47,6 +49,8 @@ function settlement(
     baseScore: 2,
     winBaseMultiplier: kind === "WIN" ? 2 : null,
     winnerMultiplier: kind === "WIN" ? 1 : null,
+    laiyou: kind === "WIN" && laiyou,
+    laiyouMultiplier: kind === "WIN" ? (laiyou ? 2 : 1) : null,
     nextDealerSeat: 0,
     payments: [],
     finalHands: [],
@@ -56,7 +60,7 @@ function settlement(
 
 function room(overrides: Partial<RoomProjection> = {}): RoomProjection {
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     roomId: "room-1",
     roomCode: "1234",
     version: 1,
@@ -106,6 +110,7 @@ function cue(
     actorSeat: 1,
     tileKind: action === "WIN" ? null : { suit: "TIAO", rank: 3 },
     winType: action === "WIN" ? "HARD" : null,
+    laiyou: false,
     startedAt: "2026-07-26T00:00:01.000Z",
     endsAt: "2026-07-26T00:00:03.000Z",
     ...overrides,
@@ -186,6 +191,42 @@ describe("game audio projection events", () => {
 
     expect(detectGameAudioFiles(createGameAudioSnapshot(before), hard)).toEqual(["yinghu.mp3"]);
     expect(detectGameAudioFiles(createGameAudioSnapshot(before), soft)).toEqual(["ruanhu.mp3"]);
+  });
+
+  it("routes a laiyou win cue through the laiyou audio mapping", () => {
+    const before = room();
+    const hardLaiyou = room({
+      version: 2,
+      effectCue: cue("WIN", { winType: "HARD", laiyou: true }),
+    });
+    const softLaiyou = room({
+      version: 2,
+      effectCue: cue("WIN", { winType: "SOFT", laiyou: true }),
+    });
+
+    // 来由 currently reuses the plain hard/soft clips; the assertion pins the
+    // mapping table, so swapping in dedicated audio updates exactly one place.
+    expect(winAudioFileName("HARD", true)).toBe("yinghu.mp3");
+    expect(winAudioFileName("SOFT", true)).toBe("ruanhu.mp3");
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), hardLaiyou)).toEqual([
+      winAudioFileName("HARD", true),
+    ]);
+    expect(detectGameAudioFiles(createGameAudioSnapshot(before), softLaiyou)).toEqual([
+      winAudioFileName("SOFT", true),
+    ]);
+  });
+
+  it("plays one laiyou voice per win through the settlement fallback", () => {
+    const before = room();
+    const settled = room({ version: 2, roundSettlement: settlement("WIN", "SOFT", true) });
+    const snapshot = createGameAudioSnapshot(before);
+
+    expect(detectGameAudioFiles(snapshot, settled)).toEqual([winAudioFileName("SOFT", true)]);
+    // The settlement round id is unchanged relative to the new snapshot, so the
+    // same win never speaks twice.
+    expect(
+      detectGameAudioFiles(createGameAudioSnapshot(settled), { ...settled, version: 3 }),
+    ).toEqual([]);
   });
 
   it("does not replay action audio when the cued state transition becomes visible", () => {

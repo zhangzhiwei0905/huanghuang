@@ -5,6 +5,7 @@ import {
   claimExposedKong,
   claimIndicatorPongKong,
   claimPong,
+  continueTurn,
   createRound,
   declareAddedKong,
   declareConcealedKong,
@@ -25,6 +26,45 @@ function replaceHand(state: RoundState, seat: Seat, hand: Tile[]): RoundState {
 }
 
 const makeTile = (id: string, kind: TileKind): Tile => ({ id, ...kind });
+
+const LAIYOU_WILDCARD_KIND: TileKind = { suit: "WAN", rank: 5 };
+
+const tripletTiles = (prefix: string, kind: TileKind): Tile[] =>
+  ["a", "b", "c"].map((suffix) => makeTile(`${prefix}-${suffix}`, kind));
+
+/**
+ * Puts seat 0 one wildcard release away from winning: `hand` still holds the
+ * wildcards, and the front of the wall is the tile that completes the hand.
+ */
+function laiyouSetup(id: string, hand: Tile[], drawTiles: Tile[]): RoundState {
+  const state = createRound({ id, dealerSeat: 0, baseScore: 2, randomInt: deterministicRandom });
+  state.wildcardKind = LAIYOU_WILDCARD_KIND;
+  state.indicatorTile = makeTile(`${id}-indicator`, { suit: "WAN", rank: 4 });
+  state.wall = [...drawTiles, ...state.wall];
+  state.players[0].hand = hand;
+  state.currentSeat = 0;
+  state.phase = "TURN_DECISION";
+  state.lastDrawSeat = 0;
+  state.lastDrawnTileId = hand[hand.length - 1]?.id ?? "";
+  state.winPassedThisTurn = false;
+  return state;
+}
+
+function hardLaiyouSetup(id: string): { state: RoundState; wildcardId: string } {
+  const wildcard = makeTile(`${id}-wildcard`, LAIYOU_WILDCARD_KIND);
+  const hand = [
+    ...tripletTiles(`${id}-wan-1`, { suit: "WAN", rank: 1 }),
+    ...tripletTiles(`${id}-tiao-2`, { suit: "TIAO", rank: 2 }),
+    ...tripletTiles(`${id}-tong-3`, { suit: "TONG", rank: 3 }),
+    makeTile(`${id}-wan-7-a`, { suit: "WAN", rank: 7 }),
+    makeTile(`${id}-wan-7-b`, { suit: "WAN", rank: 7 }),
+    makeTile(`${id}-tiao-9-a`, { suit: "TIAO", rank: 9 }),
+    makeTile(`${id}-tiao-9-b`, { suit: "TIAO", rank: 9 }),
+    wildcard,
+  ];
+  const state = laiyouSetup(id, hand, [makeTile(`${id}-laiyou-draw`, { suit: "TIAO", rank: 9 })]);
+  return { state, wildcardId: wildcard.id };
+}
 
 describe("round state machine", () => {
   it("deals 14 tiles to the dealer, 13 to others and removes one indicator", () => {
@@ -331,6 +371,116 @@ describe("round state machine", () => {
     expect(([0, 1, 2, 3] as const).map((seat) => nextRound.players[seat].score)).toEqual([
       20, -10, 5, -15,
     ]);
+  });
+
+  it("marks a hard win on the post-release draw as laiyou and doubles the payments", () => {
+    const { state, wildcardId } = hardLaiyouSetup("round-hard-laiyou");
+
+    const released = releaseWildcard(state, 0, wildcardId);
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+    expect(released.state.laiyouCandidate).toEqual({
+      seat: 0,
+      tileId: released.state.lastDrawnTileId,
+    });
+
+    const win = declareWin(released.state, 0);
+    expect(win.ok).toBe(true);
+    if (!win.ok) return;
+    expect(win.state.outcome).toMatchObject({
+      kind: "WIN",
+      winnerSeat: 0,
+      winType: "HARD",
+      laiyou: true,
+    });
+    // baseScore 2 * hard 2 * laiyou 2 * winner 2 * payer 1
+    expect(win.state.outcome?.kind === "WIN" ? win.state.outcome.scoreDeltas : []).toEqual([
+      { seat: 0, delta: 48, reason: "SELF_DRAW" },
+      { seat: 1, delta: -16, reason: "SELF_DRAW" },
+      { seat: 2, delta: -16, reason: "SELF_DRAW" },
+      { seat: 3, delta: -16, reason: "SELF_DRAW" },
+    ]);
+  });
+
+  it("marks a soft win on the post-release draw as laiyou", () => {
+    const id = "round-soft-laiyou";
+    const firstWildcard = makeTile(`${id}-wildcard-a`, LAIYOU_WILDCARD_KIND);
+    const hand = [
+      ...tripletTiles(`${id}-wan-1`, { suit: "WAN", rank: 1 }),
+      ...tripletTiles(`${id}-tiao-2`, { suit: "TIAO", rank: 2 }),
+      ...tripletTiles(`${id}-tong-3`, { suit: "TONG", rank: 3 }),
+      makeTile(`${id}-wan-7-a`, { suit: "WAN", rank: 7 }),
+      makeTile(`${id}-wan-7-b`, { suit: "WAN", rank: 7 }),
+      makeTile(`${id}-tiao-9-a`, { suit: "TIAO", rank: 9 }),
+      firstWildcard,
+      makeTile(`${id}-wildcard-b`, LAIYOU_WILDCARD_KIND),
+    ];
+    const state = laiyouSetup(id, hand, [makeTile(`${id}-draw`, { suit: "TIAO", rank: 9 })]);
+
+    const released = releaseWildcard(state, 0, firstWildcard.id);
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+
+    const win = declareWin(released.state, 0);
+    expect(win.ok).toBe(true);
+    if (!win.ok) return;
+    expect(win.state.outcome).toMatchObject({
+      kind: "WIN",
+      winnerSeat: 0,
+      winType: "SOFT",
+      laiyou: true,
+    });
+  });
+
+  it("cannot claim laiyou after passing the win on the post-release draw", () => {
+    const { state, wildcardId } = hardLaiyouSetup("round-laiyou-passed");
+
+    const released = releaseWildcard(state, 0, wildcardId);
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+
+    const passed = continueTurn(released.state, 0);
+    expect(passed.ok).toBe(true);
+    if (!passed.ok) return;
+    expect(passed.state.winPassedThisTurn).toBe(true);
+    expect(declareWin(passed.state, 0)).toEqual({ ok: false, code: "CANNOT_WIN" });
+  });
+
+  it("does not treat a win on a concealed-kong replacement draw as laiyou", () => {
+    const id = "round-laiyou-kong";
+    const wildcard = makeTile(`${id}-wildcard`, LAIYOU_WILDCARD_KIND);
+    const kongKind: TileKind = { suit: "WAN", rank: 1 };
+    const hand = [
+      ...tripletTiles(`${id}-wan-1`, kongKind),
+      makeTile(`${id}-wan-1-d`, kongKind),
+      ...tripletTiles(`${id}-tiao-2`, { suit: "TIAO", rank: 2 }),
+      ...tripletTiles(`${id}-tong-3`, { suit: "TONG", rank: 3 }),
+      makeTile(`${id}-wan-7-a`, { suit: "WAN", rank: 7 }),
+      makeTile(`${id}-wan-7-b`, { suit: "WAN", rank: 7 }),
+      makeTile(`${id}-tiao-9-a`, { suit: "TIAO", rank: 9 }),
+      wildcard,
+    ];
+    const state = laiyouSetup(id, hand, [
+      makeTile(`${id}-release-draw`, { suit: "TIAO", rank: 9 }),
+      makeTile(`${id}-kong-draw`, { suit: "TIAO", rank: 9 }),
+    ]);
+
+    const released = releaseWildcard(state, 0, wildcard.id);
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+    // The release draw alone does not complete the hand, so no laiyou win exists yet.
+    expect(availableTurnActions(released.state, 0)).not.toContain("DECLARE_WIN");
+
+    const kong = declareConcealedKong(released.state, 0, kongKind);
+    expect(kong.ok).toBe(true);
+    if (!kong.ok) return;
+    // The stale candidate survives, but the kong replacement draw moved lastDrawnTileId.
+    expect(kong.state.laiyouCandidate?.tileId).not.toBe(kong.state.lastDrawnTileId);
+
+    const win = declareWin(kong.state, 0);
+    expect(win.ok).toBe(true);
+    if (!win.ok) return;
+    expect(win.state.outcome).toMatchObject({ kind: "WIN", winnerSeat: 0, laiyou: false });
   });
 
   it("starts the next player turn when the only response passes", () => {

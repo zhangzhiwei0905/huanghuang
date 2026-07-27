@@ -56,8 +56,17 @@ export type RoundSettlementProjection = {
   winnerSeat: Seat | null;
   winType: WinType | null;
   baseScore: BaseScore;
+  /** Win-type multiplier only: 2 for a hard win, 1 for a soft win. */
   winBaseMultiplier: 1 | 2 | null;
   winnerMultiplier: PersonalMultiplier | null;
+  /**
+   * True when the winning tile was the one drawn right after releasing a
+   * wildcard ("来由"). `winType` doubles as the laiyou class: HARD is 硬来由,
+   * SOFT is 软来由.
+   */
+  laiyou: boolean;
+  /** The laiyou contribution to the total multiplier: 2 when `laiyou`, else 1. */
+  laiyouMultiplier: 1 | 2 | null;
   nextDealerSeat: Seat;
   payments: {
     payerSeat: Seat;
@@ -84,6 +93,8 @@ export type GameEffectCue = {
   actorSeat: Seat;
   tileKind: TileKind | null;
   winType: WinType | null;
+  /** Only meaningful for the `WIN` action; always false otherwise. */
+  laiyou: boolean;
   startedAt: string;
   endsAt: string;
 };
@@ -101,7 +112,7 @@ export type DiscardTingProjection = {
 };
 
 export type RoomProjection = {
-  schemaVersion: 7;
+  schemaVersion: 8;
   roomId: string;
   roomCode: string;
   version: number;
@@ -136,7 +147,7 @@ export type RoomProjection = {
   roundPhase: "TURN_DECISION" | "DISCARD_RESPONSE" | "ROUND_OVER" | null;
   actionDeadlineAt: string | null;
   roundOutcome:
-    | { kind: "WIN"; winnerSeat: Seat; winType: WinType; nextDealerSeat: Seat }
+    | { kind: "WIN"; winnerSeat: Seat; winType: WinType; laiyou: boolean; nextDealerSeat: Seat }
     | { kind: "DRAW"; nextDealerSeat: Seat }
     | null;
   roundSettlement: RoundSettlementProjection | null;

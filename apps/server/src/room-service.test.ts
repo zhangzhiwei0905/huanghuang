@@ -480,7 +480,7 @@ describe("RoomService", () => {
     const projection = service.project(room, owner.id);
     const hints = projection.tingHints.find((hint) => hint.discardTileId === discarded.id);
 
-    expect(projection.schemaVersion).toBe(7);
+    expect(projection.schemaVersion).toBe(8);
     expect(hints?.waits).toContainEqual({
       tileKind: { suit: "TONG", rank: 1 },
       winType: "HARD",
@@ -1089,6 +1089,7 @@ describe("RoomService", () => {
       kind: "WIN",
       winnerSeat: 0,
       winType: "SOFT",
+      laiyou: false,
       nextDealerSeat: 2,
       scoreDeltas: [
         { seat: 0, delta: 16, reason: "SELF_DRAW" },
@@ -1344,6 +1345,109 @@ describe("RoomService", () => {
     expect(room.version).toBe(versionAfterFirst);
     expect(stale.accepted).toBe(false);
     expect(stale.errorCode).toBe("VERSION_CONFLICT");
+  });
+
+  it("projects laiyou and its multiplier contribution for a hard laiyou win", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    round.players[0].personalMultiplier = 2;
+    round.phase = "ROUND_OVER";
+    round.outcome = {
+      kind: "WIN",
+      winnerSeat: 0,
+      winType: "HARD",
+      laiyou: true,
+      nextDealerSeat: 2,
+      scoreDeltas: [
+        { seat: 0, delta: 48, reason: "SELF_DRAW" },
+        { seat: 1, delta: -16, reason: "SELF_DRAW" },
+        { seat: 2, delta: -16, reason: "SELF_DRAW" },
+        { seat: 3, delta: -16, reason: "SELF_DRAW" },
+      ],
+    };
+
+    const projection = service.project(room, owner.id);
+
+    expect(projection.roundSettlement).toMatchObject({
+      kind: "WIN",
+      winType: "HARD",
+      winBaseMultiplier: 2,
+      winnerMultiplier: 2,
+      laiyou: true,
+      laiyouMultiplier: 2,
+    });
+    expect(projection.roundOutcome).toMatchObject({ kind: "WIN", laiyou: true });
+  });
+
+  it("projects a non-laiyou win with a neutral laiyou multiplier", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    round.phase = "ROUND_OVER";
+    round.outcome = {
+      kind: "WIN",
+      winnerSeat: 1,
+      winType: "SOFT",
+      laiyou: false,
+      nextDealerSeat: 3,
+      scoreDeltas: [
+        { seat: 1, delta: 6, reason: "SELF_DRAW" },
+        { seat: 0, delta: -2, reason: "SELF_DRAW" },
+        { seat: 2, delta: -2, reason: "SELF_DRAW" },
+        { seat: 3, delta: -2, reason: "SELF_DRAW" },
+      ],
+    };
+
+    expect(service.project(room, owner.id).roundSettlement).toMatchObject({
+      laiyou: false,
+      laiyouMultiplier: 1,
+    });
+  });
+
+  it("defaults laiyou fields when restoring a round snapshot that predates them", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const service = new RoomService(database);
+    const room = service.createRoom(owner, 2, "BOT");
+    const round = activeRound(room);
+    round.phase = "ROUND_OVER";
+    round.outcome = {
+      kind: "WIN",
+      winnerSeat: 0,
+      winType: "HARD",
+      laiyou: false,
+      nextDealerSeat: 2,
+      scoreDeltas: [
+        { seat: 0, delta: 6, reason: "SELF_DRAW" },
+        { seat: 1, delta: -2, reason: "SELF_DRAW" },
+        { seat: 2, delta: -2, reason: "SELF_DRAW" },
+        { seat: 3, delta: -2, reason: "SELF_DRAW" },
+      ],
+    };
+    room.stage = "ROUND_RESULT";
+
+    const legacySnapshot = JSON.parse(JSON.stringify(room)) as {
+      code: string;
+      round: { laiyouCandidate?: unknown; outcome: { laiyou?: unknown } };
+    };
+    legacySnapshot.code = "100003";
+    delete legacySnapshot.round.laiyouCandidate;
+    delete legacySnapshot.round.outcome.laiyou;
+    database.saveRoom(
+      { id: room.id, code: "100003", status: room.status, version: room.version },
+      JSON.stringify(legacySnapshot),
+    );
+
+    const restoredService = new RoomService(database);
+    const restored = restoredService.getRoom("100003");
+    if (restored === null) throw new Error("Expected the legacy round to restore");
+
+    expect(restored.round?.laiyouCandidate).toBeNull();
+    expect(restoredService.project(restored, owner.id).roundSettlement).toMatchObject({
+      laiyou: false,
+      laiyouMultiplier: 1,
+    });
   });
 
   it("resets cumulative scores once four humans replace every bot and get ready", () => {

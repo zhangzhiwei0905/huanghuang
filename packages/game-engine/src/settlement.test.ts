@@ -7,6 +7,7 @@ describe("settlement", () => {
       baseScore: 2,
       winnerSeat: 0,
       winType: "HARD",
+      laiyou: false,
       personalMultipliers: { 0: 2, 1: 1, 2: 2, 3: 4 },
     });
     expect(deltas).toEqual([
@@ -15,6 +16,39 @@ describe("settlement", () => {
       { seat: 2, delta: -16, reason: "SELF_DRAW" },
       { seat: 3, delta: -32, reason: "SELF_DRAW" },
     ]);
+  });
+
+  it("doubles every self-draw payment for a laiyou win", () => {
+    const options = {
+      baseScore: 2 as const,
+      winnerSeat: 0 as const,
+      winType: "HARD" as const,
+      personalMultipliers: { 0: 2, 1: 1, 2: 2, 3: 4 } as const,
+    };
+    const plain = calculateSelfDrawSettlement({ ...options, laiyou: false });
+    const laiyou = calculateSelfDrawSettlement({ ...options, laiyou: true });
+
+    for (const [index, delta] of laiyou.entries()) {
+      expect(delta.delta).toBe((plain[index]?.delta ?? Number.NaN) * 2);
+    }
+    expect(laiyou.reduce((sum, item) => sum + item.delta, 0)).toBe(0);
+  });
+
+  it("caps the laiyou self-draw multiplier at 64 times the base score per payer", () => {
+    const deltas = calculateSelfDrawSettlement({
+      baseScore: 2,
+      winnerSeat: 0,
+      winType: "HARD",
+      laiyou: true,
+      personalMultipliers: { 0: 16, 1: 1, 2: 1, 3: 1 },
+    });
+
+    // hard win (2) * laiyou (2) * winner multiplier (16) * payer multiplier (1)
+    expect(deltas.filter((delta) => delta.seat !== 0).map((delta) => delta.delta)).toEqual([
+      -128, -128, -128,
+    ]);
+    expect(deltas[0]?.delta).toBe(384);
+    expect(deltas.reduce((sum, item) => sum + item.delta, 0)).toBe(0);
   });
 
   it("charges only the discarder three times the base score for an exposed kong", () => {

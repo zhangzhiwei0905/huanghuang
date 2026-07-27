@@ -17,6 +17,7 @@ function cue(overrides: Partial<GameEffectCue> = {}): GameEffectCue {
     actorSeat: 0,
     tileKind: { suit: "TIAO", rank: 5 },
     winType: null,
+    laiyou: false,
     startedAt: "2026-07-27T00:00:00.000Z",
     endsAt: "2026-07-27T00:00:02.000Z",
     ...overrides,

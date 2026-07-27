@@ -46,7 +46,7 @@ type RoomMode = "FRIEND" | "BOT";
 type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
 
 type RoomProjection = {
-  schemaVersion: 7;
+  schemaVersion: 8;
   mode: RoomMode;
   stage: RoomStage;
   scoreResetPending: boolean;
@@ -107,6 +107,14 @@ type ChatMessageProjection = {
 - `scoreResetPending` is the only signal that the next round will zero cumulative
   scores. Clients render a waiting-room notice from it and must not infer the
   reset by comparing seat controllers or `lobbySeats[].score`.
+- `roundSettlement.laiyou` and `roundOutcome.laiyou` are the only laiyou signals.
+  Clients must not infer 来由 from `releasedWildcards` or multiplier arithmetic.
+  Web derives the win-type wording through a single `winTypeLabel` helper in
+  `apps/web/src/components/GameTable.tsx`, shared by the turn marker and the
+  settlement modal, so the 硬来由 / 软来由 wording is not duplicated.
+- Audio lives only in the mini-program; `apps/web` has no audio layer. Do not add
+  sound to the web client as part of a gameplay feature without deciding that
+  separately.
 - Waiting projections have `roundId = null`, `players = []`, no legal actions, and no action deadline.
 - Every `FRIEND + WAITING` projection has a UTC ISO `waitingExpiresAt`; starting a round clears it, and returning from a round creates a fresh three-minute deadline. Join, readiness and base-score changes do not extend it.
 - Readiness is an explicit desired state. Repeating `{ ready: true }` or `{ ready: false }` is idempotent; the client must not ask the server to perform an implicit toggle.

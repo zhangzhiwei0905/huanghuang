@@ -39,7 +39,7 @@ function players(overrides?: Partial<Record<Seat, PlayerProjection>>): PlayerPro
 
 function room(overrides?: Partial<RoomProjection>): RoomProjection {
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     roomId: "room-1",
     roomCode: "123456",
     version: 1,

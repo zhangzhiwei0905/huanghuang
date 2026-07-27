@@ -79,6 +79,28 @@
   color: var(--muted, #5f625b);
 }
 
+.settlement-modal.is-laiyou .settlement-outcome {
+  color: var(--accent, #2f6a4c);
+}
+
+.settlement-meta-group {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5vmin;
+}
+
+.settlement-laiyou-badge {
+  border-radius: 999px;
+  padding: 0.3vmin 1.1vmin;
+  color: var(--accent, #2f6a4c);
+  background: rgb(47 106 76 / 14%);
+  font-size: 1.7vmin;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .settlement-meta {
   flex-shrink: 0;
   color: var(--muted, #5f625b);

@@ -164,7 +164,7 @@ Any change to wildcard release, meld reducers, self-draw settlement or end-of-ro
 ### 2. Signatures
 
 ```ts
-calculateSelfDrawSettlement({ baseScore, winnerSeat, winType, personalMultipliers }): ScoreDelta[];
+calculateSelfDrawSettlement({ baseScore, winnerSeat, winType, laiyou, personalMultipliers }): ScoreDelta[];
 calculateKongSettlement({ baseScore, actorSeat, kind, sourceSeat }): ScoreDelta[];
 ```
 
@@ -174,7 +174,9 @@ calculateKongSettlement({ baseScore, actorSeat, kind, sourceSeat }): ScoreDelta[
 - Pong and every kong action leave all personal multipliers unchanged.
 - Exposed and indicator pong-kongs charge the source seat `3 × baseScore`; concealed kong charges every opponent `2 × baseScore`; added kong charges every opponent `1 × baseScore`.
 - Kong transfers apply immediately, remain after a draw and never multiply by either player's personal multiplier.
-- Self-draw payment remains `baseScore × hard/soft factor × winner multiplier × payer multiplier`.
+- Self-draw payment is `baseScore × hard/soft factor × laiyou factor × winner multiplier × payer
+  multiplier`. The laiyou factor is 2 only for a laiyou win, so the ceiling is 2 × 2 × 16 = 64.
+- The laiyou factor never writes back into `personalMultiplier`; that union stays `1 | 2 | 4 | 8 | 16`.
 - End-of-round `roundDelta` is current score minus starting score, so it combines earlier kong transfers and final self-draw transfers. `payments` contains only the final self-draw payer deltas.
 
 ### 4. Validation & Error Matrix
@@ -189,6 +191,7 @@ calculateKongSettlement({ baseScore, actorSeat, kind, sourceSeat }): ScoreDelta[
 ### 5. Good/Base/Bad Cases
 
 - Good: an added kong earns three base-score payments, then a later self-draw adds independently calculated payer amounts.
+- Good: a laiyou win doubles every self-draw payment while leaving kong transfers untouched.
 - Base: ordinary pong changes only meld/hand state.
 - Bad: treating a kong as another multiplier or multiplying its transfer by released-wildcard counts.
 
@@ -251,7 +254,7 @@ type PendingEffectTransition = {
 };
 
 type RoomProjection = {
-  schemaVersion: 7;
+  schemaVersion: 8;
   effectCue: GameEffectCue | null;
 };
 ```
@@ -374,7 +377,7 @@ type DiscardTingProjection = {
 };
 
 type RoomProjection = {
-  schemaVersion: 7;
+  schemaVersion: 8;
   tingHints: DiscardTingProjection[];
 };
 ```
@@ -472,7 +475,7 @@ type PersistedRoomState = {
 };
 
 type RoomProjection = {
-  schemaVersion: 7;
+  schemaVersion: 8;
   scoreResetPending: boolean;
 };
 ```
@@ -549,3 +552,153 @@ if (allHuman && room.scoresIncludeBotRounds) {
 }
 room.scoresIncludeBotRounds = !allHuman;
 ```
+
+## Scenario: Laiyou (来由) wins
+
+### 1. Scope / Trigger
+
+`releaseWildcard` removes a wildcard and immediately draws a replacement. Winning
+on exactly that replacement tile is 来由: 硬来由 for a hard win, 软来由 for a soft
+win. It doubles the whole self-draw payment on top of the release doubling.
+
+### 2. Signatures
+
+```ts
+type RoundState = {
+  laiyouCandidate: { seat: Seat; tileId: string } | null;
+};
+
+type RoundOutcome = { kind: "WIN"; winType: WinType; laiyou: boolean; /* ... */ };
+
+export function isLaiyouWin(state: RoundState, seat: Seat): boolean;
+
+type RoundSettlementProjection = {
+  winBaseMultiplier: 1 | 2 | null; // win type only
+  laiyou: boolean;
+  laiyouMultiplier: 1 | 2 | null;
+};
+
+type GameEffectCue = { laiyou: boolean };
+
+type RoomProjection = { schemaVersion: 8 };
+```
+
+### 3. Contracts
+
+- The candidate is `{ seat, tileId: lastDrawnTileId }`, written by `releaseWildcard`
+  after its replacement draw. `isLaiyouWin` compares it against the current
+  `lastDrawnTileId`.
+- Do **not** add explicit candidate clearing to other reducers. Every later draw
+  (next turn, concealed kong, added kong, exposed kong claim) overwrites
+  `lastDrawnTileId`, which invalidates the candidate by comparison. Paths that
+  hand the turn over without drawing (pong / indicator pong-kong) leave
+  `lastDrawSeat` on the previous drawer, so `hasCurrentDrawnTile` already blocks
+  a win there.
+- Passing the win (`continueTurn`) sets `winPassedThisTurn`, so the same tile can
+  never be re-claimed as laiyou.
+- The laiyou class is always the engine's `winType`. `evaluateWin` already enforces
+  the wildcard-count rules (`TOO_MANY_WILDCARDS`; a soft win uses exactly one
+  wildcard as substitute), so no extra hand inspection is needed.
+- `winBaseMultiplier` keeps meaning "win type only". Laiyou is a separate
+  projected factor so clients can break the total down instead of guessing.
+- Rounds are persisted inside the room JSON. `normalizeRoundState` must default
+  `laiyouCandidate` to `null` and `outcome.laiyou` to `false` on every load path,
+  including `pendingEffectTransition.nextRound`.
+- Bot behaviour is unchanged: bots already declare a win whenever it is legal, so
+  they earn laiyou naturally.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behaviour |
+|---|---|
+| Win on the post-release draw | `outcome.laiyou = true`, payments doubled |
+| Win passed via `continueTurn`, then a later win | `laiyou = false` |
+| Win on a kong replacement draw after a release | `laiyou = false` |
+| Draw outcome | `laiyou = false`, `laiyouMultiplier = null` |
+| Any settlement delta sum is nonzero | Throw through `assertZeroSum` |
+| Round snapshot predating the fields | Normalize to `null` / `false` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: releasing the last wildcard and drawing the winning tile projects 硬来由
+  with `laiyouMultiplier: 2` and a doubled payer amount.
+- Base: an ordinary self-draw projects `laiyou: false` and `laiyouMultiplier: 1`.
+- Bad: recomputing laiyou on the client from `releasedWildcards`, or folding the
+  laiyou factor into `winBaseMultiplier` / `personalMultiplier`.
+
+### 6. Tests Required
+
+- Engine tests cover hard laiyou (with exact doubled deltas), soft laiyou, the
+  passed-win case and the kong-replacement-draw case.
+- Settlement tests assert laiyou doubles every delta, the 64× ceiling and zero sum.
+- Service tests assert the projected `laiyou` / `laiyouMultiplier` for laiyou and
+  non-laiyou wins, plus normalization of a snapshot without the fields.
+- Mini-program audio tests assert the laiyou mapping and that one win speaks once.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+// Client-side guess from public state
+const laiyou = player.releasedWildcards.length > 0 && settlement.winnerSeat === player.seat;
+```
+
+Correct:
+
+```ts
+// Engine decides, projection carries it, client only renders
+const laiyou = isLaiyouWin(state, seat);
+const deltas = calculateSelfDrawSettlement({ baseScore, winnerSeat: seat, winType, laiyou, personalMultipliers });
+```
+
+## Scenario: Semantic game audio mapping
+
+### 1. Scope / Trigger
+
+The mini-program is the only client with audio (`apps/web` has no audio layer).
+`apps/miniprogram/src/lib/gameAudioEvents.ts` turns projection deltas into file
+names; `gameAudioPlayer.ts` owns the per-file playback window.
+
+### 2. Signatures
+
+```ts
+const WIN_AUDIO_FILE: Record<WinType, GameAudioFileName>;
+const LAIYOU_AUDIO_FILE: Record<WinType, GameAudioFileName>;
+export function winAudioFileName(winType: WinType | null, laiyou: boolean): GameAudioFileName;
+const AUDIO_WINDOWS: Record<GameAudioFileName, AudioWindow>;
+```
+
+### 3. Contracts
+
+- Win audio is chosen through `winAudioFileName` in both the `effectCue` branch
+  and the settlement fallback. Never re-inline a `winType === "HARD" ? ... : ...`
+  ternary; that duplication is what the tables replace.
+- 来由 is a distinct semantic event that currently maps onto the plain hard/soft
+  clips. Swapping in dedicated audio means editing `LAIYOU_AUDIO_FILE` only.
+- `AUDIO_WINDOWS` is `Record<GameAudioFileName, AudioWindow>`. Adding a file name
+  without its window fails typecheck; keep that guard rather than widening it.
+- Playback timing is unchanged by audio-mapping work: the cue speaks once when it
+  appears, and the `completingEffect` suppression stops the matching public-state
+  diff from speaking again.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behaviour |
+|---|---|
+| New win cue with `laiyou: true` | One file from `LAIYOU_AUDIO_FILE` |
+| New win cue with `laiyou: false` | One file from `WIN_AUDIO_FILE` |
+| Same settlement round id seen again | No audio |
+| Cue completing into visible state | Suppress the duplicate diff |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a soft laiyou win speaks exactly one clip per round.
+- Base: a draw settlement stays silent.
+- Bad: adding a dedicated laiyou file name without an `AUDIO_WINDOWS` entry, or
+  pushing both the cue file and the settlement fallback file for one win.
+
+### 6. Tests Required
+
+- Assert the laiyou and non-laiyou mappings through `winAudioFileName`.
+- Assert one win produces one file and repeats produce none.

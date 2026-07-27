@@ -1350,6 +1350,21 @@ h1 {
 .settlement-result-meta {
   display: grid;
   justify-items: end;
+  gap: 4px;
+}
+.settlement-laiyou-badge {
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.round-settlement-modal.is-laiyou > header h2 {
+  color: var(--accent);
 }
 .settlement-player-list {
   display: grid;

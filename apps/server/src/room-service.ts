@@ -234,14 +234,29 @@ function roundScores(round: RoundState): Record<Seat, number> {
   };
 }
 
-function ensureStartingScores(round: RoundState): void {
-  const legacyRound = round as Omit<RoundState, "startingScores"> & {
+/**
+ * Backfills round fields added after older snapshots were persisted. Rounds are
+ * stored inside the room JSON, so every load path must run this before the
+ * round is projected or advanced.
+ */
+function normalizeRoundState(round: RoundState): void {
+  const legacyRound = round as Omit<RoundState, "startingScores" | "laiyouCandidate"> & {
     startingScores?: Record<Seat, number>;
+    laiyouCandidate?: RoundState["laiyouCandidate"];
   };
   legacyRound.startingScores ??= roundScores(round);
+  legacyRound.laiyouCandidate ??= null;
+  const outcome = round.outcome;
+  if (outcome?.kind === "WIN") {
+    const legacyOutcome = outcome as Omit<typeof outcome, "laiyou"> & { laiyou?: boolean };
+    legacyOutcome.laiyou ??= false;
+  }
 }
 
-type EffectDescriptor = Pick<GameEffectCue, "action" | "actorSeat" | "tileKind" | "winType">;
+type EffectDescriptor = Pick<
+  GameEffectCue,
+  "action" | "actorSeat" | "tileKind" | "winType" | "laiyou"
+>;
 
 function detectEffectDescriptor(previous: RoundState, next: RoundState): EffectDescriptor | null {
   const candidates: EffectDescriptor[] = [];
@@ -257,6 +272,7 @@ function detectEffectDescriptor(previous: RoundState, next: RoundState): EffectD
         actorSeat: seat,
         tileKind: meld.tileKind,
         winType: null,
+        laiyou: false,
       });
     }
 
@@ -270,6 +286,7 @@ function detectEffectDescriptor(previous: RoundState, next: RoundState): EffectD
         actorSeat: seat,
         tileKind: { suit: tile.suit, rank: tile.rank },
         winType: null,
+        laiyou: false,
       });
     }
   }
@@ -280,6 +297,7 @@ function detectEffectDescriptor(previous: RoundState, next: RoundState): EffectD
       actorSeat: next.outcome.winnerSeat,
       tileKind: null,
       winType: next.outcome.winType,
+      laiyou: next.outcome.laiyou,
     });
   }
 
@@ -394,9 +412,9 @@ export class RoomService {
 
   private normalizeRoom(persisted: PersistedRoomState): RoomState {
     const round = persisted.round;
-    if (round !== null) ensureStartingScores(round);
+    if (round !== null) normalizeRoundState(round);
     const persistedTransition = persisted.pendingEffectTransition ?? null;
-    if (persistedTransition !== null) ensureStartingScores(persistedTransition.nextRound);
+    if (persistedTransition !== null) normalizeRoundState(persistedTransition.nextRound);
 
     if (persisted.mode !== undefined) {
       const mode = persisted.mode;
@@ -1200,6 +1218,8 @@ export class RoomService {
               round.outcome.kind === "WIN"
                 ? round.players[round.outcome.winnerSeat].personalMultiplier
                 : null,
+            laiyou: round.outcome.kind === "WIN" && round.outcome.laiyou,
+            laiyouMultiplier: round.outcome.kind === "WIN" ? (round.outcome.laiyou ? 2 : 1) : null,
             nextDealerSeat: round.outcome.nextDealerSeat,
             payments:
               round.outcome.kind === "WIN"
@@ -1234,6 +1254,7 @@ export class RoomService {
               kind: "WIN" as const,
               winnerSeat: round.outcome.winnerSeat,
               winType: round.outcome.winType,
+              laiyou: round.outcome.laiyou,
               nextDealerSeat: round.outcome.nextDealerSeat,
             }
           : { kind: "DRAW" as const, nextDealerSeat: round.outcome.nextDealerSeat };
@@ -1243,7 +1264,7 @@ export class RoomService {
         : [];
 
     return {
-      schemaVersion: 7,
+      schemaVersion: 8,
       roomId: room.id,
       roomCode: room.code,
       version: room.version,

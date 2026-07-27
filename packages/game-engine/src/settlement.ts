@@ -18,18 +18,31 @@ function assertZeroSum(deltas: readonly ScoreDelta[]): void {
   }
 }
 
+export const LAIYOU_MULTIPLIER = 2;
+
 export function calculateSelfDrawSettlement(options: {
   baseScore: BaseScore;
   winnerSeat: Seat;
   winType: WinType;
+  /**
+   * Whether the winning tile is the one drawn right after releasing a wildcard
+   * ("来由"). It multiplies the whole payment on top of the win-type and
+   * personal multipliers, so the theoretical ceiling is 2 * 16 * 2 = 64.
+   */
+  laiyou: boolean;
   personalMultipliers: Readonly<Record<Seat, PersonalMultiplier>>;
 }): ScoreDelta[] {
   const winMultiplier = options.winType === "HARD" ? 2 : 1;
+  const laiyouMultiplier = options.laiyou ? LAIYOU_MULTIPLIER : 1;
   const winnerMultiplier = options.personalMultipliers[options.winnerSeat];
   const payments = SEATS.filter((seat) => seat !== options.winnerSeat).map((seat) => ({
     seat,
     amount:
-      options.baseScore * winMultiplier * winnerMultiplier * options.personalMultipliers[seat],
+      options.baseScore *
+      winMultiplier *
+      laiyouMultiplier *
+      winnerMultiplier *
+      options.personalMultipliers[seat],
   }));
   const winnerAmount = payments.reduce((total, payment) => total + payment.amount, 0);
   const deltas: ScoreDelta[] = [

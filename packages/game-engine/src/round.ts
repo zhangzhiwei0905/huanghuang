@@ -52,6 +52,8 @@ export type RoundOutcome =
       kind: "WIN";
       winnerSeat: Seat;
       winType: WinType;
+      /** True when the winning tile was drawn right after releasing a wildcard. */
+      laiyou: boolean;
       scoreDeltas: ScoreDelta[];
       nextDealerSeat: Seat;
     }
@@ -77,6 +79,12 @@ export type RoundState = {
   lastDiscard: DiscardRecord | null;
   pendingResponse: PendingResponse | null;
   winPassedThisTurn: boolean;
+  /**
+   * The tile drawn by the most recent wildcard release. Winning on exactly this
+   * tile is "来由". Any later draw overwrites `lastDrawnTileId`, so comparing the
+   * two is enough to invalidate a stale candidate without extra bookkeeping.
+   */
+  laiyouCandidate: { seat: Seat; tileId: string } | null;
   outcome: RoundOutcome | null;
 };
 
@@ -212,8 +220,16 @@ export function createRound(options: {
     lastDiscard: null,
     pendingResponse: null,
     winPassedThisTurn: false,
+    laiyouCandidate: null,
     outcome: null,
   };
+}
+
+export function isLaiyouWin(state: RoundState, seat: Seat): boolean {
+  const candidate = state.laiyouCandidate;
+  return (
+    candidate !== null && candidate.seat === seat && candidate.tileId === state.lastDrawnTileId
+  );
 }
 
 function currentWinEvaluation(state: RoundState, seat: Seat): WinEvaluation {
@@ -302,10 +318,12 @@ export function declareWin(state: RoundState, seat: Seat): RuleResult {
   const multipliers = Object.fromEntries(
     SEATS.map((playerSeat) => [playerSeat, playerAt(next, playerSeat).personalMultiplier]),
   ) as Record<Seat, PersonalMultiplier>;
+  const laiyou = isLaiyouWin(state, seat);
   const deltas = calculateSelfDrawSettlement({
     baseScore: next.baseScore,
     winnerSeat: seat,
     winType: evaluation.winType,
+    laiyou,
     personalMultipliers: multipliers,
   });
   applyScoreDeltas(next, deltas);
@@ -314,6 +332,7 @@ export function declareWin(state: RoundState, seat: Seat): RuleResult {
     kind: "WIN",
     winnerSeat: seat,
     winType: evaluation.winType,
+    laiyou,
     scoreDeltas: deltas,
     nextDealerSeat: oppositeSeat(seat),
   };
@@ -338,6 +357,7 @@ export function releaseWildcard(state: RoundState, seat: Seat, tileId: string): 
   nextPlayer.personalMultiplier = (nextPlayer.personalMultiplier * 2) as PersonalMultiplier;
   drawFromFront(next, seat);
   next.winPassedThisTurn = false;
+  next.laiyouCandidate = { seat, tileId: next.lastDrawnTileId };
   return accepted(next);
 }
 

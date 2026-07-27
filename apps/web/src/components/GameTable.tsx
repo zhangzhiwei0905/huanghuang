@@ -9,6 +9,7 @@ import type {
   RoundSettlementProjection,
   Seat,
   Tile,
+  WinType,
 } from "@huanghuang/protocol";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ConnectionStatus } from "../hooks/useRoom.js";
@@ -128,6 +129,15 @@ function findMeldIdByTileIds(player: PlayerProjection, tileIds: string[]): strin
     (meld) => meld.tileIds.length === tileIds.length && meld.tileIds.every((id) => idSet.has(id)),
   );
   return match?.id ?? null;
+}
+
+/**
+ * Single source for the win-type wording. Both the table turn marker and the
+ * settlement modal render it, so the laiyou variants must not be duplicated.
+ */
+function winTypeLabel(winType: WinType, laiyou: boolean): string {
+  if (winType === "HARD") return laiyou ? "硬来由" : "硬胡";
+  return laiyou ? "软来由" : "软胡";
 }
 
 function tileKindLabel(tile: { rank: number; suit: string }): string {
@@ -350,7 +360,7 @@ function TurnMarker({
                 : "当前回合";
   const actorLabel =
     room.roundOutcome?.kind === "WIN"
-      ? `${playerAt(room, room.roundOutcome.winnerSeat).nickname} · ${room.roundOutcome.winType === "HARD" ? "硬胡" : "软胡"}`
+      ? `${playerAt(room, room.roundOutcome.winnerSeat).nickname} · ${winTypeLabel(room.roundOutcome.winType, room.roundOutcome.laiyou)}`
       : room.roundOutcome?.kind === "DRAW"
         ? "流局"
         : pendingAction !== null
@@ -477,15 +487,16 @@ function RoundSettlementModal({
 }) {
   const playerName = (seat: Seat) => players[seat]?.nickname ?? `玩家 ${seat + 1}`;
   const outcomeLabel =
-    settlement.kind === "DRAW"
+    settlement.kind === "DRAW" || settlement.winType === null
       ? "本局流局"
-      : `${playerName(settlement.winnerSeat ?? 0)} ${settlement.winType === "HARD" ? "硬胡" : "软胡"}`;
-  const outcomeClass =
+      : `${playerName(settlement.winnerSeat ?? 0)} ${winTypeLabel(settlement.winType, settlement.laiyou)}`;
+  const outcomeClass = `${
     settlement.kind === "DRAW"
       ? "is-draw"
       : settlement.winType === "HARD"
         ? "is-hard-win"
-        : "is-soft-win";
+        : "is-soft-win"
+  }${settlement.kind === "WIN" && settlement.laiyou ? " is-laiyou" : ""}`;
 
   return (
     <div className="round-settlement-backdrop">
@@ -501,6 +512,7 @@ function RoundSettlementModal({
             <h2 id="round-settlement-title">{outcomeLabel}</h2>
           </div>
           <div className="settlement-result-meta">
+            {settlement.laiyou ? <span className="settlement-laiyou-badge">来由 ×2</span> : null}
             <small>{mode === "BOT" ? "等待你的选择" : "即将返回房间准备"}</small>
           </div>
         </header>

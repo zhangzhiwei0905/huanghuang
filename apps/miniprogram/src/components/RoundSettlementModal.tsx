@@ -34,18 +34,25 @@ export function RoundSettlementModal({
   onLeave,
 }: RoundSettlementModalProps) {
   const playerName = (seat: Seat) => players[seat]?.nickname ?? `玩家 ${seat + 1}`;
+  const winTypeLabel =
+    settlement.winType === "HARD"
+      ? settlement.laiyou
+        ? "硬来由"
+        : "硬胡"
+      : settlement.laiyou
+        ? "软来由"
+        : "软胡";
   const outcomeLabel =
     settlement.kind === "DRAW"
       ? "本局流局"
-      : `${playerName(settlement.winnerSeat ?? 0)} ${
-          settlement.winType === "HARD" ? "硬胡" : "软胡"
-        }`;
-  const outcomeClass =
+      : `${playerName(settlement.winnerSeat ?? 0)} ${winTypeLabel}`;
+  const outcomeClass = `${
     settlement.kind === "DRAW"
       ? "is-draw"
       : settlement.winType === "HARD"
         ? "is-hard-win"
-        : "is-soft-win";
+        : "is-soft-win"
+  }${settlement.kind === "WIN" && settlement.laiyou ? " is-laiyou" : ""}`;
 
   return (
     <View className="settlement-backdrop">
@@ -55,9 +62,12 @@ export function RoundSettlementModal({
             <Text className="settlement-eyebrow">本局结算</Text>
             <Text className="settlement-outcome">{outcomeLabel}</Text>
           </View>
-          <Text className="settlement-meta">
-            {mode === "BOT" ? "等待你的选择" : "即将返回房间准备"}
-          </Text>
+          <View className="settlement-meta-group">
+            {settlement.laiyou ? <Text className="settlement-laiyou-badge">来由 ×2</Text> : null}
+            <Text className="settlement-meta">
+              {mode === "BOT" ? "等待你的选择" : "即将返回房间准备"}
+            </Text>
+          </View>
         </View>
 
         <View className="settlement-list">

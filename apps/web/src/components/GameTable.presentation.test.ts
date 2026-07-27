@@ -59,7 +59,7 @@ function player(seat: Seat): PlayerProjection {
 function resultRoom(): RoomProjection {
   const players = ([0, 1, 2, 3] as const).map(player);
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     roomId: "room-1",
     roomCode: "123456",
     version: 12,
@@ -87,7 +87,7 @@ function resultRoom(): RoomProjection {
     currentSeat: null,
     roundPhase: "ROUND_OVER",
     actionDeadlineAt: null,
-    roundOutcome: { kind: "WIN", winnerSeat: 0, winType: "HARD", nextDealerSeat: 2 },
+    roundOutcome: { kind: "WIN", winnerSeat: 0, winType: "HARD", laiyou: false, nextDealerSeat: 2 },
     roundSettlement: {
       roundId: "round-1",
       kind: "WIN",
@@ -96,6 +96,8 @@ function resultRoom(): RoomProjection {
       baseScore: 2,
       winBaseMultiplier: 2,
       winnerMultiplier: 1,
+      laiyou: false,
+      laiyouMultiplier: 1,
       nextDealerSeat: 2,
       payments: [
         { payerSeat: 1, payerMultiplier: 4, amount: 16 },
@@ -307,5 +309,74 @@ describe("game table presentation", () => {
     expect(markup).not.toContain('class="chat-form"');
     expect(markup).not.toContain('class="hand-tile');
     expect(markup).not.toContain("primary-action-button");
+  });
+
+  it("labels a hard laiyou settlement and shows its multiplier source", () => {
+    const base = resultRoom();
+    const settlement = base.roundSettlement;
+    if (settlement === null) throw new Error("Expected a settlement fixture");
+    const room: RoomProjection = {
+      ...base,
+      roundOutcome: {
+        kind: "WIN",
+        winnerSeat: 0,
+        winType: "HARD",
+        laiyou: true,
+        nextDealerSeat: 2,
+      },
+      roundSettlement: { ...settlement, laiyou: true, laiyouMultiplier: 2 },
+    };
+    const markup = renderToStaticMarkup(
+      createElement(GameTable, {
+        room,
+        busy: false,
+        connectionStatus: "connected",
+        pendingAction: null,
+        error: null,
+        chatMessages: [],
+        onReady: resolveVoid,
+        onBaseScoreChange: resolveVoid,
+        onBotDifficultyChange: resolveVoid,
+        onAddBot: resolveVoid,
+        onRemoveBot: resolveVoid,
+        onContinue: resolveVoid,
+        onChat: resolveChat,
+        onLeave: resolveVoid,
+        onDissolve: resolveVoid,
+        onSend: resolveVoid,
+      }),
+    );
+
+    expect(markup).toContain("硬来由");
+    expect(markup).not.toContain("硬胡");
+    expect(markup).toContain("来由 ×2");
+    expect(markup).toContain("is-laiyou");
+  });
+
+  it("keeps the plain hard-win label when the settlement is not laiyou", () => {
+    const markup = renderToStaticMarkup(
+      createElement(GameTable, {
+        room: resultRoom(),
+        busy: false,
+        connectionStatus: "connected",
+        pendingAction: null,
+        error: null,
+        chatMessages: [],
+        onReady: resolveVoid,
+        onBaseScoreChange: resolveVoid,
+        onBotDifficultyChange: resolveVoid,
+        onAddBot: resolveVoid,
+        onRemoveBot: resolveVoid,
+        onContinue: resolveVoid,
+        onChat: resolveChat,
+        onLeave: resolveVoid,
+        onDissolve: resolveVoid,
+        onSend: resolveVoid,
+      }),
+    );
+
+    expect(markup).toContain("硬胡");
+    expect(markup).not.toContain("来由");
+    expect(markup).not.toContain("is-laiyou");
   });
 });

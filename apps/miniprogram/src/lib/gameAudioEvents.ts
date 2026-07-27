@@ -1,4 +1,11 @@
-import type { GameEffectCue, MeldKind, RoomProjection, Seat, Tile } from "@huanghuang/protocol";
+import type {
+  GameEffectCue,
+  MeldKind,
+  RoomProjection,
+  Seat,
+  Tile,
+  WinType,
+} from "@huanghuang/protocol";
 
 type TileRank = Tile["rank"];
 
@@ -54,9 +61,28 @@ function meldAudioFileName(kind: MeldKind): GameAudioFileName {
   return "action-kong.mp3";
 }
 
+const WIN_AUDIO_FILE: Record<WinType, GameAudioFileName> = {
+  HARD: "yinghu.mp3",
+  SOFT: "ruanhu.mp3",
+};
+
+// 来由 is its own semantic audio event, currently mapped onto the plain hard/soft
+// win clips. When dedicated 来由 audio lands, only this table changes — remember
+// to add the new file names to AUDIO_WINDOWS in gameAudioPlayer.ts, which is a
+// Record<GameAudioFileName, AudioWindow> and will fail typecheck if you forget.
+const LAIYOU_AUDIO_FILE: Record<WinType, GameAudioFileName> = {
+  HARD: "yinghu.mp3",
+  SOFT: "ruanhu.mp3",
+};
+
+export function winAudioFileName(winType: WinType | null, laiyou: boolean): GameAudioFileName {
+  const table = laiyou ? LAIYOU_AUDIO_FILE : WIN_AUDIO_FILE;
+  return table[winType ?? "SOFT"];
+}
+
 function effectAudioFileName(cue: GameEffectCue): GameAudioFileName {
   if (cue.action === "RELEASE_WILDCARD") return "action-release-wildcard.mp3";
-  if (cue.action === "WIN") return cue.winType === "HARD" ? "yinghu.mp3" : "ruanhu.mp3";
+  if (cue.action === "WIN") return winAudioFileName(cue.winType, cue.laiyou);
   return meldAudioFileName(cue.action);
 }
 
@@ -150,7 +176,7 @@ export function detectGameAudioFiles(
     settlement?.kind === "WIN" &&
     settlement.roundId !== previous.settlementRoundId
   ) {
-    files.push(settlement.winType === "HARD" ? "yinghu.mp3" : "ruanhu.mp3");
+    files.push(winAudioFileName(settlement.winType, settlement.laiyou));
   }
   return files;
 }
