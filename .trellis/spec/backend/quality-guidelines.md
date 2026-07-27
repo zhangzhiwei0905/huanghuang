@@ -251,7 +251,7 @@ type PendingEffectTransition = {
 };
 
 type RoomProjection = {
-  schemaVersion: 6;
+  schemaVersion: 7;
   effectCue: GameEffectCue | null;
 };
 ```
@@ -374,7 +374,7 @@ type DiscardTingProjection = {
 };
 
 type RoomProjection = {
-  schemaVersion: 6;
+  schemaVersion: 7;
   tingHints: DiscardTingProjection[];
 };
 ```
@@ -448,4 +448,104 @@ const hints = analyzeDiscardTingOptions({
 });
 
 return projectPublicTingHints(hints, publicVisibleTileCounts);
+```
+
+## Scenario: Bot-to-human cumulative score reset
+
+### 1. Scope / Trigger
+
+A `FRIEND` room fills empty seats with bots (`addBot`) and plays practice rounds.
+Humans that join mid-round become spectators and replace bots at the next
+waiting transition. Once all four seats are human and the round starts, the
+cumulative totals earned while a bot was seated must be discarded.
+
+### 2. Signatures
+
+```ts
+type RoomState = {
+  scores: Record<Seat, number>;
+  scoresIncludeBotRounds: boolean;
+};
+
+type PersistedRoomState = {
+  scoresIncludeBotRounds?: boolean;
+};
+
+type RoomProjection = {
+  schemaVersion: 7;
+  scoreResetPending: boolean;
+};
+```
+
+No new HTTP route, command payload or environment key.
+
+### 3. Contracts
+
+- `RoomService.startRound` is the single choke point. It is the only place a
+  round receives `startingScores`, so the reset and the flag update both live
+  there instead of in a command handler. Do not add the reset to `setReady`,
+  `continueBotRound` or `createRoom` — they all reach `startRound`.
+- Reset condition: all four seat controllers are `HUMAN` **and**
+  `scoresIncludeBotRounds` is true. The flag is then recomputed as
+  `!allHuman`, which makes the reset one-shot: later all-human rounds keep
+  accumulating.
+- The flag is evaluated at round **start**. A human who leaves mid-session is
+  replaced by `botSeat()`, so the next round is a bot round and a later
+  full-human table will reset. That is intentional under the "reset from zero"
+  rule; changing it requires distinguishing `addBot` from leave-substitution.
+- `scoreResetPending = scoresIncludeBotRounds && allHuman`. Because no path
+  turns a bot-started round all-human mid-round, it is only ever true in
+  `WAITING`.
+- Snapshots written before the field infer it from seats: a table currently
+  seating a bot is treated as carrying bot-era totals; an all-human table is
+  not, so real players never lose totals they already earned. All three
+  `normalizeRoom` return branches must set the field.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behaviour |
+|---|---|
+| Bot round played, then four humans ready | `scores` and `startingScores` all zero |
+| Consecutive all-human rounds | `startingScores` equals previous cumulative totals |
+| `BOT` mode `continueBotRound` | Cumulative totals preserved, flag stays true |
+| Legacy snapshot with a bot seat and no flag | Flag inferred true, `scores` preserved |
+| Legacy all-human snapshot with no flag | Flag inferred false, `scores` preserved |
+
+### 5. Good/Base/Bad Cases
+
+- Good: three spectators replace three bots at the waiting transition, everyone
+  readies, and the new round starts every seat at zero.
+- Base: a room that never seated a bot readies four humans and keeps totals.
+- Bad: zeroing scores in `enterWaiting` (a seat can turn back into a bot before
+  the round starts), or letting the client zero `lobbySeats[].score` locally.
+
+### 6. Tests Required
+
+- Service test drives the full path: `addBot` ×3, ready, finish the round,
+  spectators join, `tick` into waiting, ready all four, assert zeroed
+  `scores` / `startingScores` and `scoreResetPending` back to false.
+- Service test asserts two consecutive all-human rounds keep cumulative totals.
+- Persistence test restores one bot-seated and one all-human legacy snapshot
+  without the field and asserts the inferred flag and preserved scores.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+// In setReady, after the last human readies:
+if (SEATS.every((seat) => room.seats[seat].controller === "HUMAN")) {
+  room.scores = { ...ZERO_SCORES }; // resets every all-human round
+}
+```
+
+Correct:
+
+```ts
+// In startRound, before createRound:
+const allHuman = isAllHumanTable(room.seats);
+if (allHuman && room.scoresIncludeBotRounds) {
+  room.scores = { ...ZERO_SCORES };
+}
+room.scoresIncludeBotRounds = !allHuman;
 ```

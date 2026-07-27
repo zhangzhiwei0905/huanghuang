@@ -875,6 +875,11 @@ export function GameTable({
           <h2>等待玩家准备</h2>
           <p>房主可用机器人补齐空位。所有真人准备后自动开始，机器人默认已准备。</p>
           <WaitingRoomExpiry expiresAt={room.waitingExpiresAt} />
+          {room.scoreResetPending ? (
+            <p className="score-reset-notice" role="status">
+              四人满座，开局后积分将重新计算
+            </p>
+          ) : null}
           {connectionStatus === "connected" ? null : (
             <p className="network-inline-status" role="status">
               {connectionStatus === "connecting" ? "正在连接房间…" : "网络已中断，正在恢复房间…"}

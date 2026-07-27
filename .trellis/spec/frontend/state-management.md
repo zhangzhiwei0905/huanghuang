@@ -46,9 +46,10 @@ type RoomMode = "FRIEND" | "BOT";
 type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
 
 type RoomProjection = {
-  schemaVersion: 6;
+  schemaVersion: 7;
   mode: RoomMode;
   stage: RoomStage;
+  scoreResetPending: boolean;
   status: "ACTIVE" | "CLOSED";
   closeReason: "OWNER_DISSOLVED" | "WAITING_TIMEOUT" | "EMPTY_ROOM" | null;
   waitingExpiresAt: string | null;
@@ -103,6 +104,9 @@ type ChatMessageProjection = {
 - `BOT` rooms start in `PLAYING`, reject joins, and remain in `ROUND_RESULT` until the owner calls `/continue` or leaves.
 - `currentSeat` preserves the game engine's turn/discarder seat. `actingSeat` is the player currently required to act, including a discard responder. Player highlights and arrows use `actingSeat`; response-tile derivation continues to use `currentSeat`.
 - `lobbySeats` is the only waiting-room seat source. Components must not reconstruct seats from `players` or a second waiting-player list.
+- `scoreResetPending` is the only signal that the next round will zero cumulative
+  scores. Clients render a waiting-room notice from it and must not infer the
+  reset by comparing seat controllers or `lobbySeats[].score`.
 - Waiting projections have `roundId = null`, `players = []`, no legal actions, and no action deadline.
 - Every `FRIEND + WAITING` projection has a UTC ISO `waitingExpiresAt`; starting a round clears it, and returning from a round creates a fresh three-minute deadline. Join, readiness and base-score changes do not extend it.
 - Readiness is an explicit desired state. Repeating `{ ready: true }` or `{ ready: false }` is idempotent; the client must not ask the server to perform an implicit toggle.

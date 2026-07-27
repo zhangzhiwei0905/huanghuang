@@ -721,6 +721,9 @@ export default function RoomPage() {
               <Text className="lobby-center__hint">
                 {lobbyOccupiedCount < 4 ? "邀请好友，或由房主添加机器人" : "所有真人准备后自动开始"}
               </Text>
+              {room.scoreResetPending ? (
+                <Text className="lobby-center__score-reset">开局后积分将重新计算</Text>
+              ) : null}
               {room.isOwner ? (
                 <View className="lobby-settings">
                   <View className="lobby-score-picker">

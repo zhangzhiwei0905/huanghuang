@@ -18,7 +18,7 @@ describe("normalizeRoomProjection", () => {
 
   it("preserves a current projection that already defines effectCue", () => {
     const projection = {
-      schemaVersion: 6,
+      schemaVersion: 7,
       effectCue: null,
     } as RoomProjection;
 

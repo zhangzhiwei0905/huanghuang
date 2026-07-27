@@ -727,6 +727,15 @@
   font-size: clamp(10px, 1.8vmin, 12px);
 }
 
+.lobby-center__score-reset {
+  margin-top: 0.6vmin;
+  border-radius: 999px;
+  padding: 0.4vmin 1.2vmin;
+  color: rgb(255 214 138);
+  background: rgb(255 214 138 / 16%);
+  font-size: clamp(10px, 1.8vmin, 12px);
+}
+
 .lobby-score-picker {
   display: flex;
   align-items: center;

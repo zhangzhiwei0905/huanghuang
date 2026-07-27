@@ -480,7 +480,7 @@ describe("RoomService", () => {
     const projection = service.project(room, owner.id);
     const hints = projection.tingHints.find((hint) => hint.discardTileId === discarded.id);
 
-    expect(projection.schemaVersion).toBe(6);
+    expect(projection.schemaVersion).toBe(7);
     expect(hints?.waits).toContainEqual({
       tileKind: { suit: "TONG", rank: 1 },
       winType: "HARD",
@@ -1344,5 +1344,129 @@ describe("RoomService", () => {
     expect(room.version).toBe(versionAfterFirst);
     expect(stale.accepted).toBe(false);
     expect(stale.errorCode).toBe("VERSION_CONFLICT");
+  });
+
+  it("resets cumulative scores once four humans replace every bot and get ready", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    for (let index = 0; index < 3; index += 1) service.addBot(owner.id, room.code);
+    service.setReady(owner.id, room.code, true);
+
+    expect(room.stage).toBe("PLAYING");
+    expect(room.scoresIncludeBotRounds).toBe(true);
+
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) service.joinRoom(guest, room.code);
+    expect(room.spectators).toHaveLength(3);
+
+    const botRound = activeRound(room);
+    botRound.players[0].score = 12;
+    botRound.players[1].score = -4;
+    botRound.players[2].score = -4;
+    botRound.players[3].score = -4;
+    botRound.phase = "ROUND_OVER";
+    botRound.outcome = { kind: "DRAW", nextDealerSeat: 0 };
+    room.stage = "ROUND_RESULT";
+    room.nextRoundAt = new Date(0).toISOString();
+    service.tick(Date.now());
+
+    expect(room.stage).toBe("WAITING");
+    expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
+    expect(room.scores).toEqual({ 0: 12, 1: -4, 2: -4, 3: -4 });
+    expect(service.project(room, owner.id).scoreResetPending).toBe(true);
+
+    for (const guest of guests) service.setReady(guest.id, room.code, true);
+    service.setReady(owner.id, room.code, true);
+
+    expect(room.stage).toBe("PLAYING");
+    expect(room.scores).toEqual({ 0: 0, 1: 0, 2: 0, 3: 0 });
+    expect(activeRound(room).startingScores).toEqual({ 0: 0, 1: 0, 2: 0, 3: 0 });
+    expect(room.scoresIncludeBotRounds).toBe(false);
+    expect(service.project(room, owner.id).scoreResetPending).toBe(false);
+  });
+
+  it("keeps cumulative scores across consecutive all-human friend rounds", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) {
+      service.joinRoom(guest, room.code);
+      service.setReady(guest.id, room.code, true);
+    }
+    service.setReady(owner.id, room.code, true);
+    expect(room.scoresIncludeBotRounds).toBe(false);
+
+    const firstRound = activeRound(room);
+    firstRound.players[0].score = 9;
+    firstRound.players[1].score = -3;
+    firstRound.players[2].score = -3;
+    firstRound.players[3].score = -3;
+    firstRound.phase = "ROUND_OVER";
+    firstRound.outcome = { kind: "DRAW", nextDealerSeat: 1 };
+    room.stage = "ROUND_RESULT";
+    room.nextRoundAt = new Date(0).toISOString();
+    service.tick(Date.now());
+
+    expect(service.project(room, owner.id).scoreResetPending).toBe(false);
+
+    for (const guest of guests) service.setReady(guest.id, room.code, true);
+    service.setReady(owner.id, room.code, true);
+
+    expect(activeRound(room).startingScores).toEqual({ 0: 9, 1: -3, 2: -3, 3: -3 });
+  });
+
+  it("infers whether legacy snapshots carry bot-era scores from their seats", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const service = new RoomService(database);
+
+    const botRoom = service.createRoom(owner, 2, "FRIEND");
+    service.addBot(owner.id, botRoom.code);
+    const botSnapshot = JSON.parse(JSON.stringify(botRoom)) as Record<string, unknown>;
+    botSnapshot.code = "100001";
+    botSnapshot.scores = { 0: 7, 1: -7, 2: 0, 3: 0 };
+    delete botSnapshot.scoresIncludeBotRounds;
+    database.saveRoom(
+      { id: botRoom.id, code: "100001", status: botRoom.status, version: botRoom.version },
+      JSON.stringify(botSnapshot),
+    );
+
+    const humanRoom = service.createRoom({ id: "owner-2", nickname: "房主二" }, 2, "FRIEND");
+    for (const guest of [
+      { id: "guest-a", nickname: "甲" },
+      { id: "guest-b", nickname: "乙" },
+      { id: "guest-c", nickname: "丙" },
+    ]) {
+      service.joinRoom(guest, humanRoom.code);
+    }
+    const humanSnapshot = JSON.parse(JSON.stringify(humanRoom)) as Record<string, unknown>;
+    humanSnapshot.code = "100002";
+    humanSnapshot.scores = { 0: 5, 1: -5, 2: 0, 3: 0 };
+    delete humanSnapshot.scoresIncludeBotRounds;
+    database.saveRoom(
+      { id: humanRoom.id, code: "100002", status: humanRoom.status, version: humanRoom.version },
+      JSON.stringify(humanSnapshot),
+    );
+
+    const restoredService = new RoomService(database);
+    const restoredBotRoom = restoredService.getRoom("100001");
+    const restoredHumanRoom = restoredService.getRoom("100002");
+    if (restoredBotRoom === null || restoredHumanRoom === null) {
+      throw new Error("Expected both legacy rooms to restore");
+    }
+
+    expect(restoredBotRoom.scoresIncludeBotRounds).toBe(true);
+    expect(restoredBotRoom.scores).toEqual({ 0: 7, 1: -7, 2: 0, 3: 0 });
+    expect(restoredHumanRoom.scoresIncludeBotRounds).toBe(false);
+    expect(restoredHumanRoom.scores).toEqual({ 0: 5, 1: -5, 2: 0, 3: 0 });
+    expect(restoredService.project(restoredHumanRoom, owner.id).scoreResetPending).toBe(false);
   });
 });

@@ -101,7 +101,7 @@ export type DiscardTingProjection = {
 };
 
 export type RoomProjection = {
-  schemaVersion: 6;
+  schemaVersion: 7;
   roomId: string;
   roomCode: string;
   version: number;
@@ -118,6 +118,13 @@ export type RoomProjection = {
   selfReady: boolean;
   selfSeat: Seat | null;
   selfDrawnTileId: string | null;
+  /**
+   * True when the next round will zero every seat's cumulative score because
+   * the table is now all-human but the running totals still include rounds
+   * played with a bot. Clients render a notice from this flag and must never
+   * derive the reset themselves.
+   */
+  scoreResetPending: boolean;
   status: "ACTIVE" | "CLOSED";
   closeReason: RoomCloseReason | null;
   dissolveAfterRound: boolean;

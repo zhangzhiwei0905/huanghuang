@@ -466,6 +466,16 @@ h1 {
   color: var(--accent);
   background: transparent;
 }
+.score-reset-notice {
+  width: max-content;
+  margin: 0 auto 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 11px;
+}
 .network-inline-status {
   border-left: 2px solid var(--accent);
   padding: 6px 9px;
