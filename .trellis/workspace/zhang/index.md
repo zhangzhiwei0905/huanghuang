@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 23
+- **Total Sessions**: 24
 - **Last Active**: 2026-07-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~892 | Active |
+| `journal-1.md` | ~929 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 24 | 2026-07-27 | 机器人转真人积分清零与来由玩法 | `3d91f2e`, `00536fd`, `84d8ad7`, `fa8b4a9`, `730c355` | `miniprogram` |
 | 23 | 2026-07-27 | 接入并优化麻将特效动画 | `2c16abe` | `miniprogram` |
 | 22 | 2026-07-27 | Miniprogram audio overhaul + cloud storage migration | `e8cb1e9`, `4fbd6b7` | `miniprogram` |
 | 21 | 2026-07-26 | 小程序牌局音效与即时播放上线 | `e8bfeff` | `miniprogram` |

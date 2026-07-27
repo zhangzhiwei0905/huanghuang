@@ -890,3 +890,40 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: 机器人转真人积分清零与来由玩法
+
+**Date**: 2026-07-27
+**Task**: 机器人转真人积分清零与来由玩法
+**Branch**: `miniprogram`
+
+### Summary
+
+好友房积分改为房间级一次性清零：首次四真人满座开局时归零，掉线被机器人顶替后重连不再清零，收口在 startRound 并投影 scoreResetPending。新增来由玩法：放赖补摸的那张牌直接成胡即为来由，用 laiyouCandidate 与 lastDrawnTileId 比对判定，倍率再乘 2（上限 64 倍，零和不变），硬/软来由沿用引擎 winType，赖子留手当本牌用仍算硬来由。投影 schemaVersion 6->8，小程序来由音效走独立映射表暂复用硬胡/软胡音频，Web 与小程序结算展示同步；Web 抽出 winTypeLabel 消除两处胡型文案重复。212 项测试通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3d91f2e` | (see git log) |
+| `00536fd` | (see git log) |
+| `84d8ad7` | (see git log) |
+| `fa8b4a9` | (see git log) |
+| `730c355` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
