@@ -6,6 +6,7 @@ import {
   commandEnvelopeSchema,
   createRoomSchema,
   joinRoomSchema,
+  matchmakingQueueInputSchema,
   readyRoomSchema,
   removeRoomBotSchema,
   updateRoomSettingsSchema,
@@ -19,8 +20,11 @@ import { pipeline } from "node:stream/promises";
 import { Server } from "socket.io";
 import { AvatarUploadError, decodeAvatarData, MAX_AVATAR_BASE64_LENGTH } from "./avatar-upload.js";
 import { GameDatabase } from "./database.js";
+import { MatchmakingService } from "./matchmaking-service.js";
+import { RoomPresence } from "./room-presence.js";
 import { RoomService } from "./room-service.js";
 import { SessionService, SESSION_TOKEN_HEADER } from "./session-service.js";
+import { SessionPresence } from "./session-presence.js";
 
 const app = Fastify({ logger: true });
 await app.register(cookie);
@@ -48,6 +52,21 @@ app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, b
 const database = new GameDatabase(process.env.DATABASE_PATH ?? ":memory:");
 const sessions = new SessionService(database);
 const rooms = new RoomService(database);
+const presence = new SessionPresence();
+const roomPresence = new RoomPresence();
+const matchmaking = new MatchmakingService(
+  database,
+  (sessionId) => presence.isConnected(sessionId),
+  (players) => {
+    const room = rooms.createCompetitiveMatch(
+      players.map((player) => player.session),
+      players.map((player) => player.entry),
+    );
+    const competitiveMatch = room.competitiveMatch;
+    if (competitiveMatch === null) throw new Error("Competitive room is missing match metadata");
+    return { matchId: competitiveMatch.matchId, roomId: room.id };
+  },
+);
 
 // Avatars uploaded via chooseAvatar land next to the sqlite file so the
 // existing `game_data` deploy volume already persists them — no new deploy
@@ -71,6 +90,19 @@ const sockets = new Server(app.server, {
     skipMiddlewares: false,
   },
 });
+
+function matchmakingResponse(sessionId: string) {
+  const state = matchmaking.getState(sessionId);
+  if (state.status !== "MATCHED") return { state, room: null };
+  const room = rooms.getRoomById(state.roomId);
+  return {
+    state,
+    room:
+      room !== null && rooms.hasMember(sessionId, room.code)
+        ? rooms.project(room, sessionId)
+        : null,
+  };
+}
 
 async function emitRoomProjection(roomId: string, excludedSocketId: string | null = null) {
   const room = rooms.getRoomById(roomId);
@@ -233,6 +265,80 @@ app.post("/api/auth/wechat", async (request, reply) => {
  * actually load the image (a temp path on one player's device means
  * nothing to anyone else's client).
  */
+app.get("/api/competitive/profile", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    return matchmaking.getProfile(session);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === "WECHAT_LINK_REQUIRED") {
+      return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+    }
+    throw cause;
+  }
+});
+
+app.get("/api/matchmaking/status", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  if (session.wechatOpenId == null) {
+    return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+  }
+  matchmaking.heartbeat(session.id);
+  matchmaking.tick();
+  return matchmakingResponse(session.id);
+});
+
+app.post("/api/matchmaking/queue", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const parsed = matchmakingQueueInputSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
+  try {
+    if (parsed.data.previousMatchId === undefined) {
+      matchmaking.enqueue(session);
+    } else {
+      matchmaking.continueMatchmaking(session, parsed.data.previousMatchId);
+    }
+    matchmaking.tick();
+    return matchmakingResponse(session.id);
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "MATCHMAKING_FAILED";
+    if (code === "WECHAT_LINK_REQUIRED") {
+      return reply.code(403).send({ error: code });
+    }
+    if (code.includes("active competitive match") || code.includes("settled match member")) {
+      return reply.code(409).send({ error: "MATCHMAKING_STATE_CONFLICT" });
+    }
+    request.log.error({ err: cause }, "failed to enqueue competitive player");
+    return reply.code(500).send({ error: "MATCHMAKING_FAILED" });
+  }
+});
+
+app.delete("/api/matchmaking/queue", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  matchmaking.cancel(session.id);
+  return matchmakingResponse(session.id);
+});
+
+app.post<{ Params: { matchId: string } }>(
+  "/api/competitive/matches/:matchId/acknowledge",
+  (request, reply) => {
+    const session = sessions.resolve(request);
+    if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+    try {
+      matchmaking.acknowledgeResult(session.id, request.params.matchId);
+      return matchmakingResponse(session.id);
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "MATCH_RESULT_NOT_AVAILABLE") {
+        return reply.code(409).send({ error: "MATCH_RESULT_NOT_AVAILABLE" });
+      }
+      throw cause;
+    }
+  },
+);
+
 app.post("/api/upload/avatar", async (request, reply) => {
   const file = await request.file();
   if (file === undefined) return reply.code(400).send({ error: "NO_FILE" });
@@ -432,14 +538,19 @@ sockets.on("connection", (socket) => {
     socket.disconnect(true);
     return;
   }
-  for (const update of rooms.setConnected(sessionId, true)) {
-    sockets.to(update.roomId).emit("room:update", { version: update.version });
+  if (presence.connect(sessionId, socket.id) === "FIRST_CONNECTED") {
+    matchmaking.setConnected(sessionId, true);
   }
   socket.on("room:subscribe", (roomCode: string, acknowledge: (value: unknown) => void) => {
     const room = rooms.getRoom(roomCode);
     if (room?.status !== "ACTIVE") return acknowledge({ error: "ROOM_NOT_FOUND" });
     if (!rooms.hasMember(sessionId, roomCode)) return acknowledge({ error: "NOT_A_MEMBER" });
     void socket.join(room.id);
+    if (roomPresence.subscribe(room.id, sessionId, socket.id)) {
+      const update = rooms.setRoomConnected(sessionId, room.id, true);
+      if (update !== null)
+        sockets.to(update.roomId).emit("room:update", { version: update.version });
+    }
     acknowledge(rooms.project(room, sessionId));
   });
 
@@ -459,6 +570,13 @@ sockets.on("connection", (socket) => {
   socket.on("game:command", (unknownCommand: unknown, acknowledge: (value: unknown) => void) => {
     const parsed = commandEnvelopeSchema.safeParse(unknownCommand);
     if (!parsed.success) return acknowledge({ accepted: false, errorCode: "INVALID_COMMAND" });
+    const commandRoom = rooms.getRoomById(parsed.data.roomId);
+    if (
+      commandRoom?.mode === "MATCH" &&
+      !roomPresence.isSubscribed(parsed.data.roomId, sessionId, socket.id)
+    ) {
+      return acknowledge({ accepted: false, errorCode: "ROOM_NOT_SUBSCRIBED" });
+    }
     const result = rooms.execute(sessionId, parsed.data);
     if (result.accepted) {
       const room = rooms.getRoomById(parsed.data.roomId);
@@ -474,8 +592,14 @@ sockets.on("connection", (socket) => {
     }
   });
   socket.on("disconnect", () => {
-    for (const update of rooms.setConnected(sessionId, false)) {
-      sockets.to(update.roomId).emit("room:update", { version: update.version });
+    for (const membership of roomPresence.disconnect(socket.id)) {
+      if (!membership.lastSubscription) continue;
+      const update = rooms.setRoomConnected(membership.sessionId, membership.roomId, false);
+      if (update !== null)
+        sockets.to(update.roomId).emit("room:update", { version: update.version });
+    }
+    if (presence.disconnect(sessionId, socket.id) === "LAST_DISCONNECTED") {
+      matchmaking.setConnected(sessionId, false);
     }
   });
 });
@@ -492,8 +616,14 @@ const roomTimer = setInterval(() => {
 }, 50);
 roomTimer.unref();
 
+const matchmakingTimer = setInterval(() => {
+  matchmaking.tick();
+}, 1_000);
+matchmakingTimer.unref();
+
 app.addHook("onClose", async () => {
   clearInterval(roomTimer);
+  clearInterval(matchmakingTimer);
   await sockets.close();
   database.close();
 });

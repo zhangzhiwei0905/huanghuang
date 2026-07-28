@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
+import type { PublicCompetitiveProfile } from "@huanghuang/protocol";
 import { API_BASE } from "../config";
 import "./PlayerProfileModal.scss";
 
@@ -11,6 +12,7 @@ export type PlayerProfileModalProps = {
   connected?: boolean;
   isSelf?: boolean;
   isOwner?: boolean;
+  competitiveProfile: PublicCompetitiveProfile | null;
   onClose: () => void;
 };
 
@@ -28,10 +30,11 @@ export function PlayerProfileModal({
   connected = true,
   isSelf = false,
   isOwner = false,
+  competitiveProfile,
   onClose,
 }: PlayerProfileModalProps) {
   const [avatarZoomed, setAvatarZoomed] = useState(false);
-  const fallback = controller === "BOT" ? "机" : (nickname.slice(0, 1) || "玩");
+  const fallback = controller === "BOT" ? "机" : nickname.slice(0, 1) || "玩";
   const hasAvatar = avatarUrl !== null && avatarUrl.length > 0;
   const avatarSrc = hasAvatar ? `${API_BASE}${avatarUrl}` : null;
 
@@ -75,8 +78,41 @@ export function PlayerProfileModal({
             ) : null}
           </View>
 
+          <View className="profile-modal__competitive">
+            {competitiveProfile === null ? (
+              <Text className="profile-modal__competitive-empty">无永久竞技战绩</Text>
+            ) : (
+              <>
+                <View className="profile-modal__rank">
+                  <Text className="profile-modal__rank-label">当前段位</Text>
+                  <Text className="profile-modal__rank-value">
+                    {competitiveProfile.rankDisplay.displayName}
+                  </Text>
+                </View>
+                <View className="profile-modal__achievements">
+                  <View>
+                    <Text>明杠</Text>
+                    <Text>{competitiveProfile.achievements.exposedKong}</Text>
+                  </View>
+                  <View>
+                    <Text>碰亮牌</Text>
+                    <Text>{competitiveProfile.achievements.indicatorPongKong}</Text>
+                  </View>
+                  <View>
+                    <Text>补杠</Text>
+                    <Text>{competitiveProfile.achievements.addedKong}</Text>
+                  </View>
+                  <View>
+                    <Text>暗杠</Text>
+                    <Text>{competitiveProfile.achievements.concealedKong}</Text>
+                  </View>
+                </View>
+              </>
+            )}
+          </View>
+
           <View className="profile-modal__score">
-            <Text className="profile-modal__score-label">积分</Text>
+            <Text className="profile-modal__score-label">本局牌桌分</Text>
             <Text className="profile-modal__score-value">{score}</Text>
           </View>
 

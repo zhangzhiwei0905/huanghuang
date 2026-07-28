@@ -486,6 +486,13 @@
   font-weight: 700;
 }
 
+.mp-account__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1vmin;
+}
+
 .mp-account__nickname {
   max-width: 22vmin;
   overflow: hidden;
@@ -496,6 +503,14 @@
     0 1px 0 rgb(247 251 245 / 96%),
     0 0 5px rgb(247 251 245 / 88%);
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-account__rank {
+  color: var(--accent, #2f6a4c);
+  font-size: clamp(10px, 1.8vmin, 12px);
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgb(247 251 245 / 96%);
   white-space: nowrap;
 }
 
@@ -536,6 +551,91 @@
 .mp-account__logout.is-pressed::before {
   opacity: 0.86;
   transform: translateY(1px);
+}
+
+.mp-matchmaking {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vmin;
+  box-sizing: border-box;
+  background: rgb(20 24 22 / 72%);
+}
+
+.mp-matchmaking__panel {
+  width: min(76vw, 520px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.6vmin;
+  padding: 3.2vmin;
+  box-sizing: border-box;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 2vmin;
+  background: rgb(248 251 246 / 98%);
+  box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 28%);
+}
+
+.mp-matchmaking__eyebrow,
+.mp-matchmaking__label {
+  color: var(--muted, #5f625b);
+  font-size: clamp(10px, 1.8vmin, 12px);
+}
+
+.mp-matchmaking__title {
+  color: var(--ink, #272925);
+  font-size: clamp(18px, 3.8vmin, 25px);
+  font-weight: 800;
+}
+
+.mp-matchmaking__status {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 1.2vmin;
+  background: var(--line, #cde0d3);
+}
+
+.mp-matchmaking__status > view {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6vmin;
+  padding: 1.8vmin 1vmin;
+  background: #fdfcf6;
+}
+
+.mp-matchmaking__value {
+  max-width: 100%;
+  color: var(--accent, #2f6a4c);
+  font-size: clamp(12px, 2.5vmin, 16px);
+  font-weight: 800;
+  text-align: center;
+  white-space: normal;
+}
+
+.mp-matchmaking__notice {
+  color: var(--muted, #5f625b);
+  font-size: clamp(10px, 2vmin, 13px);
+}
+
+.mp-matchmaking__error {
+  max-width: min(76vw, 520px);
+  color: var(--danger, #7a4b45);
+  font-size: clamp(10px, 2vmin, 13px);
+  text-align: center;
+}
+
+.mp-matchmaking__cancel {
+  min-width: 22vmin !important;
+  margin-top: 0.4vmin !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

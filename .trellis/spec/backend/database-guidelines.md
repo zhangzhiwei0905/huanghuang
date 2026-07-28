@@ -17,9 +17,11 @@ connection.pragma("busy_timeout = 5000");
 - Keep SQL inside `GameDatabase`; room and transport services must not access `connection` directly.
 - Use bound parameters for every value. Never interpolate nicknames, room codes, IDs or JSON into SQL.
 - Store a complete authoritative `RoomState` JSON snapshot with its monotonic room version.
-- A successful player command must persist the new room snapshot and `(session_id, request_id)` result in one SQLite transaction through `saveRoomAndProcessedRequest`.
+- A successful player command must persist the new room snapshot and `(session_id, request_id)` result in one SQLite transaction. `saveAcceptedTransition` is the current unified path and may atomically include a competitive achievement fact and first terminal rank settlement.
 - Read a processed request before executing a command. Replays return the stored result without applying rules again.
-- Use `INSERT OR IGNORE` only for idempotent request results; room snapshots use `ON CONFLICT(id) DO UPDATE`.
+- Use `INSERT OR IGNORE` only for idempotent request/action facts; room snapshots use `ON CONFLICT(id) DO UPDATE`.
+- Competitive match creation must save the room/match/players and delete exactly four current online queue rows with their expected queue versions in one transaction. A stale version, disconnect, cancel, or missing row rolls back the entire match.
+- Rank settlement, room score and future wallet balances are distinct domains. Never place a rank level or monetary balance in `rooms.state_json` as its account source of truth.
 
 ## Schema and naming
 

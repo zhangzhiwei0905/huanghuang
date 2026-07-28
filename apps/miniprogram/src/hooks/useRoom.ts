@@ -45,6 +45,7 @@ const ROOM_CLOSE_NOTICES: Record<NonNullable<RoomProjection["closeReason"]>, str
   OWNER_DISSOLVED: "房主已解散房间",
   WAITING_TIMEOUT: "3 分钟未开始，房间已解散，请重新创建或加入房间",
   EMPTY_ROOM: "房间已关闭，请重新创建或加入房间",
+  MATCH_SETTLED: "竞技结算已确认，请继续匹配或返回大厅",
 };
 
 function emitCommandWithTimeout(

@@ -19,6 +19,7 @@ function player(
     releasedWildcards: options?.releasedWildcards ?? [],
     personalMultiplier: 1,
     score: 0,
+    competitiveProfile: null,
   };
 }
 

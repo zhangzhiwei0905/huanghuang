@@ -22,7 +22,9 @@
 }
 
 .profile-modal {
-  width: min(72vw, 62vmin);
+  width: min(76vw, 72vmin);
+  max-height: calc(100vh - 6vmin);
+  overflow-y: auto;
   box-sizing: border-box;
   border: 1px solid #d8d4c4;
   border-radius: 2vmin;
@@ -132,6 +134,63 @@
   font-size: 1.8vmin;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.profile-modal__competitive {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2vmin;
+  margin-bottom: 1.5vmin;
+  border-top: 1px solid var(--line, #cde0d3);
+  padding-top: 1.5vmin;
+}
+
+.profile-modal__rank {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1vmin;
+}
+
+.profile-modal__rank-label,
+.profile-modal__competitive-empty {
+  color: var(--muted, #5f625b);
+  font-size: 1.8vmin;
+  text-align: center;
+}
+
+.profile-modal__rank-value {
+  color: var(--accent, #2f6a4c);
+  font-size: 2.6vmin;
+  font-weight: 800;
+}
+
+.profile-modal__achievements {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 0.8vmin;
+  background: var(--line, #cde0d3);
+}
+
+.profile-modal__achievements > view {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3vmin;
+  padding: 0.8vmin 0.4vmin;
+  background: #fdfcf6;
+  font-size: 1.6vmin;
+  text-align: center;
+}
+
+.profile-modal__achievements > view > text:last-child {
+  color: var(--accent, #2f6a4c);
+  font-size: 2.2vmin;
+  font-weight: 800;
 }
 
 .profile-modal__score {

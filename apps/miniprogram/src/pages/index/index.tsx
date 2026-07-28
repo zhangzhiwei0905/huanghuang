@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, Image, Input, Picker, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import type {
   BaseScore,
   BotDifficulty,
+  MatchmakingState,
   RoomMode,
+  SelfCompetitiveProfile,
   RoomProjection,
   TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
-import { ApiError, roomApi } from "../../api/http";
+import { ApiError, competitiveApi, roomApi, type MatchmakingResponse } from "../../api/http";
 import { API_BASE } from "../../config";
 import {
   clearStoredSessionToken,
@@ -20,6 +22,7 @@ import {
   wechatLogin,
 } from "../../api/session";
 import { errorLabel } from "../../lib/errors";
+import { matchmakingRangeLabel, matchmakingWaitSeconds } from "../../lib/matchmakingPresentation";
 import "./index.scss";
 
 const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
@@ -29,6 +32,7 @@ const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
 // create-room schema.
 const TURN_TIMEOUT_OPTIONS = [20, 25, 30] satisfies TurnTimeoutSeconds[];
 const BOT_DIFFICULTY_OPTIONS = ["LOW", "HIGH"] satisfies BotDifficulty[];
+const TRUSTEE_MATCH_STORAGE_KEY = "huanghuang_trustee_match";
 
 type Mode = "HOME" | "CREATE" | "JOIN" | "BOT";
 type IdentityState = "checking" | "loggedOut" | "loggedIn";
@@ -56,7 +60,7 @@ function HomeBrand() {
           <Text className="mp-home__logo-char">晃</Text>
         </View>
       </View>
-      <Text className="mp-home__tagline">四人数字麻将 · 好友房 / 人机对战</Text>
+      <Text className="mp-home__tagline">四人数字麻将 · 竞技匹配 / 好友房 / 人机对战</Text>
     </>
   );
 }
@@ -216,6 +220,12 @@ export default function IndexPage() {
   const [baseScore, setBaseScore] = useState<BaseScore>(2);
   const [turnTimeoutSeconds, setTurnTimeoutSeconds] = useState<TurnTimeoutSeconds>(20);
   const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>("HIGH");
+  const [competitiveProfile, setCompetitiveProfile] = useState<SelfCompetitiveProfile | null>(null);
+  const [matchmaking, setMatchmaking] = useState<MatchmakingState>({ status: "IDLE" });
+  const [matchmakingNow, setMatchmakingNow] = useState(Date.now());
+  const [matchmakingBusy, setMatchmakingBusy] = useState(false);
+  const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
+  const matchedRoomOpeningRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -231,6 +241,74 @@ export default function IndexPage() {
       })
       .catch(() => setIdentityState("loggedOut"));
   }, []);
+
+  function applyMatchmakingResponse(response: MatchmakingResponse): void {
+    setMatchmaking(response.state);
+    setMatchmakingNow(Date.now());
+    if (response.state.status !== "MATCHED" || response.room === null) return;
+    const trusteeMatchId = Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+    const deliberatelyTrustee =
+      typeof trusteeMatchId === "string" && trusteeMatchId === response.state.matchId;
+    if (deliberatelyTrustee && response.room.stage !== "ROUND_RESULT") return;
+    if (deliberatelyTrustee) Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+    if (matchedRoomOpeningRef.current) return;
+    matchedRoomOpeningRef.current = true;
+    Taro.setStorageSync("huanghuang_open_room", response.room);
+    void Taro.navigateTo({ url: "/pages/room/index" }).finally(() => {
+      matchedRoomOpeningRef.current = false;
+    });
+  }
+
+  useEffect(() => {
+    if (identity === null) return;
+    let disposed = false;
+    Promise.all([competitiveApi.profile(), competitiveApi.status()])
+      .then(([profile, response]) => {
+        if (disposed) return;
+        setCompetitiveProfile(profile);
+        applyMatchmakingResponse(response);
+      })
+      .catch((cause) => {
+        if (!disposed) setMatchmakingError(describeSubmitError(cause));
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [identity]);
+
+  useEffect(() => {
+    const trusteeMatchId = Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+    const pollingTrusteeMatch =
+      matchmaking.status === "MATCHED" &&
+      typeof trusteeMatchId === "string" &&
+      trusteeMatchId === matchmaking.matchId;
+    if (matchmaking.status !== "QUEUED" && !pollingTrusteeMatch) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const poll = async () => {
+      try {
+        const response = await competitiveApi.status();
+        if (disposed) return;
+        setMatchmakingError(null);
+        applyMatchmakingResponse(response);
+        const stillTrustee =
+          response.state.status === "MATCHED" &&
+          Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY) === response.state.matchId;
+        if (response.state.status === "QUEUED" || stillTrustee) {
+          timer = setTimeout(() => void poll(), stillTrustee ? 2_000 : 1_000);
+        }
+      } catch (cause) {
+        if (disposed) return;
+        setMatchmakingError(describeSubmitError(cause));
+        timer = setTimeout(() => void poll(), 1_500);
+      }
+    };
+    timer = setTimeout(() => void poll(), 1_000);
+    return () => {
+      disposed = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [matchmaking.status]);
 
   const heading = useMemo(() => {
     if (mode === "CREATE") return "创建好友房";
@@ -267,9 +345,54 @@ export default function IndexPage() {
     }
   }
 
+  async function returnToCompetitiveMatch() {
+    if (matchmaking.status !== "MATCHED") return;
+    setMatchmakingBusy(true);
+    try {
+      const response = await competitiveApi.status();
+      if (response.room === null) throw new Error("MATCH_ROOM_NOT_AVAILABLE");
+      Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+      Taro.setStorageSync("huanghuang_open_room", response.room);
+      await Taro.navigateTo({ url: "/pages/room/index" });
+    } catch (cause) {
+      setMatchmakingError(describeSubmitError(cause));
+    } finally {
+      setMatchmakingBusy(false);
+    }
+  }
+
+  async function startMatchmaking() {
+    if (matchmakingBusy) return;
+    setMatchmakingBusy(true);
+    setMatchmakingError(null);
+    try {
+      applyMatchmakingResponse(await competitiveApi.queue());
+    } catch (cause) {
+      setMatchmakingError(describeSubmitError(cause));
+    } finally {
+      setMatchmakingBusy(false);
+    }
+  }
+
+  async function cancelMatchmaking() {
+    if (matchmakingBusy) return;
+    setMatchmakingBusy(true);
+    try {
+      applyMatchmakingResponse(await competitiveApi.cancel());
+      setMatchmakingError(null);
+    } catch (cause) {
+      setMatchmakingError(describeSubmitError(cause));
+    } finally {
+      setMatchmakingBusy(false);
+    }
+  }
+
   function logout() {
+    if (matchmaking.status === "QUEUED") void competitiveApi.cancel();
     clearStoredSessionToken();
     setIdentity(null);
+    setCompetitiveProfile(null);
+    setMatchmaking({ status: "IDLE" });
     setIdentityState("loggedOut");
     setLoginPanelOpen(false);
     setLoginEntryBusy(false);
@@ -344,6 +467,9 @@ export default function IndexPage() {
 
   if (identity === null) return null; // unreachable: loggedIn is only set alongside identity
 
+  const queuedWaitSeconds =
+    matchmaking.status === "QUEUED" ? matchmakingWaitSeconds(matchmaking, matchmakingNow) : 0;
+
   return (
     <View className="mp-home">
       <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
@@ -361,7 +487,12 @@ export default function IndexPage() {
               <Text className="mp-account__avatar-fallback">{identity.nickname.slice(0, 1)}</Text>
             )}
           </View>
-          <Text className="mp-account__nickname">{identity.nickname}</Text>
+          <View className="mp-account__text">
+            <Text className="mp-account__nickname">{identity.nickname}</Text>
+            {competitiveProfile !== null ? (
+              <Text className="mp-account__rank">{competitiveProfile.rankDisplay.displayName}</Text>
+            ) : null}
+          </View>
         </View>
         <Button
           hoverClass="is-pressed"
@@ -380,7 +511,23 @@ export default function IndexPage() {
             <Button
               hoverClass="is-pressed"
               className="mp-btn mp-btn--primary"
-              disabled={busy}
+              disabled={busy || matchmakingBusy || competitiveProfile === null}
+              onClick={() =>
+                void (matchmaking.status === "MATCHED"
+                  ? returnToCompetitiveMatch()
+                  : startMatchmaking())
+              }
+            >
+              {matchmakingBusy
+                ? "正在处理…"
+                : matchmaking.status === "MATCHED"
+                  ? "返回对局"
+                  : "快速开始"}
+            </Button>
+            <Button
+              hoverClass="is-pressed"
+              className="mp-btn"
+              disabled={busy || matchmakingBusy}
               onClick={() => setMode("BOT")}
             >
               人机对战
@@ -402,6 +549,9 @@ export default function IndexPage() {
               加入房间
             </Button>
           </View>
+          {matchmakingError !== null ? (
+            <Text className="mp-matchmaking__error">{matchmakingError}</Text>
+          ) : null}
         </View>
       ) : (
         <View className="mp-home__panel">
@@ -500,6 +650,48 @@ export default function IndexPage() {
           </View>
         </View>
       )}
+      {matchmaking.status === "QUEUED" ? (
+        <View className="mp-matchmaking">
+          <View className="mp-matchmaking__panel">
+            <Text className="mp-matchmaking__eyebrow">竞技匹配</Text>
+            <Text className="mp-matchmaking__title">正在寻找其他玩家</Text>
+            <View className="mp-matchmaking__status">
+              <View>
+                <Text className="mp-matchmaking__label">当前段位</Text>
+                <Text className="mp-matchmaking__value">
+                  {competitiveProfile?.rankDisplay.displayName ?? "黑铁Ⅴ"}
+                </Text>
+              </View>
+              <View>
+                <Text className="mp-matchmaking__label">等待时间</Text>
+                <Text className="mp-matchmaking__value">{queuedWaitSeconds} 秒</Text>
+              </View>
+              <View>
+                <Text className="mp-matchmaking__label">搜索范围</Text>
+                <Text className="mp-matchmaking__value">
+                  {matchmakingRangeLabel(queuedWaitSeconds)}
+                </Text>
+              </View>
+            </View>
+            {matchmaking.disconnectedAt !== null ? (
+              <Text className="mp-matchmaking__notice">连接暂时中断，正在保留排队位置</Text>
+            ) : (
+              <Text className="mp-matchmaking__notice">仅匹配四名真人玩家</Text>
+            )}
+            {matchmakingError !== null ? (
+              <Text className="mp-matchmaking__error">{matchmakingError}</Text>
+            ) : null}
+            <Button
+              className="mp-btn mp-matchmaking__cancel"
+              hoverClass="is-pressed"
+              disabled={matchmakingBusy}
+              onClick={() => void cancelMatchmaking()}
+            >
+              {matchmakingBusy ? "正在取消…" : "取消匹配"}
+            </Button>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }

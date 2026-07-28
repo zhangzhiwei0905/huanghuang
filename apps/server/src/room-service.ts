@@ -1,7 +1,9 @@
 import {
   analyzeDiscardTingOptions,
+  applyCompetitiveRankTransition,
   availableTurnActions,
   chooseBotAction,
+  COMPETITIVE_RULE_VERSION,
   claimExposedKong,
   claimIndicatorPongKong,
   claimPong,
@@ -13,6 +15,7 @@ import {
   discardTile,
   discardableTileIds,
   evaluateWin,
+  formatRankLevel,
   passResponse,
   releasableWildcardIds,
   releaseWildcard,
@@ -29,9 +32,13 @@ import type {
   CommandEnvelope,
   CommandResult,
   DiscardTingProjection,
+  CompetitiveAchievementAction,
+  CompetitiveMultiplier,
+  CompetitiveRankTransition,
   GameEffectAction,
   GameEffectCue,
   PlayerController,
+  PublicCompetitiveProfile,
   RoomMode,
   RoomCloseReason,
   RoomProjection,
@@ -41,9 +48,24 @@ import type {
   TileKind,
   TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
-import { DEFAULT_BOT_DIFFICULTY, DEFAULT_TURN_TIMEOUT_SECONDS } from "@huanghuang/protocol";
+import {
+  competitiveMultiplierSchema,
+  competitiveRankStateSchema,
+  competitiveRankTransitionSchema,
+  DEFAULT_BOT_DIFFICULTY,
+  DEFAULT_TURN_TIMEOUT_SECONDS,
+} from "@huanghuang/protocol";
 import { randomInt, randomUUID } from "node:crypto";
-import type { AnonymousSession, GameDatabase } from "./database.js";
+import type {
+  AnonymousSession,
+  CompetitiveActionEventInput,
+  CompetitiveMatchSettlement,
+  CompetitivePlayerSettlementInput,
+  CompetitiveProfileRow,
+  GameDatabase,
+  MatchmakingEntryRow,
+  PublicCompetitiveProfileRow,
+} from "./database.js";
 
 type SeatController = {
   seat: Seat;
@@ -100,6 +122,7 @@ type PersistedRoomState = {
   actionDeadlineAt?: string | null;
   nextRoundAt?: string | null;
   pendingEffectTransition?: PendingEffectTransition | null;
+  competitiveMatch?: { matchId: string; ruleVersion: number } | null;
 };
 
 export type RoomState = {
@@ -133,6 +156,7 @@ export type RoomState = {
   actionDeadlineAt: string | null;
   nextRoundAt: string | null;
   pendingEffectTransition: PendingEffectTransition | null;
+  competitiveMatch: { matchId: string; ruleVersion: number } | null;
 };
 
 export type JoinRoomResult = RoomState | "ROOM_FULL" | "ROOM_NOT_JOINABLE" | null;
@@ -160,6 +184,7 @@ const EFFECT_DURATION_MS = {
   WIN: 1_050,
 } satisfies Record<GameEffectAction, number>;
 export const WAITING_ROOM_TIMEOUT_MS = 3 * 60_000;
+export const MATCH_SETTLEMENT_RETENTION_MS = 24 * 60 * 60_000;
 export const CLOSED_ROOM_EVICTION_MS = 30_000;
 
 function emptySeat(seat: Seat): SeatController {
@@ -233,6 +258,69 @@ function roundScores(round: RoundState): Record<Seat, number> {
     2: round.players[2].score,
     3: round.players[3].score,
   };
+}
+
+function projectCompetitiveProfile(
+  profile: PublicCompetitiveProfileRow | undefined,
+): PublicCompetitiveProfile | null {
+  if (profile === undefined) return null;
+  return {
+    rankDisplay: formatRankLevel(profile.rankLevel),
+    achievements: {
+      exposedKong: profile.exposedKongCount,
+      indicatorPongKong: profile.indicatorPongKongCount,
+      addedKong: profile.addedKongCount,
+      concealedKong: profile.concealedKongCount,
+    },
+  };
+}
+
+function competitiveMultiplier(value: number): CompetitiveMultiplier {
+  return competitiveMultiplierSchema.parse(value);
+}
+
+function shuffledCompetitivePlayers(
+  sessions: readonly AnonymousSession[],
+  entries: readonly MatchmakingEntryRow[],
+): { session: AnonymousSession; entry: MatchmakingEntryRow }[] {
+  if (sessions.length !== 4 || entries.length !== 4) {
+    throw new Error("A competitive room requires exactly four sessions and queue entries");
+  }
+  const entriesBySessionId = new Map(entries.map((entry) => [entry.sessionId, entry]));
+  if (entriesBySessionId.size !== 4 || new Set(sessions.map((session) => session.id)).size !== 4) {
+    throw new Error("A competitive room requires four unique sessions and queue entries");
+  }
+  const players = sessions.map((session) => {
+    const entry = entriesBySessionId.get(session.id);
+    if (entry === undefined) throw new Error(`Missing matchmaking entry for ${session.id}`);
+    return { session, entry };
+  });
+  for (let index = players.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(index + 1);
+    const current = players[index];
+    const swap = players[swapIndex];
+    if (current === undefined || swap === undefined)
+      throw new Error("Invalid competitive seat shuffle");
+    players[index] = swap;
+    players[swapIndex] = current;
+  }
+  return players;
+}
+
+function competitiveAchievementAction(
+  action: GameEffectAction,
+): CompetitiveAchievementAction | null {
+  switch (action) {
+    case "EXPOSED_KONG":
+    case "INDICATOR_PONG_KONG":
+    case "ADDED_KONG":
+    case "CONCEALED_KONG":
+      return action;
+    case "PONG":
+    case "RELEASE_WILDCARD":
+    case "WIN":
+      return null;
+  }
 }
 
 /**
@@ -469,6 +557,7 @@ export class RoomService {
         actionDeadlineAt: persisted.actionDeadlineAt ?? null,
         nextRoundAt: persisted.nextRoundAt ?? null,
         pendingEffectTransition: stage === "WAITING" ? null : persistedTransition,
+        competitiveMatch: persisted.competitiveMatch ?? null,
       };
     }
 
@@ -539,6 +628,7 @@ export class RoomService {
         actionDeadlineAt: null,
         nextRoundAt: null,
         pendingEffectTransition: null,
+        competitiveMatch: null,
       };
     }
 
@@ -569,6 +659,7 @@ export class RoomService {
       actionDeadlineAt: persisted.actionDeadlineAt ?? null,
       nextRoundAt: persisted.nextRoundAt ?? null,
       pendingEffectTransition: null,
+      competitiveMatch: persisted.competitiveMatch ?? null,
     };
   }
 
@@ -714,6 +805,138 @@ export class RoomService {
     return true;
   }
 
+  private competitiveAchievementEvent(
+    room: RoomState,
+    result: Extract<RuleResult, { ok: true }>,
+  ): CompetitiveActionEventInput | undefined {
+    if (room.mode !== "MATCH" || room.round === null || room.competitiveMatch === null) {
+      return undefined;
+    }
+    const descriptor = detectEffectDescriptor(room.round, result.state);
+    if (descriptor === null) return undefined;
+    const action = competitiveAchievementAction(descriptor.action);
+    const sessionId = room.seats[descriptor.actorSeat].sessionId;
+    if (action === null || sessionId === null) return undefined;
+    return {
+      eventKey: `${result.state.id}:${result.state.version}`,
+      matchId: room.competitiveMatch.matchId,
+      sessionId,
+      roundId: result.state.id,
+      roundVersion: result.state.version,
+      action,
+    };
+  }
+
+  private competitiveTerminalSettlement(room: RoomState): {
+    settlement: {
+      matchId: string;
+      resultJson: string;
+      players: CompetitivePlayerSettlementInput[];
+    };
+    transitions: Record<string, CompetitiveRankTransition>;
+  } | null {
+    const round = room.round;
+    if (
+      room.mode !== "MATCH" ||
+      room.competitiveMatch === null ||
+      round?.outcome === undefined ||
+      round.outcome === null
+    ) {
+      return null;
+    }
+    const outcome = round.outcome;
+    const profiles = new Map<string, CompetitiveProfileRow>();
+    for (const seat of SEATS) {
+      const sessionId = room.seats[seat].sessionId;
+      if (sessionId === null) throw new Error("Competitive room seat is missing its session");
+      const profile = this.database.getCompetitiveProfile(sessionId);
+      if (profile === null) throw new Error(`Competitive profile is missing for ${sessionId}`);
+      profiles.set(sessionId, profile);
+    }
+
+    const winnerSeat = outcome.kind === "WIN" ? outcome.winnerSeat : null;
+    const winnerMultiplier =
+      outcome.kind === "WIN"
+        ? competitiveMultiplier(
+            (outcome.winType === "HARD" ? 2 : 1) *
+              (outcome.laiyou ? 2 : 1) *
+              round.players[outcome.winnerSeat].personalMultiplier,
+          )
+        : null;
+    const transitions: Record<string, CompetitiveRankTransition> = {};
+    const players = SEATS.map((seat): CompetitivePlayerSettlementInput => {
+      const sessionId = room.seats[seat].sessionId;
+      if (sessionId === null) throw new Error("Competitive room seat is missing its session");
+      const profileRow = profiles.get(sessionId);
+      if (profileRow === undefined)
+        throw new Error(`Competitive profile is missing for ${sessionId}`);
+      const profile = competitiveRankStateSchema.parse(profileRow);
+      let multiplier: CompetitiveMultiplier | null = null;
+      let transition: CompetitiveRankTransition;
+      if (outcome.kind === "DRAW") {
+        transition = applyCompetitiveRankTransition(profile, { kind: "DRAW" });
+      } else if (seat === winnerSeat && winnerMultiplier !== null) {
+        multiplier = winnerMultiplier;
+        transition = applyCompetitiveRankTransition(profile, { kind: "WIN", multiplier });
+      } else {
+        const payment = outcome.scoreDeltas.find((delta) => delta.seat === seat && delta.delta < 0);
+        if (payment === undefined) throw new Error(`Missing competitive payment for seat ${seat}`);
+        multiplier = competitiveMultiplier(-payment.delta / round.baseScore);
+        transition = applyCompetitiveRankTransition(profile, { kind: "LOSS", multiplier });
+      }
+      transitions[sessionId] = competitiveRankTransitionSchema.parse(transition);
+      return {
+        sessionId,
+        postRankLevel: transition.afterRankLevel,
+        highestMajorIndex: transition.afterHighestMajorIndex,
+        rawRankDelta: transition.rawDelta,
+        finalRankDelta: transition.appliedDelta,
+        protectionCardsBefore: transition.protectionCardsBefore,
+        protectionCardsAfter: transition.protectionCardsAfter,
+        protectionCardsConsumed: transition.protectionCardsConsumed,
+        protectionCardsGranted: transition.protectionCardsGranted,
+        multiplier,
+      };
+    });
+    return {
+      settlement: {
+        matchId: room.competitiveMatch.matchId,
+        resultJson: JSON.stringify(transitions),
+        players,
+      },
+      transitions,
+    };
+  }
+
+  private commitAcceptedRule(
+    room: RoomState,
+    result: Extract<RuleResult, { ok: true }>,
+    options: {
+      now?: number;
+      processedRequest?: { sessionId: string; requestId: string; resultJson: string };
+    } = {},
+  ): boolean {
+    const now = options.now ?? Date.now();
+    const nextRoom = structuredClone(room);
+    const achievementEvent = this.competitiveAchievementEvent(room, result);
+    if (!this.acceptRule(nextRoom, result, now)) return false;
+    const terminal =
+      nextRoom.pendingEffectTransition === null
+        ? this.competitiveTerminalSettlement(nextRoom)?.settlement
+        : undefined;
+    this.database.saveAcceptedTransition({
+      room: nextRoom,
+      stateJson: JSON.stringify(nextRoom),
+      ...(options.processedRequest === undefined
+        ? {}
+        : { processedRequest: options.processedRequest }),
+      ...(achievementEvent === undefined ? {} : { achievementEvent }),
+      ...(terminal === undefined ? {} : { terminalSettlement: terminal }),
+    });
+    Object.assign(room, nextRoom);
+    return true;
+  }
+
   private botDecisionView(room: RoomState, seat: Seat): BotDecisionView {
     const round = room.round;
     if (round === null) throw new Error("Cannot project a bot decision without an active round");
@@ -822,11 +1045,18 @@ export class RoomService {
       const pendingTransition = room.pendingEffectTransition;
       if (pendingTransition !== null) {
         if (Date.parse(pendingTransition.cue.endsAt) > now) continue;
-        room.round = pendingTransition.nextRound;
-        room.pendingEffectTransition = null;
-        room.version += 1;
-        this.refreshDeadline(room, now);
-        this.save(room);
+        const nextRoom = structuredClone(room);
+        nextRoom.round = structuredClone(pendingTransition.nextRound);
+        nextRoom.pendingEffectTransition = null;
+        nextRoom.version += 1;
+        this.refreshDeadline(nextRoom, now);
+        const terminalSettlement = this.competitiveTerminalSettlement(nextRoom)?.settlement;
+        this.database.saveAcceptedTransition({
+          room: nextRoom,
+          stateJson: JSON.stringify(nextRoom),
+          ...(terminalSettlement === undefined ? {} : { terminalSettlement }),
+        });
+        Object.assign(room, nextRoom);
         updates.push({ roomId: room.id, version: room.version });
         continue;
       }
@@ -853,15 +1083,48 @@ export class RoomService {
           room.version += 1;
           this.save(room);
           updates.push({ roomId: room.id, version: room.version });
+        } else if (room.mode === "MATCH" && room.competitiveMatch !== null) {
+          const settlement = this.database.getCompetitiveMatchSettlement(
+            room.competitiveMatch.matchId,
+          );
+          if (settlement?.match.status === "SETTLED") {
+            const allAcknowledged = settlement.players.every(
+              (player) => player.acknowledgedAt !== null,
+            );
+            const expired =
+              settlement.match.settledAt !== null &&
+              Date.parse(settlement.match.settledAt) + MATCH_SETTLEMENT_RETENTION_MS <= now;
+            if (expired && !allAcknowledged) {
+              this.database.acknowledgeAllCompetitiveMatchResults(
+                settlement.match.id,
+                new Date(now).toISOString(),
+              );
+            }
+            if (allAcknowledged || expired) {
+              this.closeRoom(room, "MATCH_SETTLED", now);
+              room.version += 1;
+              this.save(room);
+              updates.push({ roomId: room.id, version: room.version });
+            }
+          }
         }
         continue;
       }
       if (room.actionDeadlineAt === null || Date.parse(room.actionDeadlineAt) > now) continue;
       const seat = this.actingSeat(room);
       if (seat === null) continue;
-      const changed = this.acceptRule(room, this.automaticAction(room, seat), now);
-      if (!changed) this.refreshDeadline(room, now);
-      this.save(room);
+      const workingRoom = structuredClone(room);
+      const result = this.automaticAction(workingRoom, seat);
+      const changed = result.ok && this.commitAcceptedRule(room, result, { now });
+      if (!changed) {
+        const nextRoom = structuredClone(room);
+        this.refreshDeadline(nextRoom, now);
+        this.database.saveAcceptedTransition({
+          room: nextRoom,
+          stateJson: JSON.stringify(nextRoom),
+        });
+        Object.assign(room, nextRoom);
+      }
       updates.push({ roomId: room.id, version: room.version });
     }
     return updates;
@@ -883,7 +1146,7 @@ export class RoomService {
   createRoom(
     session: AnonymousSession,
     baseScore: BaseScore,
-    mode: RoomMode,
+    mode: Exclude<RoomMode, "MATCH">,
     turnTimeoutSeconds: TurnTimeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS,
     botDifficulty: BotDifficulty = DEFAULT_BOT_DIFFICULTY,
   ): RoomState {
@@ -918,6 +1181,7 @@ export class RoomService {
       actionDeadlineAt: null,
       nextRoundAt: null,
       pendingEffectTransition: null,
+      competitiveMatch: null,
     };
     if (mode === "BOT") this.startRound(room);
     this.roomsByCode.set(room.code, room);
@@ -925,12 +1189,84 @@ export class RoomService {
     return room;
   }
 
+  createCompetitiveMatch(
+    sessions: readonly AnonymousSession[],
+    entries: readonly MatchmakingEntryRow[],
+  ): RoomState {
+    const players = shuffledCompetitivePlayers(sessions, entries);
+    const matchId = randomUUID();
+    const player0 = players[0];
+    const player1 = players[1];
+    const player2 = players[2];
+    const player3 = players[3];
+    if (
+      player0 === undefined ||
+      player1 === undefined ||
+      player2 === undefined ||
+      player3 === undefined
+    ) {
+      throw new Error("Competitive room seat assignment is incomplete");
+    }
+    const room: RoomState = {
+      id: randomUUID(),
+      code: this.nextRoomCode(),
+      ownerSessionId: player0.session.id,
+      baseScore: 2,
+      turnTimeoutSeconds: 20,
+      botDifficulty: "HIGH",
+      status: "ACTIVE",
+      version: 0,
+      dissolveAfterRound: false,
+      closeReason: null,
+      mode: "MATCH",
+      stage: "PLAYING",
+      seats: {
+        0: humanSeat(0, player0.session),
+        1: humanSeat(1, player1.session),
+        2: humanSeat(2, player2.session),
+        3: humanSeat(3, player3.session),
+      },
+      readySessionIds: [],
+      spectators: [],
+      scores: { ...ZERO_SCORES },
+      fullTableScoreResetDone: false,
+      nextDealerSeat: randomInt(4) as Seat,
+      round: null,
+      roundStartedAt: null,
+      waitingExpiresAt: null,
+      actionDeadlineAt: null,
+      nextRoundAt: null,
+      pendingEffectTransition: null,
+      competitiveMatch: { matchId, ruleVersion: COMPETITIVE_RULE_VERSION },
+    };
+    this.startRound(room);
+    const round = room.round;
+    if (round === null) throw new Error("Competitive room failed to start its round");
+    this.database.createCompetitiveMatch({
+      match: {
+        id: matchId,
+        roomId: room.id,
+        roundId: round.id,
+        ruleVersion: COMPETITIVE_RULE_VERSION,
+      },
+      room,
+      stateJson: JSON.stringify(room),
+      players: players.map(({ session, entry }, seat) => ({
+        sessionId: session.id,
+        seat,
+        queueVersion: entry.version,
+      })),
+    });
+    this.roomsByCode.set(room.code, room);
+    return room;
+  }
+
   joinRoom(session: AnonymousSession, code: string): JoinRoomResult {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
+    if (room.mode !== "FRIEND") return "ROOM_NOT_JOINABLE";
     if (sessionSeat(room, session.id) !== null) return room;
     if (spectatorIndex(room, session.id) >= 0) return room;
-    if (room.mode !== "FRIEND") return "ROOM_NOT_JOINABLE";
 
     if (room.stage === "WAITING") {
       const seat =
@@ -1095,7 +1431,7 @@ export class RoomService {
   requestDissolve(sessionId: string, code: string): RoomState | "FORBIDDEN" | null {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
-    if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
+    if (room.mode === "MATCH" || room.ownerSessionId !== sessionId) return "FORBIDDEN";
     this.closeRoom(room, "OWNER_DISSOLVED");
     room.version += 1;
     this.save(room);
@@ -1110,6 +1446,17 @@ export class RoomService {
     if (seat === null && waitingIndex < 0) return room;
 
     room.readySessionIds = room.readySessionIds.filter((id) => id !== sessionId);
+    if (room.mode === "MATCH") {
+      if (seat === null) return room;
+      const controller = room.seats[seat];
+      if (controller.controller === "TRUSTEE" && !controller.connected) return room;
+      controller.controller = "TRUSTEE";
+      controller.connected = false;
+      room.version += 1;
+      this.refreshDeadline(room);
+      this.save(room);
+      return room;
+    }
     if (room.mode === "BOT" && seat !== null) {
       this.closeRoom(room, "EMPTY_ROOM");
       room.version += 1;
@@ -1137,37 +1484,100 @@ export class RoomService {
     return room;
   }
 
-  setConnected(sessionId: string, connected: boolean): { roomId: string; version: number }[] {
-    const updates: { roomId: string; version: number }[] = [];
-    for (const room of this.roomsByCode.values()) {
-      if (room.status !== "ACTIVE") continue;
-      const seat = sessionSeat(room, sessionId);
-      const waitingIndex = spectatorIndex(room, sessionId);
-      if (seat === null && waitingIndex < 0) continue;
-      if (seat !== null) {
-        const controller = room.seats[seat];
-        const nextController = room.stage === "WAITING" ? "HUMAN" : connected ? "HUMAN" : "TRUSTEE";
-        if (controller.connected === connected && controller.controller === nextController) {
-          continue;
-        }
-        controller.connected = connected;
-        controller.controller = nextController;
-      } else {
-        const spectator = room.spectators[waitingIndex];
-        if (spectator === undefined || spectator.connected === connected) continue;
-        spectator.connected = connected;
-      }
-      room.version += 1;
-      this.refreshDeadline(room);
-      this.save(room);
-      updates.push({ roomId: room.id, version: room.version });
+  private projectCompetitiveSettlement(
+    room: RoomState,
+    sessionId: string,
+  ): {
+    matchId: string;
+    ruleVersion: number;
+    self: CompetitiveRankTransition;
+    beforeRankDisplay: ReturnType<typeof formatRankLevel>;
+    afterRankDisplay: ReturnType<typeof formatRankLevel>;
+  } | null {
+    if (room.mode !== "MATCH" || room.competitiveMatch === null) return null;
+    const settlement: CompetitiveMatchSettlement | null =
+      this.database.getCompetitiveMatchSettlement(room.competitiveMatch.matchId);
+    if (settlement?.match.status !== "SETTLED" || settlement.match.resultJson === null) return null;
+    let result: unknown;
+    try {
+      result = JSON.parse(settlement.match.resultJson) as unknown;
+    } catch {
+      throw new Error(`Competitive match ${settlement.match.id} has invalid result JSON`);
     }
-    return updates;
+    if (typeof result !== "object" || result === null || Array.isArray(result)) return null;
+    const transition = competitiveRankTransitionSchema.safeParse(
+      (result as Record<string, unknown>)[sessionId],
+    );
+    return transition.success
+      ? {
+          matchId: room.competitiveMatch.matchId,
+          ruleVersion: room.competitiveMatch.ruleVersion,
+          self: transition.data,
+          beforeRankDisplay: formatRankLevel(transition.data.beforeRankLevel),
+          afterRankDisplay: formatRankLevel(transition.data.afterRankLevel),
+        }
+      : null;
+  }
+
+  setRoomConnected(
+    sessionId: string,
+    roomId: string,
+    connected: boolean,
+  ): { roomId: string; version: number } | null {
+    const room = this.getRoomById(roomId);
+    if (room?.status !== "ACTIVE") return null;
+    const seat = sessionSeat(room, sessionId);
+    const waitingIndex = spectatorIndex(room, sessionId);
+    if (seat === null && waitingIndex < 0) return null;
+    if (seat !== null) {
+      const controller = room.seats[seat];
+      const nextController = room.stage === "WAITING" ? "HUMAN" : connected ? "HUMAN" : "TRUSTEE";
+      if (controller.connected === connected && controller.controller === nextController)
+        return null;
+      controller.connected = connected;
+      controller.controller = nextController;
+    } else {
+      const spectator = room.spectators[waitingIndex];
+      if (spectator === undefined || spectator.connected === connected) return null;
+      spectator.connected = connected;
+    }
+    room.version += 1;
+    this.refreshDeadline(room);
+    this.save(room);
+    return { roomId: room.id, version: room.version };
+  }
+
+  setConnected(sessionId: string, connected: boolean): { roomId: string; version: number }[] {
+    return [...this.roomsByCode.values()].flatMap((room) => {
+      const update = this.setRoomConnected(sessionId, room.id, connected);
+      return update === null ? [] : [update];
+    });
   }
 
   project(room: RoomState, sessionId: string): RoomProjection {
     const selfSeat = sessionSeat(room, sessionId);
     const round = room.round;
+    const humanSessionIds = SEATS.flatMap((seat) => {
+      const controller = room.seats[seat];
+      return controller.sessionId === null || controller.controller === "BOT"
+        ? []
+        : [controller.sessionId];
+    });
+    const competitiveProfiles =
+      room.mode === "MATCH"
+        ? new Map(
+            this.database
+              .getPublicCompetitiveProfiles(humanSessionIds)
+              .map((profile) => [profile.sessionId, profile] as const),
+          )
+        : new Map<string, PublicCompetitiveProfileRow>();
+    const profileForSeat = (seat: Seat): PublicCompetitiveProfile | null => {
+      if (room.mode !== "MATCH") return null;
+      const seatSessionId = room.seats[seat].sessionId;
+      return seatSessionId === null
+        ? null
+        : projectCompetitiveProfile(competitiveProfiles.get(seatSessionId));
+    };
     const presentationRound =
       room.pendingEffectTransition?.cue.action === "PONG"
         ? room.pendingEffectTransition.nextRound
@@ -1203,13 +1613,15 @@ export class RoomService {
               releasedWildcards: roundPlayer.releasedWildcards,
               personalMultiplier: roundPlayer.personalMultiplier,
               score: roundPlayer.score,
+              competitiveProfile: profileForSeat(seat),
             };
           });
     const legalActions =
       room.stage !== "PLAYING" ||
       selfSeat === null ||
       round === null ||
-      room.pendingEffectTransition !== null
+      room.pendingEffectTransition !== null ||
+      (room.mode === "MATCH" && room.seats[selfSeat].controller !== "HUMAN")
         ? []
         : round.phase === "DISCARD_RESPONSE" && round.pendingResponse?.seat === selfSeat
           ? [...round.pendingResponse.actions, "PASS_RESPONSE"]
@@ -1227,7 +1639,11 @@ export class RoomService {
               round.outcome.kind === "WIN" ? (round.outcome.winType === "HARD" ? 2 : 1) : null,
             winnerMultiplier:
               round.outcome.kind === "WIN"
-                ? round.players[round.outcome.winnerSeat].personalMultiplier
+                ? competitiveMultiplier(
+                    (round.outcome.winType === "HARD" ? 2 : 1) *
+                      (round.outcome.laiyou ? 2 : 1) *
+                      round.players[round.outcome.winnerSeat].personalMultiplier,
+                  )
                 : null,
             laiyou: round.outcome.kind === "WIN" && round.outcome.laiyou,
             laiyouMultiplier: round.outcome.kind === "WIN" ? (round.outcome.laiyou ? 2 : 1) : null,
@@ -1240,6 +1656,9 @@ export class RoomService {
                           {
                             payerSeat: delta.seat,
                             payerMultiplier: round.players[delta.seat].personalMultiplier,
+                            payerEffectiveMultiplier: competitiveMultiplier(
+                              -delta.delta / round.baseScore,
+                            ),
                             amount: -delta.delta,
                           },
                         ]
@@ -1256,6 +1675,7 @@ export class RoomService {
               roundDelta: round.players[seat].score - round.startingScores[seat],
               totalScore: round.players[seat].score,
             })),
+            competitiveSettlement: this.projectCompetitiveSettlement(room, sessionId),
           };
     const roundOutcome =
       round?.outcome === null || round === null
@@ -1275,7 +1695,7 @@ export class RoomService {
         : [];
 
     return {
-      schemaVersion: 8,
+      schemaVersion: 9,
       roomId: room.id,
       roomCode: room.code,
       version: room.version,
@@ -1283,6 +1703,7 @@ export class RoomService {
       turnTimeoutSeconds: room.turnTimeoutSeconds,
       botDifficulty: room.botDifficulty,
       mode: room.mode,
+      competitiveMatch: room.mode === "MATCH" ? room.competitiveMatch : null,
       stage: room.stage,
       roundId: round?.id ?? null,
       roundStartedAt: room.roundStartedAt,
@@ -1330,6 +1751,7 @@ export class RoomService {
           isOwner: controller.sessionId === room.ownerSessionId,
           isSelf: controller.sessionId === sessionId,
           score: round?.players[seat].score ?? room.scores[seat],
+          competitiveProfile: profileForSeat(seat),
         };
       }),
       spectators: room.spectators.map((spectator) => ({
@@ -1360,20 +1782,27 @@ export class RoomService {
     if (room.stage !== "PLAYING" || round === null) {
       return this.storeRejected(sessionId, command, room.version, "WRONG_PHASE");
     }
+    if (command.roundId !== null && command.roundId !== round.id) {
+      return this.storeRejected(sessionId, command, room.version, "WRONG_PHASE");
+    }
+    if (room.mode === "MATCH" && room.seats[seat].controller !== "HUMAN") {
+      return this.storeRejected(sessionId, command, room.version, "ACTION_NOT_AVAILABLE");
+    }
+    const workingRound = structuredClone(round);
     let result: RuleResult;
     switch (command.type) {
       case "DECLARE_WIN":
-        result = declareWin(round, seat);
+        result = declareWin(workingRound, seat);
         break;
       case "CONTINUE_TURN":
-        result = continueTurn(round, seat);
+        result = continueTurn(workingRound, seat);
         break;
       case "RELEASE_WILDCARD": {
         const tileId = stringField(command.payload, "tileId");
         result =
           tileId === null
             ? { ok: false, code: "ACTION_NOT_AVAILABLE" }
-            : releaseWildcard(round, seat, tileId);
+            : releaseWildcard(workingRound, seat, tileId);
         break;
       }
       case "DISCARD_TILE": {
@@ -1381,24 +1810,24 @@ export class RoomService {
         result =
           tileId === null
             ? { ok: false, code: "ACTION_NOT_AVAILABLE" }
-            : discardTile(round, seat, tileId);
+            : discardTile(workingRound, seat, tileId);
         break;
       }
       case "CLAIM_PONG":
-        result = claimPong(round, seat);
+        result = claimPong(workingRound, seat);
         break;
       case "CLAIM_EXPOSED_KONG":
-        result = claimExposedKong(round, seat);
+        result = claimExposedKong(workingRound, seat);
         break;
       case "CLAIM_INDICATOR_PONG_KONG":
-        result = claimIndicatorPongKong(round, seat);
+        result = claimIndicatorPongKong(workingRound, seat);
         break;
       case "DECLARE_CONCEALED_KONG": {
         const kind = tileKindField(command.payload);
         result =
           kind === null
             ? { ok: false, code: "ACTION_NOT_AVAILABLE" }
-            : declareConcealedKong(round, seat, kind);
+            : declareConcealedKong(workingRound, seat, kind);
         break;
       }
       case "DECLARE_ADDED_KONG": {
@@ -1407,11 +1836,11 @@ export class RoomService {
         result =
           meldId === null || tileId === null
             ? { ok: false, code: "ACTION_NOT_AVAILABLE" }
-            : declareAddedKong(round, seat, meldId, tileId);
+            : declareAddedKong(workingRound, seat, meldId, tileId);
         break;
       }
       case "PASS_RESPONSE":
-        result = passResponse(round, seat);
+        result = passResponse(workingRound, seat);
         break;
       case "REQUEST_DISSOLVE_AFTER_ROUND":
       case "LEAVE_ROOM":
@@ -1419,23 +1848,21 @@ export class RoomService {
         return this.storeRejected(sessionId, command, room.version, "USE_HTTP_ROOM_ACTION");
     }
     if (!result.ok) return this.storeRejected(sessionId, command, room.version, result.code);
-    const nextRoom = structuredClone(room);
-    this.acceptRule(nextRoom, result);
     const response: CommandResult = {
       accepted: true,
       requestId: command.requestId,
-      serverVersion: nextRoom.version,
+      serverVersion: room.version + 1,
       errorCode: null,
       message: null,
     };
-    this.database.saveRoomAndProcessedRequest(
-      nextRoom,
-      JSON.stringify(nextRoom),
-      sessionId,
-      command.requestId,
-      JSON.stringify(response),
-    );
-    Object.assign(room, nextRoom);
+    const committed = this.commitAcceptedRule(room, result, {
+      processedRequest: {
+        sessionId,
+        requestId: command.requestId,
+        resultJson: JSON.stringify(response),
+      },
+    });
+    if (!committed) throw new Error("Accepted rule transition was not committed");
     return response;
   }
 

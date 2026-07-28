@@ -14,6 +14,162 @@ export type AnonymousSession = {
   avatarUrl?: string | null;
 };
 
+export type CompetitiveAchievementAction =
+  "EXPOSED_KONG" | "INDICATOR_PONG_KONG" | "ADDED_KONG" | "CONCEALED_KONG";
+
+export type CompetitiveProfileRow = {
+  sessionId: string;
+  rankLevel: number;
+  highestMajorIndex: number;
+  protectionCards: number;
+  exposedKongCount: number;
+  indicatorPongKongCount: number;
+  addedKongCount: number;
+  concealedKongCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PublicCompetitiveProfileRow = Pick<
+  CompetitiveProfileRow,
+  | "sessionId"
+  | "rankLevel"
+  | "exposedKongCount"
+  | "indicatorPongKongCount"
+  | "addedKongCount"
+  | "concealedKongCount"
+>;
+
+export type MatchmakingEntryRow = {
+  sessionId: string;
+  rankLevelSnapshot: number;
+  enqueuedAt: string;
+  disconnectedAt: string | null;
+  version: number;
+};
+
+export type UpsertMatchmakingEntryInput = {
+  sessionId: string;
+  rankLevelSnapshot: number;
+  enqueuedAt?: string;
+};
+
+export type CompetitiveMatchStatus = "ACTIVE" | "SETTLED";
+
+export type CompetitiveMatchRow = {
+  id: string;
+  roomId: string;
+  roundId: string;
+  ruleVersion: number;
+  status: CompetitiveMatchStatus;
+  resultJson: string | null;
+  createdAt: string;
+  settledAt: string | null;
+};
+
+export type CompetitiveMatchPlayerRow = {
+  matchId: string;
+  sessionId: string;
+  seat: number;
+  preRankLevel: number;
+  postRankLevel: number | null;
+  rawRankDelta: number | null;
+  finalRankDelta: number | null;
+  protectionCardsBefore: number | null;
+  protectionCardsAfter: number | null;
+  protectionCardsConsumed: number | null;
+  protectionCardsGranted: number | null;
+  multiplier: number | null;
+  acknowledgedAt: string | null;
+};
+
+export type CompetitiveMatchSettlement = {
+  match: CompetitiveMatchRow;
+  players: CompetitiveMatchPlayerRow[];
+};
+
+export type RoomSnapshotInput = {
+  id: string;
+  code: string;
+  status: string;
+  version: number;
+};
+
+export type CreateCompetitiveMatchInput = {
+  match: {
+    id: string;
+    roomId: string;
+    roundId: string;
+    ruleVersion: number;
+    createdAt?: string;
+  };
+  room: RoomSnapshotInput;
+  stateJson: string;
+  players: readonly { sessionId: string; seat: number; queueVersion: number }[];
+};
+
+export type CompetitiveActionEventInput = {
+  eventKey: string;
+  matchId: string;
+  sessionId: string;
+  roundId: string;
+  roundVersion: number;
+  action: CompetitiveAchievementAction;
+  createdAt?: string;
+};
+
+export type CompetitivePlayerSettlementInput = {
+  sessionId: string;
+  postRankLevel: number;
+  highestMajorIndex: number;
+  rawRankDelta: number;
+  finalRankDelta: number;
+  protectionCardsBefore: number;
+  protectionCardsAfter: number;
+  protectionCardsConsumed: number;
+  protectionCardsGranted: number;
+  multiplier: number | null;
+};
+
+export type CompetitiveTerminalSettlementInput = {
+  matchId: string;
+  resultJson: string;
+  players: readonly CompetitivePlayerSettlementInput[];
+  settledAt?: string;
+};
+
+export type SaveAcceptedTransitionInput = {
+  room: RoomSnapshotInput;
+  stateJson: string;
+  processedRequest?: {
+    sessionId: string;
+    requestId: string;
+    resultJson: string;
+  };
+  achievementEvent?: CompetitiveActionEventInput;
+  terminalSettlement?: CompetitiveTerminalSettlementInput;
+};
+
+export type SaveAcceptedTransitionResult = {
+  achievementRecorded: boolean;
+  settlementApplied: boolean;
+};
+
+function assertFourUniquePlayers(players: readonly { sessionId: string; seat?: number }[]): void {
+  if (players.length !== 4 || new Set(players.map((player) => player.sessionId)).size !== 4) {
+    throw new Error("A competitive match requires exactly four unique sessions");
+  }
+  const seats = players.map((player) => player.seat).filter((seat) => seat !== undefined);
+  if (
+    seats.length > 0 &&
+    (seats.length !== 4 ||
+      new Set(seats).size !== 4 ||
+      seats.some((seat) => !Number.isInteger(seat) || seat < 0 || seat > 3))
+  ) {
+    throw new Error("Competitive match seats must be unique integers from 0 through 3");
+  }
+}
+
 export class GameDatabase {
   readonly connection: Database.Database;
 
@@ -64,6 +220,87 @@ export class GameDatabase {
         context_json TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS competitive_profiles (
+        session_id TEXT PRIMARY KEY,
+        rank_level INTEGER NOT NULL DEFAULT 0 CHECK (rank_level >= 0),
+        highest_major_index INTEGER NOT NULL DEFAULT 0 CHECK (highest_major_index >= 0),
+        protection_cards INTEGER NOT NULL DEFAULT 0 CHECK (protection_cards >= 0),
+        exposed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (exposed_kong_count >= 0),
+        indicator_pong_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (indicator_pong_kong_count >= 0),
+        added_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (added_kong_count >= 0),
+        concealed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (concealed_kong_count >= 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS matchmaking_entries (
+        session_id TEXT PRIMARY KEY,
+        rank_level_snapshot INTEGER NOT NULL CHECK (rank_level_snapshot >= 0),
+        enqueued_at TEXT NOT NULL,
+        disconnected_at TEXT,
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+        FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS competitive_matches (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL UNIQUE,
+        round_id TEXT NOT NULL,
+        rule_version INTEGER NOT NULL CHECK (rule_version >= 1),
+        status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'SETTLED')),
+        result_json TEXT,
+        created_at TEXT NOT NULL,
+        settled_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS competitive_match_players (
+        match_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        seat INTEGER NOT NULL CHECK (seat BETWEEN 0 AND 3),
+        pre_rank_level INTEGER NOT NULL CHECK (pre_rank_level >= 0),
+        post_rank_level INTEGER CHECK (post_rank_level >= 0),
+        raw_rank_delta INTEGER,
+        final_rank_delta INTEGER,
+        protection_cards_before INTEGER CHECK (protection_cards_before >= 0),
+        protection_cards_after INTEGER CHECK (protection_cards_after >= 0),
+        protection_cards_consumed INTEGER CHECK (protection_cards_consumed >= 0),
+        protection_cards_granted INTEGER CHECK (protection_cards_granted >= 0),
+        multiplier INTEGER CHECK (multiplier IN (1, 2, 4, 8, 16, 32, 64)),
+        acknowledged_at TEXT,
+        PRIMARY KEY (match_id, session_id),
+        UNIQUE (match_id, seat),
+        FOREIGN KEY (match_id) REFERENCES competitive_matches (id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE RESTRICT
+      );
+
+      CREATE TABLE IF NOT EXISTS competitive_action_events (
+        event_key TEXT PRIMARY KEY,
+        match_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        round_id TEXT NOT NULL,
+        round_version INTEGER NOT NULL CHECK (round_version >= 0),
+        action TEXT NOT NULL CHECK (
+          action IN ('EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG')
+        ),
+        created_at TEXT NOT NULL,
+        UNIQUE (match_id, session_id, round_id, round_version, action),
+        FOREIGN KEY (match_id, session_id)
+          REFERENCES competitive_match_players (match_id, session_id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_matchmaking_entries_order
+        ON matchmaking_entries (enqueued_at, session_id);
+      CREATE INDEX IF NOT EXISTS idx_matchmaking_entries_disconnected
+        ON matchmaking_entries (disconnected_at)
+        WHERE disconnected_at IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_competitive_matches_status
+        ON competitive_matches (status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_competitive_match_players_session
+        ON competitive_match_players (session_id, match_id);
+      CREATE INDEX IF NOT EXISTS idx_competitive_action_events_match
+        ON competitive_action_events (match_id, round_id, round_version);
     `);
     // Additive columns for WeChat login — wrapped so re-running on a database
     // that already has them (every startup after the first) doesn't throw.
@@ -88,6 +325,58 @@ export class GameDatabase {
   private static readonly SESSION_COLUMNS =
     "id, nickname, wechat_open_id AS wechatOpenId, avatar_url AS avatarUrl";
 
+  private static readonly COMPETITIVE_PROFILE_COLUMNS = `
+    session_id AS sessionId,
+    rank_level AS rankLevel,
+    highest_major_index AS highestMajorIndex,
+    protection_cards AS protectionCards,
+    exposed_kong_count AS exposedKongCount,
+    indicator_pong_kong_count AS indicatorPongKongCount,
+    added_kong_count AS addedKongCount,
+    concealed_kong_count AS concealedKongCount,
+    created_at AS createdAt,
+    updated_at AS updatedAt`;
+
+  private static readonly PUBLIC_COMPETITIVE_PROFILE_COLUMNS = `
+    session_id AS sessionId,
+    rank_level AS rankLevel,
+    exposed_kong_count AS exposedKongCount,
+    indicator_pong_kong_count AS indicatorPongKongCount,
+    added_kong_count AS addedKongCount,
+    concealed_kong_count AS concealedKongCount`;
+
+  private static readonly MATCHMAKING_ENTRY_COLUMNS = `
+    session_id AS sessionId,
+    rank_level_snapshot AS rankLevelSnapshot,
+    enqueued_at AS enqueuedAt,
+    disconnected_at AS disconnectedAt,
+    version`;
+
+  private static readonly COMPETITIVE_MATCH_COLUMNS = `
+    id,
+    room_id AS roomId,
+    round_id AS roundId,
+    rule_version AS ruleVersion,
+    status,
+    result_json AS resultJson,
+    created_at AS createdAt,
+    settled_at AS settledAt`;
+
+  private static readonly COMPETITIVE_MATCH_PLAYER_COLUMNS = `
+    match_id AS matchId,
+    session_id AS sessionId,
+    seat,
+    pre_rank_level AS preRankLevel,
+    post_rank_level AS postRankLevel,
+    raw_rank_delta AS rawRankDelta,
+    final_rank_delta AS finalRankDelta,
+    protection_cards_before AS protectionCardsBefore,
+    protection_cards_after AS protectionCardsAfter,
+    protection_cards_consumed AS protectionCardsConsumed,
+    protection_cards_granted AS protectionCardsGranted,
+    multiplier,
+    acknowledged_at AS acknowledgedAt`;
+
   findSessionByTokenHash(tokenHash: string): AnonymousSession | null {
     const row = this.connection
       .prepare(
@@ -104,6 +393,24 @@ export class GameDatabase {
       )
       .get(openId) as AnonymousSession | undefined;
     return row ?? null;
+  }
+
+  findSessionsByIds(sessionIds: readonly string[]): AnonymousSession[] {
+    const uniqueSessionIds = [...new Set(sessionIds)];
+    if (uniqueSessionIds.length === 0) return [];
+    const placeholders = uniqueSessionIds.map(() => "?").join(", ");
+    const rows = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.SESSION_COLUMNS}
+         FROM anonymous_sessions
+         WHERE id IN (${placeholders})`,
+      )
+      .all(...uniqueSessionIds) as AnonymousSession[];
+    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    return uniqueSessionIds.flatMap((sessionId) => {
+      const row = rowsById.get(sessionId);
+      return row === undefined ? [] : [row];
+    });
   }
 
   createSession(session: AnonymousSession, tokenHash: string): void {
@@ -182,10 +489,623 @@ export class GameDatabase {
     return existing;
   }
 
-  saveRoom(
-    room: { id: string; code: string; status: string; version: number },
-    stateJson: string,
-  ): void {
+  ensureCompetitiveProfile(sessionId: string): CompetitiveProfileRow {
+    const now = new Date().toISOString();
+    this.connection
+      .prepare(
+        `INSERT OR IGNORE INTO competitive_profiles
+         (session_id, created_at, updated_at)
+         VALUES (?, ?, ?)`,
+      )
+      .run(sessionId, now, now);
+    const profile = this.getCompetitiveProfile(sessionId);
+    if (profile === null) throw new Error(`Unable to ensure competitive profile for ${sessionId}`);
+    return profile;
+  }
+
+  getCompetitiveProfile(sessionId: string): CompetitiveProfileRow | null {
+    const row = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.COMPETITIVE_PROFILE_COLUMNS}
+         FROM competitive_profiles
+         WHERE session_id = ?`,
+      )
+      .get(sessionId) as CompetitiveProfileRow | undefined;
+    return row ?? null;
+  }
+
+  getPublicCompetitiveProfile(sessionId: string): PublicCompetitiveProfileRow | null {
+    const row = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.PUBLIC_COMPETITIVE_PROFILE_COLUMNS}
+         FROM competitive_profiles
+         WHERE session_id = ?`,
+      )
+      .get(sessionId) as PublicCompetitiveProfileRow | undefined;
+    return row ?? null;
+  }
+
+  getPublicCompetitiveProfiles(sessionIds: readonly string[]): PublicCompetitiveProfileRow[] {
+    const uniqueSessionIds = [...new Set(sessionIds)];
+    if (uniqueSessionIds.length === 0) return [];
+    const placeholders = uniqueSessionIds.map(() => "?").join(", ");
+    const rows = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.PUBLIC_COMPETITIVE_PROFILE_COLUMNS}
+         FROM competitive_profiles
+         WHERE session_id IN (${placeholders})`,
+      )
+      .all(...uniqueSessionIds) as PublicCompetitiveProfileRow[];
+    const rowsBySessionId = new Map(rows.map((row) => [row.sessionId, row]));
+    return uniqueSessionIds.flatMap((sessionId) => {
+      const row = rowsBySessionId.get(sessionId);
+      return row === undefined ? [] : [row];
+    });
+  }
+
+  upsertMatchmakingEntry(input: UpsertMatchmakingEntryInput): MatchmakingEntryRow {
+    return this.connection.transaction(() => {
+      const activeMatch = this.connection
+        .prepare(
+          `SELECT 1
+           FROM competitive_match_players
+           JOIN competitive_matches
+             ON competitive_matches.id = competitive_match_players.match_id
+           WHERE competitive_match_players.session_id = ?
+             AND (
+               competitive_matches.status = 'ACTIVE'
+               OR competitive_match_players.acknowledged_at IS NULL
+             )
+           LIMIT 1`,
+        )
+        .get(input.sessionId);
+      if (activeMatch !== undefined) {
+        throw new Error(`Session ${input.sessionId} already has an active competitive match`);
+      }
+      const enqueuedAt = input.enqueuedAt ?? new Date().toISOString();
+      this.connection
+        .prepare(
+          `INSERT INTO matchmaking_entries
+           (session_id, rank_level_snapshot, enqueued_at, disconnected_at, version)
+           VALUES (?, ?, ?, NULL, 1)
+           ON CONFLICT(session_id) DO UPDATE SET
+             rank_level_snapshot = excluded.rank_level_snapshot,
+             disconnected_at = NULL,
+             version = CASE
+               WHEN matchmaking_entries.disconnected_at IS NULL
+                 AND matchmaking_entries.rank_level_snapshot = excluded.rank_level_snapshot
+               THEN matchmaking_entries.version
+               ELSE matchmaking_entries.version + 1
+             END`,
+        )
+        .run(input.sessionId, input.rankLevelSnapshot, enqueuedAt);
+      const entry = this.getMatchmakingEntry(input.sessionId);
+      if (entry === null) {
+        throw new Error(`Unable to upsert matchmaking entry for ${input.sessionId}`);
+      }
+      return entry;
+    })();
+  }
+
+  getMatchmakingEntry(sessionId: string): MatchmakingEntryRow | null {
+    const row = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.MATCHMAKING_ENTRY_COLUMNS}
+         FROM matchmaking_entries
+         WHERE session_id = ?`,
+      )
+      .get(sessionId) as MatchmakingEntryRow | undefined;
+    return row ?? null;
+  }
+
+  listMatchmakingEntries(): MatchmakingEntryRow[] {
+    return this.connection
+      .prepare(
+        `SELECT ${GameDatabase.MATCHMAKING_ENTRY_COLUMNS}
+         FROM matchmaking_entries
+         ORDER BY enqueued_at, session_id`,
+      )
+      .all() as MatchmakingEntryRow[];
+  }
+
+  cancelMatchmakingEntry(sessionId: string): boolean {
+    return (
+      this.connection.prepare("DELETE FROM matchmaking_entries WHERE session_id = ?").run(sessionId)
+        .changes === 1
+    );
+  }
+
+  markAllMatchmakingEntriesDisconnected(disconnectedAt = new Date().toISOString()): number {
+    return this.connection
+      .prepare(
+        `UPDATE matchmaking_entries
+         SET disconnected_at = ?, version = version + 1
+         WHERE disconnected_at IS NULL`,
+      )
+      .run(disconnectedAt).changes;
+  }
+
+  markMatchmakingEntryConnected(sessionId: string): MatchmakingEntryRow | null {
+    this.connection
+      .prepare(
+        `UPDATE matchmaking_entries
+         SET disconnected_at = NULL, version = version + 1
+         WHERE session_id = ? AND disconnected_at IS NOT NULL`,
+      )
+      .run(sessionId);
+    return this.getMatchmakingEntry(sessionId);
+  }
+
+  markMatchmakingEntryDisconnected(
+    sessionId: string,
+    disconnectedAt = new Date().toISOString(),
+  ): MatchmakingEntryRow | null {
+    this.connection
+      .prepare(
+        `UPDATE matchmaking_entries
+         SET disconnected_at = ?, version = version + 1
+         WHERE session_id = ? AND disconnected_at IS NULL`,
+      )
+      .run(disconnectedAt, sessionId);
+    return this.getMatchmakingEntry(sessionId);
+  }
+
+  expireDisconnectedMatchmakingEntries(disconnectedBefore: string): string[] {
+    return this.connection.transaction(() => {
+      const rows = this.connection
+        .prepare(
+          `SELECT session_id AS sessionId
+           FROM matchmaking_entries
+           WHERE disconnected_at IS NOT NULL AND disconnected_at <= ?
+           ORDER BY disconnected_at, session_id`,
+        )
+        .all(disconnectedBefore) as { sessionId: string }[];
+      if (rows.length === 0) return [];
+      const placeholders = rows.map(() => "?").join(", ");
+      this.connection
+        .prepare(`DELETE FROM matchmaking_entries WHERE session_id IN (${placeholders})`)
+        .run(...rows.map((row) => row.sessionId));
+      return rows.map((row) => row.sessionId);
+    })();
+  }
+
+  createCompetitiveMatch(input: CreateCompetitiveMatchInput): CompetitiveMatchSettlement {
+    assertFourUniquePlayers(input.players);
+    if (input.room.id !== input.match.roomId) {
+      throw new Error("Competitive match roomId must equal the persisted room id");
+    }
+    return this.connection.transaction(() => {
+      const sessionIds = input.players.map((player) => player.sessionId);
+      const placeholders = sessionIds.map(() => "?").join(", ");
+      const activeMatch = this.connection
+        .prepare(
+          `SELECT competitive_match_players.session_id AS sessionId
+           FROM competitive_match_players
+           JOIN competitive_matches
+             ON competitive_matches.id = competitive_match_players.match_id
+           WHERE competitive_matches.status = 'ACTIVE'
+             AND competitive_match_players.session_id IN (${placeholders})
+           LIMIT 1`,
+        )
+        .get(...sessionIds) as { sessionId: string } | undefined;
+      if (activeMatch !== undefined) {
+        throw new Error(`Session ${activeMatch.sessionId} already has an active competitive match`);
+      }
+
+      const profiles = new Map(
+        sessionIds.map((sessionId) => {
+          const profile = this.ensureCompetitiveProfile(sessionId);
+          return [sessionId, profile] as const;
+        }),
+      );
+      this.saveRoom(input.room, input.stateJson);
+      const createdAt = input.match.createdAt ?? new Date().toISOString();
+      this.connection
+        .prepare(
+          `INSERT INTO competitive_matches
+           (id, room_id, round_id, rule_version, status, result_json, created_at, settled_at)
+           VALUES (?, ?, ?, ?, 'ACTIVE', NULL, ?, NULL)`,
+        )
+        .run(
+          input.match.id,
+          input.match.roomId,
+          input.match.roundId,
+          input.match.ruleVersion,
+          createdAt,
+        );
+      const insertPlayer = this.connection.prepare(
+        `INSERT INTO competitive_match_players
+         (match_id, session_id, seat, pre_rank_level)
+         VALUES (?, ?, ?, ?)`,
+      );
+      for (const player of input.players) {
+        const profile = profiles.get(player.sessionId);
+        if (profile === undefined)
+          throw new Error("Missing competitive profile during match creation");
+        insertPlayer.run(input.match.id, player.sessionId, player.seat, profile.rankLevel);
+      }
+      const deleteQueuedPlayer = this.connection.prepare(
+        `DELETE FROM matchmaking_entries
+         WHERE session_id = ? AND version = ? AND disconnected_at IS NULL`,
+      );
+      const deleted = input.players.reduce(
+        (total, player) =>
+          total + deleteQueuedPlayer.run(player.sessionId, player.queueVersion).changes,
+        0,
+      );
+      if (deleted !== 4) {
+        throw new Error(
+          `Competitive match creation expected four current online queue entries, deleted ${deleted}`,
+        );
+      }
+      const settlement = this.getCompetitiveMatchSettlement(input.match.id);
+      if (settlement === null) throw new Error("Competitive match was not persisted");
+      return settlement;
+    })();
+  }
+
+  getActiveCompetitiveMatch(sessionId: string): CompetitiveMatchSettlement | null {
+    const row = this.connection
+      .prepare(
+        `SELECT competitive_matches.id
+         FROM competitive_matches
+         JOIN competitive_match_players
+           ON competitive_match_players.match_id = competitive_matches.id
+         WHERE competitive_match_players.session_id = ?
+           AND competitive_matches.status = 'ACTIVE'
+         ORDER BY competitive_matches.created_at DESC, competitive_matches.id DESC
+         LIMIT 1`,
+      )
+      .get(sessionId) as { id: string } | undefined;
+    return row === undefined ? null : this.getCompetitiveMatchSettlement(row.id);
+  }
+
+  getCurrentCompetitiveMatch(sessionId: string): CompetitiveMatchSettlement | null {
+    const row = this.connection
+      .prepare(
+        `SELECT competitive_matches.id
+         FROM competitive_matches
+         JOIN competitive_match_players
+           ON competitive_match_players.match_id = competitive_matches.id
+         WHERE competitive_match_players.session_id = ?
+           AND (
+             competitive_matches.status = 'ACTIVE'
+             OR (
+               competitive_matches.status = 'SETTLED'
+               AND competitive_match_players.acknowledged_at IS NULL
+             )
+           )
+         ORDER BY (competitive_matches.status = 'ACTIVE') DESC,
+           competitive_matches.created_at DESC,
+           competitive_matches.id DESC
+         LIMIT 1`,
+      )
+      .get(sessionId) as { id: string } | undefined;
+    return row === undefined ? null : this.getCompetitiveMatchSettlement(row.id);
+  }
+
+  getRecentCompetitiveOpponentIds(sessionId: string, matchLimit = 5): string[] {
+    if (!Number.isInteger(matchLimit) || matchLimit <= 0) return [];
+    const rows = this.connection
+      .prepare(
+        `WITH recent_matches AS (
+           SELECT competitive_matches.id, competitive_matches.created_at
+           FROM competitive_matches
+           JOIN competitive_match_players
+             ON competitive_match_players.match_id = competitive_matches.id
+           WHERE competitive_match_players.session_id = ?
+           ORDER BY competitive_matches.created_at DESC, competitive_matches.id DESC
+           LIMIT ?
+         )
+         SELECT competitive_match_players.session_id AS sessionId
+         FROM recent_matches
+         JOIN competitive_match_players
+           ON competitive_match_players.match_id = recent_matches.id
+         WHERE competitive_match_players.session_id <> ?
+         ORDER BY recent_matches.created_at DESC, recent_matches.id DESC,
+           competitive_match_players.seat`,
+      )
+      .all(sessionId, matchLimit, sessionId) as { sessionId: string }[];
+    return [...new Set(rows.map((row) => row.sessionId))];
+  }
+
+  getCompetitiveMatchSettlement(matchId: string): CompetitiveMatchSettlement | null {
+    const match = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.COMPETITIVE_MATCH_COLUMNS}
+         FROM competitive_matches
+         WHERE id = ?`,
+      )
+      .get(matchId) as CompetitiveMatchRow | undefined;
+    if (match === undefined) return null;
+    const players = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.COMPETITIVE_MATCH_PLAYER_COLUMNS}
+         FROM competitive_match_players
+         WHERE match_id = ?
+         ORDER BY seat`,
+      )
+      .all(matchId) as CompetitiveMatchPlayerRow[];
+    return { match, players };
+  }
+
+  getCompetitiveMatchPlayer(matchId: string, sessionId: string): CompetitiveMatchPlayerRow | null {
+    const row = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.COMPETITIVE_MATCH_PLAYER_COLUMNS}
+         FROM competitive_match_players
+         WHERE match_id = ? AND session_id = ?`,
+      )
+      .get(matchId, sessionId) as CompetitiveMatchPlayerRow | undefined;
+    return row ?? null;
+  }
+
+  acknowledgeCompetitiveMatchResult(
+    matchId: string,
+    sessionId: string,
+    acknowledgedAt = new Date().toISOString(),
+  ): CompetitiveMatchPlayerRow | null {
+    this.connection
+      .prepare(
+        `UPDATE competitive_match_players
+         SET acknowledged_at = ?
+         WHERE match_id = ? AND session_id = ? AND acknowledged_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM competitive_matches
+             WHERE competitive_matches.id = competitive_match_players.match_id
+               AND competitive_matches.status = 'SETTLED'
+           )`,
+      )
+      .run(acknowledgedAt, matchId, sessionId);
+    const settledPlayer = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.COMPETITIVE_MATCH_PLAYER_COLUMNS}
+         FROM competitive_match_players
+         WHERE competitive_match_players.match_id = ?
+           AND competitive_match_players.session_id = ?
+           AND EXISTS (
+             SELECT 1 FROM competitive_matches
+             WHERE competitive_matches.id = competitive_match_players.match_id
+               AND competitive_matches.status = 'SETTLED'
+           )`,
+      )
+      .get(matchId, sessionId) as CompetitiveMatchPlayerRow | undefined;
+    return settledPlayer ?? null;
+  }
+
+  acknowledgeAllCompetitiveMatchResults(
+    matchId: string,
+    acknowledgedAt = new Date().toISOString(),
+  ): number {
+    return this.connection
+      .prepare(
+        `UPDATE competitive_match_players
+         SET acknowledged_at = ?
+         WHERE match_id = ? AND acknowledged_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM competitive_matches
+             WHERE competitive_matches.id = competitive_match_players.match_id
+               AND competitive_matches.status = 'SETTLED'
+           )`,
+      )
+      .run(acknowledgedAt, matchId).changes;
+  }
+
+  acknowledgeAndEnqueueCompetitiveMatch(
+    matchId: string,
+    sessionId: string,
+    enqueuedAt = new Date().toISOString(),
+  ): MatchmakingEntryRow {
+    return this.connection.transaction(() => {
+      const player = this.acknowledgeCompetitiveMatchResult(matchId, sessionId, enqueuedAt);
+      if (player === null) {
+        throw new Error("Only a settled match member can continue matchmaking");
+      }
+      const profile = this.ensureCompetitiveProfile(sessionId);
+      return this.upsertMatchmakingEntry({
+        sessionId,
+        rankLevelSnapshot: profile.rankLevel,
+        enqueuedAt,
+      });
+    })();
+  }
+
+  saveAcceptedTransition(input: SaveAcceptedTransitionInput): SaveAcceptedTransitionResult {
+    return this.connection.transaction(() => {
+      this.saveRoom(input.room, input.stateJson);
+      if (input.processedRequest !== undefined) {
+        this.saveProcessedRequest(
+          input.processedRequest.sessionId,
+          input.processedRequest.requestId,
+          input.processedRequest.resultJson,
+        );
+      }
+      const achievementRecorded =
+        input.achievementEvent === undefined
+          ? false
+          : this.recordCompetitiveAchievement(input.room.id, input.achievementEvent);
+      const settlementApplied =
+        input.terminalSettlement === undefined
+          ? false
+          : this.applyCompetitiveSettlement(input.room.id, input.terminalSettlement);
+      return { achievementRecorded, settlementApplied };
+    })();
+  }
+
+  private recordCompetitiveAchievement(
+    roomId: string,
+    event: CompetitiveActionEventInput,
+  ): boolean {
+    const match = this.connection
+      .prepare("SELECT room_id AS roomId, status FROM competitive_matches WHERE id = ?")
+      .get(event.matchId) as { roomId: string; status: CompetitiveMatchStatus } | undefined;
+    if (match?.roomId !== roomId) {
+      throw new Error("Competitive achievement event must belong to the persisted room match");
+    }
+    const existingEvent = this.connection
+      .prepare(
+        `SELECT match_id AS matchId, session_id AS sessionId, round_id AS roundId,
+           round_version AS roundVersion, action
+         FROM competitive_action_events
+         WHERE event_key = ?`,
+      )
+      .get(event.eventKey) as
+      | {
+          matchId: string;
+          sessionId: string;
+          roundId: string;
+          roundVersion: number;
+          action: CompetitiveAchievementAction;
+        }
+      | undefined;
+    if (existingEvent !== undefined) {
+      if (
+        existingEvent.matchId !== event.matchId ||
+        existingEvent.sessionId !== event.sessionId ||
+        existingEvent.roundId !== event.roundId ||
+        existingEvent.roundVersion !== event.roundVersion ||
+        existingEvent.action !== event.action
+      ) {
+        throw new Error(`Competitive achievement event key ${event.eventKey} was reused`);
+      }
+      return false;
+    }
+    if (match.status !== "ACTIVE") {
+      throw new Error("Cannot append a competitive achievement after settlement");
+    }
+    const createdAt = event.createdAt ?? new Date().toISOString();
+    const inserted = this.connection
+      .prepare(
+        `INSERT OR IGNORE INTO competitive_action_events
+         (event_key, match_id, session_id, round_id, round_version, action, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.eventKey,
+        event.matchId,
+        event.sessionId,
+        event.roundId,
+        event.roundVersion,
+        event.action,
+        createdAt,
+      ).changes;
+    if (inserted === 0) return false;
+    const counterColumn: Record<CompetitiveAchievementAction, string> = {
+      EXPOSED_KONG: "exposed_kong_count",
+      INDICATOR_PONG_KONG: "indicator_pong_kong_count",
+      ADDED_KONG: "added_kong_count",
+      CONCEALED_KONG: "concealed_kong_count",
+    };
+    const updated = this.connection
+      .prepare(
+        `UPDATE competitive_profiles
+         SET ${counterColumn[event.action]} = ${counterColumn[event.action]} + 1, updated_at = ?
+         WHERE session_id = ?`,
+      )
+      .run(createdAt, event.sessionId).changes;
+    if (updated !== 1) throw new Error("Competitive achievement profile is missing");
+    return true;
+  }
+
+  private applyCompetitiveSettlement(
+    roomId: string,
+    settlement: CompetitiveTerminalSettlementInput,
+  ): boolean {
+    assertFourUniquePlayers(settlement.players);
+    const match = this.connection
+      .prepare("SELECT room_id AS roomId, status FROM competitive_matches WHERE id = ?")
+      .get(settlement.matchId) as { roomId: string; status: CompetitiveMatchStatus } | undefined;
+    if (match?.roomId !== roomId) {
+      throw new Error("Competitive settlement must belong to the persisted room match");
+    }
+    if (match.status === "SETTLED") return false;
+
+    const existingPlayers = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.COMPETITIVE_MATCH_PLAYER_COLUMNS}
+         FROM competitive_match_players
+         WHERE match_id = ?
+         ORDER BY seat`,
+      )
+      .all(settlement.matchId) as CompetitiveMatchPlayerRow[];
+    const existingSessionIds = new Set(existingPlayers.map((player) => player.sessionId));
+    if (
+      existingPlayers.length !== 4 ||
+      settlement.players.some((player) => !existingSessionIds.has(player.sessionId))
+    ) {
+      throw new Error("Competitive settlement players do not match the persisted match");
+    }
+
+    const settledAt = settlement.settledAt ?? new Date().toISOString();
+    const updatePlayer = this.connection.prepare(
+      `UPDATE competitive_match_players
+       SET post_rank_level = ?, raw_rank_delta = ?, final_rank_delta = ?,
+         protection_cards_before = ?, protection_cards_after = ?,
+         protection_cards_consumed = ?, protection_cards_granted = ?, multiplier = ?
+       WHERE match_id = ? AND session_id = ? AND post_rank_level IS NULL`,
+    );
+    const updateProfile = this.connection.prepare(
+      `UPDATE competitive_profiles
+       SET rank_level = ?, highest_major_index = ?, protection_cards = ?, updated_at = ?
+       WHERE session_id = ? AND rank_level = ? AND protection_cards = ?`,
+    );
+    for (const result of settlement.players) {
+      const persistedPlayer = existingPlayers.find(
+        (player) => player.sessionId === result.sessionId,
+      );
+      const profile = this.getCompetitiveProfile(result.sessionId);
+      if (persistedPlayer === undefined || profile === null) {
+        throw new Error("Competitive settlement profile or player is missing");
+      }
+      if (
+        persistedPlayer.preRankLevel !== profile.rankLevel ||
+        result.protectionCardsBefore !== profile.protectionCards ||
+        result.postRankLevel - profile.rankLevel !== result.finalRankDelta ||
+        result.protectionCardsAfter !==
+          result.protectionCardsBefore -
+            result.protectionCardsConsumed +
+            result.protectionCardsGranted ||
+        result.highestMajorIndex < profile.highestMajorIndex
+      ) {
+        throw new Error(`Competitive settlement precondition failed for ${result.sessionId}`);
+      }
+      const playerChanges = updatePlayer.run(
+        result.postRankLevel,
+        result.rawRankDelta,
+        result.finalRankDelta,
+        result.protectionCardsBefore,
+        result.protectionCardsAfter,
+        result.protectionCardsConsumed,
+        result.protectionCardsGranted,
+        result.multiplier,
+        settlement.matchId,
+        result.sessionId,
+      ).changes;
+      const profileChanges = updateProfile.run(
+        result.postRankLevel,
+        result.highestMajorIndex,
+        result.protectionCardsAfter,
+        settledAt,
+        result.sessionId,
+        profile.rankLevel,
+        profile.protectionCards,
+      ).changes;
+      if (playerChanges !== 1 || profileChanges !== 1) {
+        throw new Error(`Competitive settlement could not update ${result.sessionId}`);
+      }
+    }
+    const matchChanges = this.connection
+      .prepare(
+        `UPDATE competitive_matches
+         SET status = 'SETTLED', result_json = ?, settled_at = ?
+         WHERE id = ? AND status = 'ACTIVE'`,
+      )
+      .run(settlement.resultJson, settledAt, settlement.matchId).changes;
+    if (matchChanges !== 1) throw new Error("Competitive match was already settled");
+    return true;
+  }
+
+  saveRoom(room: RoomSnapshotInput, stateJson: string): void {
     const now = new Date().toISOString();
     this.connection
       .prepare(

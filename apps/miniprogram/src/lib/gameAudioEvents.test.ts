@@ -32,6 +32,7 @@ function player(seat: Seat, overrides: Partial<PlayerProjection> = {}): PlayerPr
     releasedWildcards: [],
     personalMultiplier: 1,
     score: 0,
+    competitiveProfile: null,
     ...overrides,
   };
 }
@@ -55,12 +56,13 @@ function settlement(
     payments: [],
     finalHands: [],
     scoreChanges: [],
+    competitiveSettlement: null,
   };
 }
 
 function room(overrides: Partial<RoomProjection> = {}): RoomProjection {
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     roomId: "room-1",
     roomCode: "1234",
     version: 1,
@@ -68,6 +70,7 @@ function room(overrides: Partial<RoomProjection> = {}): RoomProjection {
     turnTimeoutSeconds: 20,
     botDifficulty: "HIGH",
     mode: "FRIEND",
+    competitiveMatch: null,
     stage: "PLAYING",
     roundId: "round-1",
     roundStartedAt: "2026-07-26T00:00:00.000Z",

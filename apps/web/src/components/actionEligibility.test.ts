@@ -29,6 +29,7 @@ function player(seat: Seat, overrides?: Partial<PlayerProjection>): PlayerProjec
     releasedWildcards: [],
     personalMultiplier: 1,
     score: 0,
+    competitiveProfile: null,
     ...overrides,
   };
 }
@@ -39,7 +40,7 @@ function players(overrides?: Partial<Record<Seat, PlayerProjection>>): PlayerPro
 
 function room(overrides?: Partial<RoomProjection>): RoomProjection {
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     roomId: "room-1",
     roomCode: "123456",
     version: 1,
@@ -47,6 +48,7 @@ function room(overrides?: Partial<RoomProjection>): RoomProjection {
     turnTimeoutSeconds: 20,
     botDifficulty: "HIGH",
     mode: "FRIEND",
+    competitiveMatch: null,
     stage: "PLAYING",
     roundId: "round-1",
     roundStartedAt: null,

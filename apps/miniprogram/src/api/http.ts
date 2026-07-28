@@ -4,8 +4,10 @@ import type {
   BotDifficulty,
   CommandEnvelope,
   CommandResult,
+  MatchmakingState,
   RoomMode,
   RoomProjection,
+  SelfCompetitiveProfile,
   Seat,
   TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
@@ -62,6 +64,35 @@ async function request<T>(
   }
   return response.data as T;
 }
+
+export type MatchmakingResponse = {
+  state: MatchmakingState;
+  room: RoomProjection | null;
+};
+
+export const competitiveApi = {
+  profile(): Promise<SelfCompetitiveProfile> {
+    return request("/api/competitive/profile");
+  },
+  status(): Promise<MatchmakingResponse> {
+    return request("/api/matchmaking/status");
+  },
+  queue(previousMatchId?: string): Promise<MatchmakingResponse> {
+    return request("/api/matchmaking/queue", {
+      method: "POST",
+      data: previousMatchId === undefined ? {} : { previousMatchId },
+    });
+  },
+  cancel(): Promise<MatchmakingResponse> {
+    return request("/api/matchmaking/queue", { method: "DELETE" });
+  },
+  acknowledge(matchId: string): Promise<MatchmakingResponse> {
+    return request(`/api/competitive/matches/${matchId}/acknowledge`, {
+      method: "POST",
+      data: {},
+    });
+  },
+};
 
 export const roomApi = {
   create(
@@ -146,7 +177,7 @@ export function createCommand(
     type,
     requestId: randomUUIDv4(),
     roomId: room.roomId,
-    roundId: null,
+    roundId: room.roundId,
     expectedVersion: room.version,
     payload,
   };

@@ -42,16 +42,17 @@ Any change to room creation, seating, readiness, round continuation, or the UI's
 ### 2. Signatures
 
 ```ts
-type RoomMode = "FRIEND" | "BOT";
+type RoomMode = "FRIEND" | "BOT" | "MATCH";
 type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
 
 type RoomProjection = {
-  schemaVersion: 8;
+  schemaVersion: 9;
   mode: RoomMode;
+  competitiveMatch: { matchId: string; ruleVersion: number } | null;
   stage: RoomStage;
   scoreResetPending: boolean;
   status: "ACTIVE" | "CLOSED";
-  closeReason: "OWNER_DISSOLVED" | "WAITING_TIMEOUT" | "EMPTY_ROOM" | null;
+  closeReason: "OWNER_DISSOLVED" | "WAITING_TIMEOUT" | "EMPTY_ROOM" | "MATCH_SETTLED" | null;
   waitingExpiresAt: string | null;
   roundId: string | null;
   currentSeat: Seat | null;
@@ -102,6 +103,10 @@ type ChatMessageProjection = {
   but have `selfSeat = null`, receive `hand = null` for all four players, have
   no legal actions, and cannot send game commands or table chat.
 - `BOT` rooms start in `PLAYING`, reject joins, and remain in `ROUND_RESULT` until the owner calls `/continue` or leaves.
+- `MATCH` rooms are four-human, server-created, fixed-rule single rounds. They skip lobby/ready, hide friend controls, keep an exiting player's seat under trustee control, and expose only the requesting player's protection/rank transition at settlement.
+- Mini-program matchmaking state is server-owned. The home page polls status serially once per second while queued; a `MATCHED` response opens only its included member projection. A local trustee marker suppresses forced table reopen after deliberate exit, but a later `ROUND_RESULT` still reopens the authoritative settlement.
+- Continue matchmaking sends `previousMatchId`; the server acknowledges the old result and enqueues atomically. Return-to-lobby acknowledges without enqueuing. The client never creates those intermediate states locally.
+- Public player profiles contain rank display and four achievement totals only. Protection cards are self-only settlement data; openid/token/session identifiers never enter room projections.
 - `currentSeat` preserves the game engine's turn/discarder seat. `actingSeat` is the player currently required to act, including a discard responder. Player highlights and arrows use `actingSeat`; response-tile derivation continues to use `currentSeat`.
 - `lobbySeats` is the only waiting-room seat source. Components must not reconstruct seats from `players` or a second waiting-player list.
 - `scoreResetPending` is the only signal that the next round will zero cumulative

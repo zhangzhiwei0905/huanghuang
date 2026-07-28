@@ -1,5 +1,6 @@
 export * from "./actions.js";
 export * from "./bot.js";
+export * from "./competitive-rank.js";
 export * from "./round.js";
 export * from "./settlement.js";
 export * from "./ting.js";

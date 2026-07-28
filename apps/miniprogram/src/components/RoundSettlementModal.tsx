@@ -65,7 +65,11 @@ export function RoundSettlementModal({
           <View className="settlement-meta-group">
             {settlement.laiyou ? <Text className="settlement-laiyou-badge">来由 ×2</Text> : null}
             <Text className="settlement-meta">
-              {mode === "BOT" ? "等待你的选择" : "即将返回房间准备"}
+              {mode === "BOT"
+                ? "等待你的选择"
+                : mode === "MATCH"
+                  ? "竞技对局已结束"
+                  : "即将返回房间准备"}
             </Text>
           </View>
         </View>
@@ -74,6 +78,10 @@ export function RoundSettlementModal({
           {settlement.finalHands.map((finalHand) => {
             const change = settlement.scoreChanges.find((item) => item.seat === finalHand.seat);
             const winner = settlement.winnerSeat === finalHand.seat;
+            const payment = settlement.payments.find((item) => item.payerSeat === finalHand.seat);
+            const effectiveMultiplier = winner
+              ? settlement.winnerMultiplier
+              : (payment?.payerEffectiveMultiplier ?? null);
             return (
               <View
                 key={finalHand.seat}
@@ -93,9 +101,11 @@ export function RoundSettlementModal({
                   ))}
                 </View>
                 <View className="settlement-multiplier">
-                  <Text className="settlement-multiplier__label">倍率</Text>
+                  <Text className="settlement-multiplier__label">
+                    {settlement.kind === "WIN" ? "结算倍率" : "个人倍率"}
+                  </Text>
                   <Text className="settlement-multiplier__value">
-                    {finalHand.personalMultiplier}×
+                    {effectiveMultiplier ?? finalHand.personalMultiplier}×
                   </Text>
                 </View>
                 <View className="settlement-score">
@@ -117,10 +127,50 @@ export function RoundSettlementModal({
           })}
         </View>
 
-        {mode === "BOT" ? (
+        {mode === "MATCH" && settlement.competitiveSettlement !== null ? (
+          <View className="settlement-rank">
+            <View className="settlement-rank__main">
+              <View>
+                <Text className="settlement-rank__label">段位变化</Text>
+                <Text className="settlement-rank__value">
+                  {settlement.competitiveSettlement.beforeRankDisplay.displayName}
+                  {" → "}
+                  {settlement.competitiveSettlement.afterRankDisplay.displayName}
+                </Text>
+              </View>
+              <Text
+                className={`settlement-rank__delta${
+                  settlement.competitiveSettlement.self.appliedDelta >= 0 ? " is-gain" : " is-loss"
+                }`}
+              >
+                {signedScore(settlement.competitiveSettlement.self.appliedDelta)} 级
+              </Text>
+            </View>
+            <View className="settlement-rank__details">
+              {settlement.competitiveSettlement.self.protectedLevels > 0 ? (
+                <Text>
+                  已保护 {settlement.competitiveSettlement.self.protectedLevels} 级
+                  {settlement.competitiveSettlement.self.protectionCardsConsumed > 0
+                    ? ` · 消耗 ${settlement.competitiveSettlement.self.protectionCardsConsumed} 张保护卡`
+                    : " · 低段免降"}
+                </Text>
+              ) : null}
+              {settlement.competitiveSettlement.self.protectionCardsGranted > 0 ? (
+                <Text>
+                  晋升奖励 +{settlement.competitiveSettlement.self.protectionCardsGranted} 张保护卡
+                </Text>
+              ) : null}
+              <Text>
+                保护卡余额 {settlement.competitiveSettlement.self.protectionCardsAfter} 张
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        {mode === "BOT" || mode === "MATCH" ? (
           <View className="settlement-actions">
             <Button className="btn-ghost" hoverClass="is-pressed" disabled={busy} onClick={onLeave}>
-              退出到主页
+              {mode === "MATCH" ? "返回大厅" : "退出到主页"}
             </Button>
             <Button
               className="btn-accent"
@@ -128,7 +178,7 @@ export function RoundSettlementModal({
               disabled={busy}
               onClick={onContinue}
             >
-              继续游戏
+              {mode === "MATCH" ? "继续匹配" : "继续游戏"}
             </Button>
           </View>
         ) : null}

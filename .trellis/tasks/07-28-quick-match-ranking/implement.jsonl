@@ -1,0 +1,11 @@
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Protocol, engine, database, transport and service ownership boundaries"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"SQLite transaction, additive migration and room persistence contracts"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Stable REST and Socket validation/domain error mapping"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Authoritative commands, settlement, bot/trustee and effect transition contracts"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Projection authority, monotonic updates and room lifecycle behavior"}
+{"file":".trellis/spec/frontend/miniprogram.md","reason":"Taro/WeChat networking, room UI and production verification constraints"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Member-specific projection and cross-layer DTO discipline"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Single-source constants and exhaustive action mappings"}
+{"file":".trellis/tasks/07-28-quick-match-ranking/prd.md","reason":"Approved product requirements and acceptance criteria"}
+{"file":".trellis/tasks/07-28-quick-match-ranking/design.md","reason":"Approved architecture, persistence and lifecycle design"}
+{"file":".trellis/tasks/07-28-quick-match-ranking/implement.md","reason":"Ordered implementation and rollback checklist"}

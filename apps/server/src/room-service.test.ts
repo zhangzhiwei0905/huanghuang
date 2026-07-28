@@ -6,11 +6,12 @@ import {
   type RoundState,
 } from "@huanghuang/game-engine";
 import type { Meld, Tile, TileKind } from "@huanghuang/protocol";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { GameDatabase, type AnonymousSession } from "./database.js";
 import {
   CLOSED_ROOM_EVICTION_MS,
+  MATCH_SETTLEMENT_RETENTION_MS,
   RoomService,
   WAITING_ROOM_TIMEOUT_MS,
   type RoomState,
@@ -44,6 +45,31 @@ describe("RoomService", () => {
     const database = new GameDatabase(":memory:");
     databases.push(database);
     return new RoomService(database);
+  }
+
+  function createCompetitiveFixture() {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const sessions: AnonymousSession[] = [0, 1, 2, 3].map((index) => ({
+      id: `match-player-${index}`,
+      nickname: `竞技玩家${index}`,
+      avatarUrl: `/avatars/match-player-${index}.png`,
+      wechatOpenId: `openid-match-player-${index}`,
+    }));
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `token-match-player-${index}`);
+      database.ensureCompetitiveProfile(session.id);
+    }
+    const entries = sessions.map((session, index) =>
+      database.upsertMatchmakingEntry({
+        sessionId: session.id,
+        rankLevelSnapshot: 0,
+        enqueuedAt: new Date(index).toISOString(),
+      }),
+    );
+    const service = new RoomService(database);
+    const room = service.createCompetitiveMatch(sessions, entries);
+    return { database, entries, room, service, sessions };
   }
 
   it("creates a friend room in the waiting stage without bots or a round", () => {
@@ -480,7 +506,7 @@ describe("RoomService", () => {
     const projection = service.project(room, owner.id);
     const hints = projection.tingHints.find((hint) => hint.discardTileId === discarded.id);
 
-    expect(projection.schemaVersion).toBe(8);
+    expect(projection.schemaVersion).toBe(9);
     expect(hints?.waits).toContainEqual({
       tileKind: { suit: "TONG", rank: 1 },
       winType: "HARD",
@@ -1061,9 +1087,9 @@ describe("RoomService", () => {
     const settlement = service.project(room, owner.id).roundSettlement;
 
     expect(settlement?.payments).toEqual([
-      { payerSeat: 1, payerMultiplier: 2, amount: 16 },
-      { payerSeat: 2, payerMultiplier: 1, amount: 8 },
-      { payerSeat: 3, payerMultiplier: 1, amount: 8 },
+      { payerSeat: 1, payerMultiplier: 2, payerEffectiveMultiplier: 8, amount: 16 },
+      { payerSeat: 2, payerMultiplier: 1, payerEffectiveMultiplier: 4, amount: 8 },
+      { payerSeat: 3, payerMultiplier: 1, payerEffectiveMultiplier: 4, amount: 8 },
     ]);
     expect(settlement?.scoreChanges).toEqual([
       { seat: 0, roundDelta: 38, totalScore: 38 },
@@ -1112,9 +1138,9 @@ describe("RoomService", () => {
       nextDealerSeat: 2,
     });
     expect(settlement?.payments).toEqual([
-      { payerSeat: 1, payerMultiplier: 2, amount: 8 },
-      { payerSeat: 2, payerMultiplier: 1, amount: 4 },
-      { payerSeat: 3, payerMultiplier: 1, amount: 4 },
+      { payerSeat: 1, payerMultiplier: 2, payerEffectiveMultiplier: 4, amount: 8 },
+      { payerSeat: 2, payerMultiplier: 1, payerEffectiveMultiplier: 2, amount: 4 },
+      { payerSeat: 3, payerMultiplier: 1, payerEffectiveMultiplier: 2, amount: 4 },
     ]);
     expect(settlement?.finalHands).toEqual(
       ([0, 1, 2, 3] as const).map((seat) => ({
@@ -1383,7 +1409,7 @@ describe("RoomService", () => {
       kind: "WIN",
       winType: "HARD",
       winBaseMultiplier: 2,
-      winnerMultiplier: 2,
+      winnerMultiplier: 8,
       laiyou: true,
       laiyouMultiplier: 2,
     });
@@ -1628,5 +1654,552 @@ describe("RoomService", () => {
     expect(restoredHumanRoom.fullTableScoreResetDone).toBe(true);
     expect(restoredHumanRoom.scores).toEqual({ 0: 5, 1: -5, 2: 0, 3: 0 });
     expect(restoredService.project(restoredHumanRoom, owner.id).scoreResetPending).toBe(false);
+  });
+
+  it("atomically creates and starts a fixed-config competitive room", () => {
+    const { database, entries, room, service, sessions } = createCompetitiveFixture();
+    const round = activeRound(room);
+
+    expect(room).toMatchObject({
+      baseScore: 2,
+      turnTimeoutSeconds: 20,
+      botDifficulty: "HIGH",
+      mode: "MATCH",
+      stage: "PLAYING",
+      competitiveMatch: { ruleVersion: 1 },
+    });
+    expect(new Set(Object.values(room.seats).map((seat) => seat.sessionId))).toEqual(
+      new Set(sessions.map((session) => session.id)),
+    );
+    expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
+    expect(database.listMatchmakingEntries()).toEqual([]);
+    const persistedMatch = database.getCompetitiveMatchSettlement(
+      room.competitiveMatch?.matchId ?? "",
+    );
+    expect(persistedMatch?.match).toMatchObject({
+      roomId: room.id,
+      roundId: round.id,
+      status: "ACTIVE",
+      ruleVersion: 1,
+    });
+    expect(new Set(persistedMatch?.players.map((player) => player.sessionId))).toEqual(
+      new Set(entries.map((entry) => entry.sessionId)),
+    );
+    expect(service.getRoom(room.code)).toBe(room);
+  });
+
+  it("does not register a competitive room when atomic creation rejects a stale queue entry", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const sessions: AnonymousSession[] = [0, 1, 2, 3].map((index) => ({
+      id: `stale-player-${index}`,
+      nickname: `过期玩家${index}`,
+      wechatOpenId: `openid-stale-player-${index}`,
+    }));
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `token-stale-player-${index}`);
+    }
+    const entries = sessions.map((session) =>
+      database.upsertMatchmakingEntry({ sessionId: session.id, rankLevelSnapshot: 0 }),
+    );
+    database.markMatchmakingEntryDisconnected(sessions[0]?.id ?? "");
+    const service = new RoomService(database);
+
+    expect(() => service.createCompetitiveMatch(sessions, entries)).toThrow(
+      "expected four current online queue entries",
+    );
+    expect(database.loadActiveRooms()).toEqual([]);
+    expect(database.listMatchmakingEntries()).toHaveLength(4);
+    expect((service as unknown as { roomsByCode: Map<string, RoomState> }).roomsByCode.size).toBe(
+      0,
+    );
+  });
+
+  it("restricts competitive lifecycle actions and retains a leaving member as trustee", () => {
+    const { room, service, sessions } = createCompetitiveFixture();
+    const self = sessions.find((session) => service.project(room, session.id).selfSeat === 0);
+    if (self === undefined) throw new Error("Expected the seat-zero competitive player");
+
+    expect(service.joinRoom({ id: "match-outsider", nickname: "旁观者" }, room.code)).toBe(
+      "ROOM_NOT_JOINABLE",
+    );
+    expect(service.joinRoom(self, room.code)).toBe("ROOM_NOT_JOINABLE");
+    expect(service.setReady(self.id, room.code, true)).toBe("ACTION_NOT_AVAILABLE");
+    expect(service.updateSettings(self.id, room.code, { baseScore: 5 })).toBe(
+      "ACTION_NOT_AVAILABLE",
+    );
+    expect(service.addBot(self.id, room.code)).toBe("ACTION_NOT_AVAILABLE");
+    expect(service.removeBot(self.id, room.code, 1)).toBe("ACTION_NOT_AVAILABLE");
+    expect(service.createChatMessage(self.id, room.code, "竞技聊天")).toBe("ACTION_NOT_AVAILABLE");
+    expect(service.requestDissolve(self.id, room.code)).toBe("FORBIDDEN");
+    expect(service.continueBotRound(self.id, room.code)).toBe("ACTION_NOT_AVAILABLE");
+
+    const versionBeforeLeave = room.version;
+    expect(service.leaveRoom(self.id, room.code)).toBe(room);
+    expect(room.version).toBe(versionBeforeLeave + 1);
+    expect(room.seats[0]).toMatchObject({
+      sessionId: self.id,
+      controller: "TRUSTEE",
+      connected: false,
+    });
+    expect(service.hasMember(self.id, room.code)).toBe(true);
+    expect(service.project(room, self.id).legalActions).toEqual([]);
+    expect(
+      service.execute(self.id, {
+        type: "CONTINUE_TURN",
+        requestId: randomUUID(),
+        roomId: room.id,
+        roundId: activeRound(room).id,
+        expectedVersion: room.version,
+        payload: {},
+      }),
+    ).toMatchObject({ accepted: false, errorCode: "ACTION_NOT_AVAILABLE" });
+
+    expect(service.setRoomConnected(self.id, room.id, true)).toEqual({
+      roomId: room.id,
+      version: versionBeforeLeave + 2,
+    });
+    expect(room.seats[0]).toMatchObject({ controller: "HUMAN", connected: true });
+    expect(service.setRoomConnected(self.id, "another-room", false)).toBeNull();
+
+    const round = activeRound(room);
+    const discard = round.players[0].hand.find(
+      (tile) => tile.suit !== round.wildcardKind.suit || tile.rank !== round.wildcardKind.rank,
+    );
+    if (discard === undefined) throw new Error("Expected a competitive discard");
+    round.phase = "TURN_DECISION";
+    round.currentSeat = 0;
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = discard.id;
+    expect(
+      service.execute(self.id, {
+        type: "DISCARD_TILE",
+        requestId: randomUUID(),
+        roomId: room.id,
+        roundId: "another-round",
+        expectedVersion: room.version,
+        payload: { tileId: discard.id },
+      }),
+    ).toMatchObject({ accepted: false, errorCode: "WRONG_PHASE" });
+    expect(
+      service.execute(self.id, {
+        type: "DISCARD_TILE",
+        requestId: randomUUID(),
+        roomId: room.id,
+        roundId: null,
+        expectedVersion: room.version,
+        payload: { tileId: discard.id },
+      }),
+    ).toMatchObject({ accepted: true });
+
+    room.stage = "ROUND_RESULT";
+    const otherSessionIds = Object.values(room.seats)
+      .map((seat) => seat.sessionId)
+      .filter((sessionId): sessionId is string => sessionId !== null && sessionId !== self.id);
+    service.leaveRoom(self.id, room.code);
+    expect(room.seats[0].sessionId).toBe(self.id);
+    expect(otherSessionIds.every((sessionId) => service.hasMember(sessionId, room.code))).toBe(
+      true,
+    );
+  });
+
+  it("projects v9 competitive profiles, public multipliers, and only the requesting settlement", () => {
+    const { database, room, service } = createCompetitiveFixture();
+    const round = activeRound(room);
+    round.players[0].personalMultiplier = 2;
+    round.players[1].personalMultiplier = 2;
+    round.phase = "ROUND_OVER";
+    round.outcome = {
+      kind: "WIN",
+      winnerSeat: 0,
+      winType: "HARD",
+      laiyou: true,
+      nextDealerSeat: 0,
+      scoreDeltas: [
+        { seat: 0, delta: 64, reason: "SELF_DRAW" },
+        { seat: 1, delta: -32, reason: "SELF_DRAW" },
+        { seat: 2, delta: -16, reason: "SELF_DRAW" },
+        { seat: 3, delta: -16, reason: "SELF_DRAW" },
+      ],
+    };
+    room.stage = "ROUND_RESULT";
+    const terminal = (
+      service as unknown as {
+        competitiveTerminalSettlement(target: RoomState): {
+          settlement: Parameters<GameDatabase["saveAcceptedTransition"]>[0]["terminalSettlement"];
+        } | null;
+      }
+    ).competitiveTerminalSettlement(room);
+    if (terminal?.settlement === undefined) throw new Error("Expected competitive settlement");
+    database.saveAcceptedTransition({
+      room,
+      stateJson: JSON.stringify(room),
+      terminalSettlement: terminal.settlement,
+    });
+
+    const seatZeroSessionId = room.seats[0].sessionId;
+    const seatOneSessionId = room.seats[1].sessionId;
+    if (seatZeroSessionId === null || seatOneSessionId === null) {
+      throw new Error("Expected competitive sessions");
+    }
+    const winnerProjection = service.project(room, seatZeroSessionId);
+    const loserProjection = service.project(room, seatOneSessionId);
+
+    expect(winnerProjection.schemaVersion).toBe(9);
+    expect(winnerProjection.competitiveMatch).toEqual(room.competitiveMatch);
+    expect(winnerProjection.players.every((player) => player.competitiveProfile !== null)).toBe(
+      true,
+    );
+    expect(winnerProjection.lobbySeats.every((seat) => seat.competitiveProfile !== null)).toBe(
+      true,
+    );
+    expect(winnerProjection.roundSettlement).toMatchObject({
+      winnerMultiplier: 8,
+      payments: [
+        expect.objectContaining({ payerSeat: 1, payerEffectiveMultiplier: 16 }),
+        expect.objectContaining({ payerSeat: 2, payerEffectiveMultiplier: 8 }),
+        expect.objectContaining({ payerSeat: 3, payerEffectiveMultiplier: 8 }),
+      ],
+      competitiveSettlement: {
+        self: { outcome: { kind: "WIN", multiplier: 8 } },
+      },
+    });
+    expect(loserProjection.roundSettlement?.competitiveSettlement?.self.outcome).toEqual({
+      kind: "LOSS",
+      multiplier: 16,
+    });
+    expect(winnerProjection.roundSettlement?.competitiveSettlement?.self).not.toEqual(
+      loserProjection.roundSettlement?.competitiveSettlement?.self,
+    );
+    expect(service.project(service.createRoom(owner, 2, "BOT"), owner.id)).toMatchObject({
+      competitiveMatch: null,
+      roundSettlement: null,
+    });
+  });
+
+  it("records all four competitive achievements once from accepted authoritative effects", () => {
+    const cases = ["EXPOSED_KONG", "INDICATOR_PONG_KONG", "ADDED_KONG", "CONCEALED_KONG"] as const;
+
+    for (const action of cases) {
+      const { database, room, service } = createCompetitiveFixture();
+      const round = activeRound(room);
+      const actorSessionId = room.seats[0].sessionId;
+      if (actorSessionId === null) throw new Error("Expected competitive actor");
+      let command: Parameters<RoomService["execute"]>[1];
+      if (action === "EXPOSED_KONG" || action === "INDICATOR_PONG_KONG") {
+        const kind =
+          action === "INDICATOR_PONG_KONG"
+            ? { suit: round.indicatorTile.suit, rank: round.indicatorTile.rank }
+            : ({ suit: "WAN", rank: 3 } as const);
+        round.phase = "DISCARD_RESPONSE";
+        round.currentSeat = 1;
+        round.lastDiscard = {
+          id: `${action}-discard`,
+          tile: { id: `${action}-discard-tile`, ...kind },
+          sourceSeat: 1,
+        };
+        round.pendingResponse = {
+          seat: 0,
+          actions: [action === "EXPOSED_KONG" ? "CLAIM_EXPOSED_KONG" : "CLAIM_INDICATOR_PONG_KONG"],
+        };
+        round.players[0].hand.splice(
+          0,
+          action === "EXPOSED_KONG" ? 3 : 2,
+          ...["a", "b", "c"].slice(0, action === "EXPOSED_KONG" ? 3 : 2).map((suffix) => ({
+            id: `${action}-${suffix}`,
+            ...kind,
+          })),
+        );
+        command = {
+          type: action === "EXPOSED_KONG" ? "CLAIM_EXPOSED_KONG" : "CLAIM_INDICATOR_PONG_KONG",
+          requestId: randomUUID(),
+          roomId: room.id,
+          roundId: round.id,
+          expectedVersion: room.version,
+          payload: {},
+        };
+      } else if (action === "ADDED_KONG") {
+        const kind = { suit: "TONG" as const, rank: 7 as const };
+        round.players[0].melds = [
+          {
+            id: "competitive-added-pong",
+            kind: "PONG",
+            tileIds: ["competitive-added-a", "competitive-added-b", "competitive-added-c"],
+            tileKind: kind,
+            sourcePlayerId: "seat-1",
+            sourceDiscardId: "competitive-added-discard",
+            createdAtVersion: 1,
+          },
+        ];
+        round.players[0].hand[0] = { id: "competitive-added-tile", ...kind };
+        round.phase = "TURN_DECISION";
+        round.currentSeat = 0;
+        round.lastDrawSeat = 0;
+        round.lastDrawnTileId = "competitive-added-tile";
+        command = {
+          type: "DECLARE_ADDED_KONG",
+          requestId: randomUUID(),
+          roomId: room.id,
+          roundId: round.id,
+          expectedVersion: room.version,
+          payload: { meldId: "competitive-added-pong", tileId: "competitive-added-tile" },
+        };
+      } else {
+        const kind = { suit: "WAN" as const, rank: 2 as const };
+        round.wildcardKind = { suit: "TONG", rank: 9 };
+        const tiles = ["a", "b", "c", "d"].map((suffix) => ({
+          id: `competitive-concealed-${suffix}`,
+          ...kind,
+        }));
+        round.players[0].hand.splice(0, 4, ...tiles);
+        round.phase = "TURN_DECISION";
+        round.currentSeat = 0;
+        round.lastDrawSeat = 0;
+        round.lastDrawnTileId = tiles[3]?.id ?? "";
+        command = {
+          type: "DECLARE_CONCEALED_KONG",
+          requestId: randomUUID(),
+          roomId: room.id,
+          roundId: round.id,
+          expectedVersion: room.version,
+          payload: kind,
+        };
+      }
+
+      const first = service.execute(actorSessionId, command);
+      expect(first.accepted).toBe(true);
+      expect(service.execute(actorSessionId, command)).toEqual(first);
+      const profile = database.getCompetitiveProfile(actorSessionId);
+      expect(
+        {
+          EXPOSED_KONG: profile?.exposedKongCount,
+          INDICATOR_PONG_KONG: profile?.indicatorPongKongCount,
+          ADDED_KONG: profile?.addedKongCount,
+          CONCEALED_KONG: profile?.concealedKongCount,
+        }[action],
+      ).toBe(1);
+    }
+  });
+
+  it("settles a competitive win only after its effect and remains idempotent across restart", () => {
+    const { database, room, service } = createCompetitiveFixture();
+    const round = activeRound(room);
+    const winnerSessionId = room.seats[0].sessionId;
+    const loserSessionId = room.seats[1].sessionId;
+    if (winnerSessionId === null || loserSessionId === null)
+      throw new Error("Expected match players");
+    const wildcardKind: TileKind = { suit: "WAN", rank: 5 };
+    const triplet = (prefix: string, suit: TileKind["suit"], rank: TileKind["rank"]) =>
+      ["a", "b", "c"].map((suffix) => testTile(`${prefix}-${suffix}`, suit, rank));
+    const winningTile = testTile("competitive-winning-tile", "TIAO", 9);
+    round.wildcardKind = wildcardKind;
+    round.players[0].hand = [
+      ...triplet("competitive-wan-1", "WAN", 1),
+      ...triplet("competitive-tiao-2", "TIAO", 2),
+      ...triplet("competitive-tong-3", "TONG", 3),
+      testTile("competitive-tiao-9-a", "TIAO", 9),
+      testTile("competitive-tiao-9-b", "TIAO", 9),
+      winningTile,
+      testTile("competitive-wan-7-a", "WAN", 7),
+      testTile("competitive-wan-7-b", "WAN", 7),
+    ];
+    round.currentSeat = 0;
+    round.phase = "TURN_DECISION";
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = winningTile.id;
+    round.winPassedThisTurn = false;
+
+    const result = service.execute(winnerSessionId, {
+      type: "DECLARE_WIN",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: room.version,
+      payload: {},
+    });
+    expect(result.accepted).toBe(true);
+    expect(service.project(room, winnerSessionId).roundSettlement).toBeNull();
+    expect(
+      database.getCompetitiveMatchSettlement(room.competitiveMatch?.matchId ?? "")?.match.status,
+    ).toBe("ACTIVE");
+    expect(database.getCompetitiveProfile(winnerSessionId)?.rankLevel).toBe(0);
+
+    const restoredService = new RoomService(database);
+    const restored = restoredService.getRoom(room.code);
+    if (
+      restored?.pendingEffectTransition === undefined ||
+      restored.pendingEffectTransition === null
+    ) {
+      throw new Error("Expected a restored competitive win effect");
+    }
+    const endsAt = Date.parse(restored.pendingEffectTransition.cue.endsAt);
+    restoredService.tick(endsAt - 1);
+    expect(
+      database.getCompetitiveMatchSettlement(restored.competitiveMatch?.matchId ?? "")?.match
+        .status,
+    ).toBe("ACTIVE");
+    restoredService.tick(endsAt);
+    expect(restored.stage).toBe("ROUND_RESULT");
+    expect(
+      database.getCompetitiveMatchSettlement(restored.competitiveMatch?.matchId ?? "")?.match
+        .status,
+    ).toBe("SETTLED");
+    expect(database.getCompetitiveProfile(winnerSessionId)?.rankLevel).toBe(2);
+    expect(restoredService.project(restored, winnerSessionId).roundSettlement).toMatchObject({
+      competitiveSettlement: { self: { outcome: { kind: "WIN", multiplier: 2 } } },
+    });
+    expect(restoredService.project(restored, loserSessionId).roundSettlement).toMatchObject({
+      competitiveSettlement: { self: { outcome: { kind: "LOSS", multiplier: 2 } } },
+    });
+
+    restoredService.tick(endsAt + 60_000);
+    const restartedAgain = new RoomService(database);
+    restartedAgain.tick(endsAt + 120_000);
+    expect(database.getCompetitiveProfile(winnerSessionId)?.rankLevel).toBe(2);
+  });
+
+  it("settles an accepted competitive draw atomically with zero rank changes", () => {
+    const { database, room, service } = createCompetitiveFixture();
+    const round = activeRound(room);
+    const actorSessionId = room.seats[0].sessionId;
+    if (actorSessionId === null) throw new Error("Expected competitive actor");
+    const discarded = round.players[0].hand.find(
+      (tile) => tile.suit !== round.wildcardKind.suit || tile.rank !== round.wildcardKind.rank,
+    );
+    if (discarded === undefined) throw new Error("Expected a discardable tile");
+    round.phase = "TURN_DECISION";
+    round.currentSeat = 0;
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = discarded.id;
+    round.wall = [];
+    for (const seat of [1, 2, 3] as const) {
+      round.players[seat].hand = round.players[seat].hand.map((tile, index) => ({
+        ...tile,
+        id: `draw-safe-${seat}-${index}`,
+        suit: discarded.suit === "WAN" ? "TIAO" : "WAN",
+        rank: discarded.rank === 1 ? 2 : 1,
+      }));
+    }
+
+    const result = service.execute(actorSessionId, {
+      type: "DISCARD_TILE",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: room.version,
+      payload: { tileId: discarded.id },
+    });
+
+    expect(result.accepted).toBe(true);
+    expect(room.pendingEffectTransition).toBeNull();
+    expect(room.stage).toBe("ROUND_RESULT");
+    expect(
+      database.getCompetitiveMatchSettlement(room.competitiveMatch?.matchId ?? "")?.match.status,
+    ).toBe("SETTLED");
+    for (const seat of [0, 1, 2, 3] as const) {
+      const sessionId = room.seats[seat].sessionId;
+      if (sessionId === null) throw new Error("Expected competitive session");
+      expect(database.getCompetitiveProfile(sessionId)?.rankLevel).toBe(0);
+      expect(service.project(room, sessionId).roundSettlement).toMatchObject({
+        kind: "DRAW",
+        competitiveSettlement: {
+          self: { outcome: { kind: "DRAW" }, rawDelta: 0, appliedDelta: 0 },
+        },
+      });
+    }
+  });
+
+  it("keeps a settled MATCH recoverable until retention expires, then acknowledges and closes it", () => {
+    const { database, room, service } = createCompetitiveFixture();
+    const round = activeRound(room);
+    round.phase = "ROUND_OVER";
+    round.outcome = { kind: "DRAW", nextDealerSeat: 0 };
+    room.stage = "ROUND_RESULT";
+    const settledAt = Date.parse("2026-07-28T10:00:00.000Z");
+    const terminal = (
+      service as unknown as {
+        competitiveTerminalSettlement(target: RoomState): {
+          settlement: NonNullable<
+            Parameters<GameDatabase["saveAcceptedTransition"]>[0]["terminalSettlement"]
+          >;
+        } | null;
+      }
+    ).competitiveTerminalSettlement(room);
+    if (terminal === null) throw new Error("Expected competitive settlement");
+    database.saveAcceptedTransition({
+      room,
+      stateJson: JSON.stringify(room),
+      terminalSettlement: { ...terminal.settlement, settledAt: new Date(settledAt).toISOString() },
+    });
+
+    service.tick(settledAt + MATCH_SETTLEMENT_RETENTION_MS - 1);
+    expect(room.status).toBe("ACTIVE");
+    service.tick(settledAt + MATCH_SETTLEMENT_RETENTION_MS);
+    expect(room).toMatchObject({ status: "CLOSED", closeReason: "MATCH_SETTLED" });
+    const settlement = database.getCompetitiveMatchSettlement(room.competitiveMatch?.matchId ?? "");
+    expect(settlement?.players.every((player) => player.acknowledgedAt !== null)).toBe(true);
+    expect(database.getCurrentCompetitiveMatch(room.seats[0].sessionId ?? "")).toBeNull();
+  });
+
+  it("closes a settled MATCH after all four players acknowledge", () => {
+    const { database, room, service } = createCompetitiveFixture();
+    const round = activeRound(room);
+    round.phase = "ROUND_OVER";
+    round.outcome = { kind: "DRAW", nextDealerSeat: 0 };
+    room.stage = "ROUND_RESULT";
+    const terminal = (
+      service as unknown as {
+        competitiveTerminalSettlement(target: RoomState): {
+          settlement: NonNullable<
+            Parameters<GameDatabase["saveAcceptedTransition"]>[0]["terminalSettlement"]
+          >;
+        } | null;
+      }
+    ).competitiveTerminalSettlement(room);
+    if (terminal === null || room.competitiveMatch === null) {
+      throw new Error("Expected competitive settlement");
+    }
+    database.saveAcceptedTransition({
+      room,
+      stateJson: JSON.stringify(room),
+      terminalSettlement: terminal.settlement,
+    });
+    for (const seat of [0, 1, 2, 3] as const) {
+      const sessionId = room.seats[seat].sessionId;
+      if (sessionId === null) throw new Error("Expected competitive session");
+      database.acknowledgeCompetitiveMatchResult(room.competitiveMatch.matchId, sessionId);
+    }
+
+    service.tick();
+    expect(room).toMatchObject({ status: "CLOSED", closeReason: "MATCH_SETTLED" });
+  });
+
+  it("keeps live MATCH state unchanged when an automatic accepted-transition transaction fails", () => {
+    const { database, room, service } = createCompetitiveFixture();
+    const round = activeRound(room);
+    const trusteeSessionId = room.seats[0].sessionId;
+    if (trusteeSessionId === null) throw new Error("Expected competitive trustee");
+    service.setRoomConnected(trusteeSessionId, room.id, false);
+    round.phase = "DISCARD_RESPONSE";
+    round.currentSeat = 3;
+    round.lastDiscard = {
+      id: "competitive-trustee-discard",
+      tile: { id: "competitive-trustee-tile", suit: "WAN", rank: 3 },
+      sourceSeat: 3,
+    };
+    round.pendingResponse = { seat: 0, actions: ["CLAIM_PONG"] };
+    room.actionDeadlineAt = new Date(0).toISOString();
+    const before = JSON.stringify(room);
+    const save = vi.spyOn(database, "saveAcceptedTransition").mockImplementation(() => {
+      throw new Error("forced transition failure");
+    });
+
+    expect(() => service.tick(Date.now())).toThrow("forced transition failure");
+    expect(JSON.stringify(room)).toBe(before);
+
+    save.mockRestore();
+    service.tick(Date.now());
+    expect(activeRound(room).phase).toBe("TURN_DECISION");
+    expect(activeRound(room).currentSeat).toBe(0);
   });
 });

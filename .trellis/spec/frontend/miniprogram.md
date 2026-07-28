@@ -611,6 +611,16 @@ once 预览 is confirmed clean.
 
 ---
 
+### Competitive matchmaking presentation
+
+- The signed-in home shows the server-projected rank and places `快速开始` before practice/friend actions.
+- Queue polling is serial, never overlapping. It stops on unmount, cancel, or a non-QUEUED state; delayed responses must not overwrite a newer MATCHED state.
+- The matching modal shows wait time and the same 10/20/40-second search-window labels owned by product requirements. It does not offer bot fallback or configuration.
+- A MATCH projection hides room code sharing, settings, chat and dissolve controls. Exiting PLAYING requires explicit confirmation that trustee play and rank settlement continue.
+- Settlement uses `winnerMultiplier`, `payerEffectiveMultiplier` and `competitiveSettlement.self`; it must not derive rank from personal multiplier, table score or `roundDelta`.
+- `PlayerProfileModal` labels room score as `本局牌桌分`, shows public rank/four MATCH achievement totals, and represents a `null` competitive profile as no permanent record rather than four zero counters.
+- `normalizeRoomProjection` upgrades legacy projections once at the boundary with null competitive fields and authoritative effective-payment fallback. Components consume strict schema 9 values.
+
 ## Verification Commands
 
 ```bash

@@ -53,13 +53,14 @@ function player(seat: Seat): PlayerProjection {
     releasedWildcards,
     personalMultiplier: seat === 1 ? 4 : 1,
     score: seat === 0 ? 12 : -4,
+    competitiveProfile: null,
   };
 }
 
 function resultRoom(): RoomProjection {
   const players = ([0, 1, 2, 3] as const).map(player);
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     roomId: "room-1",
     roomCode: "123456",
     version: 12,
@@ -67,6 +68,7 @@ function resultRoom(): RoomProjection {
     turnTimeoutSeconds: 20,
     botDifficulty: "HIGH",
     mode: "FRIEND",
+    competitiveMatch: null,
     stage: "ROUND_RESULT",
     roundId: "round-1",
     roundStartedAt: "2026-07-17T00:00:00.000Z",
@@ -100,15 +102,16 @@ function resultRoom(): RoomProjection {
       laiyouMultiplier: 1,
       nextDealerSeat: 2,
       payments: [
-        { payerSeat: 1, payerMultiplier: 4, amount: 16 },
-        { payerSeat: 2, payerMultiplier: 1, amount: 4 },
-        { payerSeat: 3, payerMultiplier: 1, amount: 4 },
+        { payerSeat: 1, payerMultiplier: 4, payerEffectiveMultiplier: 8, amount: 16 },
+        { payerSeat: 2, payerMultiplier: 1, payerEffectiveMultiplier: 2, amount: 4 },
+        { payerSeat: 3, payerMultiplier: 1, payerEffectiveMultiplier: 2, amount: 4 },
       ],
       finalHands: ([0, 1, 2, 3] as const).map((seat) => ({
         seat,
         tiles: finalHand(seat),
         personalMultiplier: seat === 1 ? 4 : 1,
       })),
+      competitiveSettlement: null,
       scoreChanges: [
         { seat: 0, roundDelta: 24, totalScore: 12 },
         { seat: 1, roundDelta: -16, totalScore: -4 },
@@ -131,6 +134,7 @@ function resultRoom(): RoomProjection {
       isOwner: seat === 0,
       isSelf: seat === 0,
       score: seat === 0 ? 12 : -4,
+      competitiveProfile: null,
     })),
     spectators: [],
   };

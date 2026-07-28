@@ -236,6 +236,60 @@
   color: var(--accent, #2f6a4c);
 }
 
+.settlement-rank {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7vmin;
+  margin-top: 1.2vmin;
+  border-top: 1px solid var(--line, #cde0d3);
+  padding-top: 1.2vmin;
+}
+
+.settlement-rank__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2vmin;
+}
+
+.settlement-rank__main > view {
+  display: flex;
+  align-items: baseline;
+  gap: 1vmin;
+}
+
+.settlement-rank__label,
+.settlement-rank__details {
+  color: var(--muted, #5f625b);
+  font-size: 1.7vmin;
+}
+
+.settlement-rank__value {
+  color: var(--ink, #272925);
+  font-size: 2.3vmin;
+  font-weight: 800;
+}
+
+.settlement-rank__delta {
+  flex-shrink: 0;
+  font-size: 2.5vmin;
+  font-weight: 800;
+}
+
+.settlement-rank__delta.is-gain {
+  color: var(--accent, #2f6a4c);
+}
+
+.settlement-rank__delta.is-loss {
+  color: var(--danger, #7a4b45);
+}
+
+.settlement-rank__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5vmin 1.4vmin;
+}
+
 .settlement-actions {
   display: flex;
   justify-content: flex-end;

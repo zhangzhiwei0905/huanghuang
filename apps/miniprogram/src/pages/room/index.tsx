@@ -6,12 +6,14 @@ import type {
   ChatMessageProjection,
   LobbySeatProjection,
   MeldKind,
+  PublicCompetitiveProfile,
   RoomProjection,
   RoomStage,
   Seat,
   Tile,
 } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
+import { competitiveApi } from "../../api/http";
 import { API_BASE } from "../../config";
 import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
@@ -57,6 +59,7 @@ const VISIBLE_DISCARDS = 12;
    dock — only a single wide row fits there, so it shows fewer tiles (players
    know their own discards; the count chip carries the total). */
 const SELF_VISIBLE_DISCARDS = 6;
+const TRUSTEE_MATCH_STORAGE_KEY = "huanghuang_trustee_match";
 
 const MELD_LABELS: Record<MeldKind, string> = {
   PONG: "碰",
@@ -81,6 +84,7 @@ type ProfileTarget = {
   connected: boolean;
   isSelf: boolean;
   isOwner: boolean;
+  competitiveProfile: PublicCompetitiveProfile | null;
 };
 
 function SeatAvatar({
@@ -88,15 +92,20 @@ function SeatAvatar({
   nickname,
   isBot = false,
   variant,
+  onClick,
 }: {
   avatarUrl: string | null;
   nickname: string | null;
   isBot?: boolean;
   variant: "lobby" | "player";
+  onClick?: () => void;
 }) {
   const fallback = isBot ? "机" : (nickname?.slice(0, 1) ?? "");
   return (
-    <View className={`seat-avatar seat-avatar--${variant}`}>
+    <View
+      className={`seat-avatar seat-avatar--${variant}${onClick === undefined ? "" : " is-clickable"}`}
+      onClick={onClick}
+    >
       {avatarUrl !== null ? (
         <Image src={`${API_BASE}${avatarUrl}`} mode="aspectFill" className="seat-avatar__image" />
       ) : (
@@ -150,6 +159,7 @@ function LobbySeat({
           nickname={seat.occupied ? seat.nickname : "空"}
           isBot={seat.controller === "BOT"}
           variant="lobby"
+          onClick={seat.occupied ? onShowProfile : undefined}
         />
         <View className="lobby-seat__copy">
           <View className="lobby-seat__name-row">
@@ -165,7 +175,7 @@ function LobbySeat({
           <Text className="lobby-seat__meta">
             {seat.occupied ? (
               <>
-                <Text>积分 {seat.score}</Text>
+                <Text>牌桌分 {seat.score}</Text>
                 <Text
                   className={`lobby-seat__inline-state${seat.ready ? " is-ready" : ""}${
                     seat.connected ? "" : " is-offline"
@@ -361,8 +371,9 @@ export default function RoomPage() {
   // room state from wx storage set by the create/join flow, so a cold-start
   // deep link straight into /pages/room/index has nothing to hydrate from.
   useShareAppMessage(() => ({
-    title: room !== null ? `晃晃麻将 · 房间 ${room.roomCode}` : "晃晃麻将 · 一起来打牌",
-    path: room !== null ? `/pages/index/index?code=${room.roomCode}` : "/pages/index/index",
+    title: room?.mode === "FRIEND" ? `晃晃麻将 · 房间 ${room.roomCode}` : "晃晃麻将 · 一起来打牌",
+    path:
+      room?.mode === "FRIEND" ? `/pages/index/index?code=${room.roomCode}` : "/pages/index/index",
   }));
 
   const self = room === null ? null : selfPlayer(room);
@@ -543,6 +554,54 @@ export default function RoomPage() {
     await roomCtrl.send(action);
   }
 
+  async function continueCompetitiveMatch() {
+    const matchId = room?.competitiveMatch?.matchId;
+    if (matchId === undefined) return;
+    try {
+      Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+      const response = await competitiveApi.queue(matchId);
+      if (response.room !== null) {
+        Taro.setStorageSync("huanghuang_open_room", response.room);
+        await Taro.reLaunch({ url: "/pages/room/index" });
+      } else {
+        await Taro.reLaunch({ url: "/pages/index/index" });
+      }
+    } catch {
+      await Taro.showToast({ title: "继续匹配失败，请重试", icon: "none" });
+    }
+  }
+
+  async function returnFromCompetitiveMatch() {
+    const matchId = room?.competitiveMatch?.matchId;
+    if (matchId === undefined) return;
+    try {
+      Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+      await competitiveApi.acknowledge(matchId);
+      await Taro.reLaunch({ url: "/pages/index/index" });
+    } catch {
+      await Taro.showToast({ title: "返回大厅失败，请重试", icon: "none" });
+    }
+  }
+
+  async function leaveCurrentRoom() {
+    if (room === null) return;
+    if (room.mode === "MATCH" && room.stage === "PLAYING") {
+      const result = await Taro.showModal({
+        title: "退出竞技对局？",
+        content: "退出后本局将由系统托管，仍会正常结算段位。",
+        confirmText: "退出并托管",
+        cancelText: "继续对局",
+      });
+      if (!result.confirm) return;
+      const matchId = room.competitiveMatch?.matchId;
+      if (matchId !== undefined) Taro.setStorageSync(TRUSTEE_MATCH_STORAGE_KEY, matchId);
+    }
+    await roomCtrl.leaveRoom();
+    if (room.mode === "MATCH") {
+      await Taro.reLaunch({ url: "/pages/index/index" });
+    }
+  }
+
   function onTilePress(tile: Tile) {
     if (room === null) return;
     const decision = decideTilePress({
@@ -593,7 +652,7 @@ export default function RoomPage() {
               className="lobby-toolbar__button"
               hoverClass="is-pressed"
               disabled={roomCtrl.busy}
-              onClick={() => void roomCtrl.leaveRoom()}
+              onClick={() => void leaveCurrentRoom()}
             >
               离开
             </Button>
@@ -659,7 +718,7 @@ export default function RoomPage() {
               className="leave-fab"
               hoverClass="is-pressed"
               disabled={roomCtrl.busy}
-              onClick={() => void roomCtrl.leaveRoom()}
+              onClick={() => void leaveCurrentRoom()}
             >
               离开
             </Button>
@@ -673,7 +732,11 @@ export default function RoomPage() {
             </Button>
             <View className="info-capsule">
               <Text className="info-capsule__code">
-                {room.mode === "BOT" ? "人机对战" : room.roomCode}
+                {room.mode === "BOT"
+                  ? "人机对战"
+                  : room.mode === "MATCH"
+                    ? "竞技匹配"
+                    : room.roomCode}
               </Text>
               <Text className="info-capsule__meta">底分{room.baseScore}</Text>
               <Text className="info-capsule__meta">出牌{room.turnTimeoutSeconds}秒</Text>
@@ -742,6 +805,7 @@ export default function RoomPage() {
                       connected: seat.connected,
                       isSelf: seat.isSelf,
                       isOwner: seat.isOwner,
+                      competitiveProfile: seat.competitiveProfile,
                     });
                   }}
                 />
@@ -842,6 +906,18 @@ export default function RoomPage() {
                           nickname={player.nickname}
                           isBot={player.controller === "BOT"}
                           variant="player"
+                          onClick={() =>
+                            setProfileTarget({
+                              nickname: player.nickname,
+                              avatarUrl: player.avatarUrl,
+                              score: player.score,
+                              controller: player.controller,
+                              connected: player.connected,
+                              isSelf: seat === room.selfSeat,
+                              isOwner: false,
+                              competitiveProfile: player.competitiveProfile,
+                            })
+                          }
                         />
                         <View className="player-station__copy">
                           <Text
@@ -855,6 +931,7 @@ export default function RoomPage() {
                                 connected: player.connected,
                                 isSelf: seat === room.selfSeat,
                                 isOwner: false,
+                                competitiveProfile: player.competitiveProfile,
                               })
                             }
                           >
@@ -862,7 +939,7 @@ export default function RoomPage() {
                           </Text>
                           <View className="player-station__stats">
                             <Text className="player-station__stat player-station__stat--score">
-                              积分 {player.score}
+                              牌桌分 {player.score}
                             </Text>
                             <Text className="player-station__stat player-station__stat--multiplier">
                               ×{player.personalMultiplier}
@@ -1121,8 +1198,12 @@ export default function RoomPage() {
                 wildcardKind={room.wildcardKind}
                 mode={room.mode}
                 busy={roomCtrl.busy}
-                onContinue={() => void roomCtrl.continueBot()}
-                onLeave={() => void roomCtrl.leaveRoom()}
+                onContinue={() =>
+                  void (room.mode === "MATCH" ? continueCompetitiveMatch() : roomCtrl.continueBot())
+                }
+                onLeave={() =>
+                  void (room.mode === "MATCH" ? returnFromCompetitiveMatch() : leaveCurrentRoom())
+                }
               />
             ) : null}
           </>
@@ -1138,6 +1219,7 @@ export default function RoomPage() {
           connected={profileTarget.connected}
           isSelf={profileTarget.isSelf}
           isOwner={profileTarget.isOwner}
+          competitiveProfile={profileTarget.competitiveProfile}
           onClose={() => setProfileTarget(null)}
         />
       ) : null}

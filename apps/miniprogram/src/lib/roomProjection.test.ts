@@ -3,24 +3,26 @@ import { describe, expect, it } from "vitest";
 import { normalizeRoomProjection } from "./roomProjection.js";
 
 describe("normalizeRoomProjection", () => {
-  it("defaults a schema 5 projection without effectCue to null", () => {
+  it("upgrades a legacy projection with competitive defaults", () => {
     const legacyProjection = {
-      schemaVersion: 5,
+      schemaVersion: 8,
       roomId: "legacy-room",
     } as unknown as RoomProjection;
 
     expect(normalizeRoomProjection(legacyProjection)).toEqual({
-      schemaVersion: 5,
+      schemaVersion: 9,
       roomId: "legacy-room",
       effectCue: null,
+      competitiveMatch: null,
     });
   });
 
-  it("preserves a current projection that already defines effectCue", () => {
+  it("preserves a current projection that already defines v9 fields", () => {
     const projection = {
-      schemaVersion: 8,
+      schemaVersion: 9,
       effectCue: null,
-    } as RoomProjection;
+      competitiveMatch: null,
+    } as unknown as RoomProjection;
 
     expect(normalizeRoomProjection(projection)).toBe(projection);
   });

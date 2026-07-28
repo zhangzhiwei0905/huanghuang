@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify atomic match/action/settlement persistence and additive migrations"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify stable REST and Socket failures"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify command, effect, trustee, settlement and privacy invariants"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify authoritative recovery and projection monotonicity"}
+{"file":".trellis/spec/frontend/miniprogram.md","reason":"Verify WeChat build, networking and landscape UI constraints"}
+{"file":".trellis/tasks/07-28-quick-match-ranking/prd.md","reason":"Verify every acceptance criterion"}
+{"file":".trellis/tasks/07-28-quick-match-ranking/design.md","reason":"Verify architecture boundaries and rollback constraints"}

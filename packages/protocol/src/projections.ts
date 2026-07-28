@@ -1,4 +1,10 @@
 import type { BotDifficulty, RoomMode, TurnTimeoutSeconds } from "./commands.js";
+import type {
+  CompetitiveMatchProjection,
+  CompetitiveMultiplier,
+  CompetitiveSettlementProjection,
+  PublicCompetitiveProfile,
+} from "./competitive.js";
 import type { BaseScore, Meld, PersonalMultiplier, Seat, Tile, TileKind, WinType } from "./game.js";
 
 export type PlayerController = "HUMAN" | "BOT" | "TRUSTEE";
@@ -16,10 +22,12 @@ export type PlayerProjection = {
   releasedWildcards: Tile[];
   personalMultiplier: PersonalMultiplier;
   score: number;
+  competitiveProfile: PublicCompetitiveProfile | null;
 };
 
 export type RoomStage = "WAITING" | "PLAYING" | "ROUND_RESULT";
-export type RoomCloseReason = "OWNER_DISSOLVED" | "WAITING_TIMEOUT" | "EMPTY_ROOM";
+export type RoomCloseReason =
+  "OWNER_DISSOLVED" | "WAITING_TIMEOUT" | "EMPTY_ROOM" | "MATCH_SETTLED";
 
 export type ChatMessageProjection = {
   id: string;
@@ -41,6 +49,7 @@ export type LobbySeatProjection = {
   isOwner: boolean;
   isSelf: boolean;
   score: number;
+  competitiveProfile: PublicCompetitiveProfile | null;
 };
 
 export type SpectatorProjection = {
@@ -58,7 +67,8 @@ export type RoundSettlementProjection = {
   baseScore: BaseScore;
   /** Win-type multiplier only: 2 for a hard win, 1 for a soft win. */
   winBaseMultiplier: 1 | 2 | null;
-  winnerMultiplier: PersonalMultiplier | null;
+  /** Authoritative win-base x laiyou x winner personal multiplier. */
+  winnerMultiplier: CompetitiveMultiplier | null;
   /**
    * True when the winning tile was the one drawn right after releasing a
    * wildcard ("来由"). `winType` doubles as the laiyou class: HARD is 硬来由,
@@ -71,6 +81,8 @@ export type RoundSettlementProjection = {
   payments: {
     payerSeat: Seat;
     payerMultiplier: PersonalMultiplier;
+    /** Authoritative self-draw payment divided by the round base score. */
+    payerEffectiveMultiplier: CompetitiveMultiplier;
     amount: number;
   }[];
   finalHands: {
@@ -83,6 +95,7 @@ export type RoundSettlementProjection = {
     roundDelta: number;
     totalScore: number;
   }[];
+  competitiveSettlement: CompetitiveSettlementProjection | null;
 };
 
 export type GameEffectAction = Meld["kind"] | "RELEASE_WILDCARD" | "WIN";
@@ -112,7 +125,7 @@ export type DiscardTingProjection = {
 };
 
 export type RoomProjection = {
-  schemaVersion: 8;
+  schemaVersion: 9;
   roomId: string;
   roomCode: string;
   version: number;
@@ -120,6 +133,7 @@ export type RoomProjection = {
   turnTimeoutSeconds: TurnTimeoutSeconds;
   botDifficulty: BotDifficulty;
   mode: RoomMode;
+  competitiveMatch: CompetitiveMatchProjection | null;
   stage: RoomStage;
   roundId: string | null;
   roundStartedAt: string | null;

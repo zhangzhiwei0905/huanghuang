@@ -6,6 +6,7 @@ import {
   readyRoomSchema,
   removeRoomBotSchema,
   roomCodeSchema,
+  roomModeSchema,
   updateRoomSettingsSchema,
 } from "./commands.js";
 
@@ -57,6 +58,13 @@ describe("room interaction schemas", () => {
         botDifficulty: "LOW",
       }).success,
     ).toBe(true);
+  });
+
+  it("decodes MATCH room projections without allowing clients to create MATCH rooms", () => {
+    expect(roomModeSchema.parse("MATCH")).toBe("MATCH");
+    expect(
+      createRoomSchema.safeParse({ nickname: "玩家", baseScore: 2, mode: "MATCH" }).success,
+    ).toBe(false);
   });
 
   it("accepts new four-digit room codes and active legacy six-digit codes", () => {

@@ -11,6 +11,19 @@ pnpm build
 
 Pure game modules require positive, negative, and boundary tests. Settlement functions assert zero-sum output. Randomness and time must be injected into the engine.
 
+## Competitive matchmaking and rank settlement
+
+- `MATCH` rooms are server-created only: four linked WeChat sessions, fixed base score 2, 20-second turns, no bots, no lobby/ready/settings/chat/dissolve path, and exactly one round.
+- Queue compatibility is mutual. Rank distance expands at 10/20/40 seconds; only online rows with unchanged queue versions can enter an atomic four-player match transaction.
+- HTTP status polling is a matchmaking heartbeat. After 3 seconds without a heartbeat, the row enters a 10-second disconnect grace; reconnect clears `disconnected_at` without resetting `enqueued_at`.
+- Global session presence and per-room subscription presence are separate. Only the first/last subscription for `(room, session)` changes HUMAN/TRUSTEE control; a lobby Socket must not restore manual room control.
+- Every accepted human or automatic action follows clone → derive facts → `saveAcceptedTransition` → replace live room. Never mutate the live MATCH room before SQLite commits.
+- Competitive rank uses the shared pure transition module. Winner level change uses the authoritative public win multiplier; each payer uses `payment / baseScore`. Kong transfers and `roundDelta` never feed rank.
+- A win stays `ACTIVE` while the persisted win effect is pending. The effect-completion tick commits the visible result snapshot and rank settlement together; a draw settles in its accepted transition.
+- Achievement facts are limited to four MATCH actions and deduplicated by server round/version before counters increment.
+- A settled result remains recoverable until each player acknowledges it. Continue matchmaking atomically acknowledges and enqueues. All acknowledgements or the 24-hour retention boundary close the room; timeout acknowledgement releases abandoned results.
+- Rank level, table score and any future rechargeable balance are separate ledgers. This project has no wallet or recharge path.
+
 ## Room turn-duration configuration
 
 - `packages/protocol/src/commands.ts` owns the only allowed values:
