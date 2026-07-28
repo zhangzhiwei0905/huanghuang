@@ -11,7 +11,14 @@ import type {
   TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
-import { ApiError, competitiveApi, roomApi, type MatchmakingResponse } from "../../api/http";
+import {
+  ApiError,
+  competitiveApi,
+  getStoredMatchmakingAllowBots,
+  roomApi,
+  setStoredMatchmakingAllowBots,
+  type MatchmakingResponse,
+} from "../../api/http";
 import { API_BASE } from "../../config";
 import {
   clearStoredSessionToken,
@@ -225,6 +232,8 @@ export default function IndexPage() {
   const [matchmakingNow, setMatchmakingNow] = useState(Date.now());
   const [matchmakingBusy, setMatchmakingBusy] = useState(false);
   const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
+  const [botsEnabled, setBotsEnabled] = useState(false);
+  const [allowBots, setAllowBots] = useState(getStoredMatchmakingAllowBots());
   const matchedRoomOpeningRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -245,6 +254,7 @@ export default function IndexPage() {
   function applyMatchmakingResponse(response: MatchmakingResponse): void {
     setMatchmaking(response.state);
     setMatchmakingNow(Date.now());
+    if (response.botsEnabled) setBotsEnabled(true);
     if (response.state.status !== "MATCHED" || response.room === null) return;
     const trusteeMatchId = Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
     const deliberatelyTrustee =
@@ -366,7 +376,7 @@ export default function IndexPage() {
     setMatchmakingBusy(true);
     setMatchmakingError(null);
     try {
-      applyMatchmakingResponse(await competitiveApi.queue());
+      applyMatchmakingResponse(await competitiveApi.queue({ allowBots: allowBots && botsEnabled }));
     } catch (cause) {
       setMatchmakingError(describeSubmitError(cause));
     } finally {
@@ -385,6 +395,14 @@ export default function IndexPage() {
     } finally {
       setMatchmakingBusy(false);
     }
+  }
+
+  function toggleAllowBots() {
+    setAllowBots((previous) => {
+      const next = !previous;
+      setStoredMatchmakingAllowBots(next);
+      return next;
+    });
   }
 
   function logout() {
@@ -522,7 +540,7 @@ export default function IndexPage() {
                 ? "正在处理…"
                 : matchmaking.status === "MATCHED"
                   ? "返回对局"
-                  : "快速开始"}
+                  : "排位赛"}
             </Button>
             <Button
               hoverClass="is-pressed"
@@ -549,6 +567,15 @@ export default function IndexPage() {
               加入房间
             </Button>
           </View>
+          {botsEnabled && matchmaking.status !== "MATCHED" ? (
+            <View
+              className={`mp-home__toggle${allowBots ? " is-on" : ""}`}
+              onClick={() => toggleAllowBots()}
+            >
+              <View className="mp-home__toggle-box">{allowBots ? <Text>✓</Text> : null}</View>
+              <Text className="mp-home__toggle-label">允许机器人（体验期秒开）</Text>
+            </View>
+          ) : null}
           {matchmakingError !== null ? (
             <Text className="mp-matchmaking__error">{matchmakingError}</Text>
           ) : null}
@@ -676,7 +703,11 @@ export default function IndexPage() {
             {matchmaking.disconnectedAt !== null ? (
               <Text className="mp-matchmaking__notice">连接暂时中断，正在保留排队位置</Text>
             ) : (
-              <Text className="mp-matchmaking__notice">仅匹配四名真人玩家</Text>
+              <Text className="mp-matchmaking__notice">
+                {allowBots && botsEnabled
+                  ? "已加入机器人，预计立刻开局"
+                  : "仅匹配四名真人玩家"}
+              </Text>
             )}
             {matchmakingError !== null ? (
               <Text className="mp-matchmaking__error">{matchmakingError}</Text>

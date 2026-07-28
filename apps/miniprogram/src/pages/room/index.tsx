@@ -13,7 +13,7 @@ import type {
   Tile,
 } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
-import { competitiveApi } from "../../api/http";
+import { competitiveApi, getStoredMatchmakingAllowBots } from "../../api/http";
 import { API_BASE } from "../../config";
 import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
@@ -559,7 +559,10 @@ export default function RoomPage() {
     if (matchId === undefined) return;
     try {
       Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
-      const response = await competitiveApi.queue(matchId);
+      const response = await competitiveApi.queue({
+        previousMatchId: matchId,
+        allowBots: getStoredMatchmakingAllowBots(),
+      });
       if (response.room !== null) {
         Taro.setStorageSync("huanghuang_open_room", response.room);
         await Taro.reLaunch({ url: "/pages/room/index" });

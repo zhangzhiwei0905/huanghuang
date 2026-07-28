@@ -108,6 +108,20 @@ export type CreateCompetitiveMatchInput = {
   players: readonly { sessionId: string; seat: number; queueVersion: number }[];
 };
 
+/**
+ * Variant of {@link CreateCompetitiveMatchInput} for an experience-phase bot
+ * match: one real queued human plus three preset ranked bot accounts. Bots
+ * never queue, so only the human carries a `queueVersion`; the match-creation
+ * transaction deletes just that one queue entry.
+ */
+export type CreateCompetitiveMatchWithBotsInput = {
+  match: CreateCompetitiveMatchInput["match"];
+  room: RoomSnapshotInput;
+  stateJson: string;
+  humanPlayer: { sessionId: string; seat: number; queueVersion: number };
+  botPlayers: readonly { sessionId: string; seat: number }[];
+};
+
 export type CompetitiveActionEventInput = {
   eventKey: string;
   matchId: string;
@@ -503,6 +517,65 @@ export class GameDatabase {
     return profile;
   }
 
+  /**
+   * Idempotently seed a preset ranked bot account (anonymous session + a
+   * competitive profile whose rank starts at the configured level). The rank
+   * is only written when the profile is brand new, so a server restart never
+   * clobbers a rank the bot earned through real settlement.
+   */
+  ensureRankedBotSession(bot: {
+    id: string;
+    nickname: string;
+    avatarUrl: string | null;
+    rankLevel: number;
+  }): CompetitiveProfileRow {
+    const now = new Date().toISOString();
+    // Bots never log in, so they carry no usable token hash; a stable
+    // placeholder keeps the NOT NULL column populated without colliding with
+    // real session tokens.
+    this.connection
+      .prepare(
+        `INSERT OR IGNORE INTO anonymous_sessions
+         (id, token_hash, nickname, wechat_open_id, avatar_url, created_at, last_seen_at)
+         VALUES (?, ?, ?, NULL, ?, ?, ?)`,
+      )
+      .run(bot.id, `bot:${bot.id}`, bot.nickname, bot.avatarUrl, now, now);
+    const inserted = this.connection
+      .prepare(
+        `INSERT OR IGNORE INTO competitive_profiles
+         (session_id, created_at, updated_at)
+         VALUES (?, ?, ?)`,
+      )
+      .run(bot.id, now, now);
+    if (inserted.changes === 1) {
+      this.connection
+        .prepare(
+          `UPDATE competitive_profiles
+           SET rank_level = ?, updated_at = ?
+           WHERE session_id = ?`,
+        )
+        .run(bot.rankLevel, now, bot.id);
+    }
+    const profile = this.getCompetitiveProfile(bot.id);
+    if (profile === null) throw new Error(`Unable to ensure ranked bot profile for ${bot.id}`);
+    return profile;
+  }
+
+  hasActiveCompetitiveMatch(sessionId: string): boolean {
+    const row = this.connection
+      .prepare(
+        `SELECT 1
+         FROM competitive_matches
+         JOIN competitive_match_players
+           ON competitive_match_players.match_id = competitive_matches.id
+         WHERE competitive_match_players.session_id = ?
+           AND competitive_matches.status = 'ACTIVE'
+         LIMIT 1`,
+      )
+      .get(sessionId);
+    return row !== undefined;
+  }
+
   getCompetitiveProfile(sessionId: string): CompetitiveProfileRow | null {
     const row = this.connection
       .prepare(
@@ -736,6 +809,90 @@ export class GameDatabase {
       if (deleted !== 4) {
         throw new Error(
           `Competitive match creation expected four current online queue entries, deleted ${deleted}`,
+        );
+      }
+      const settlement = this.getCompetitiveMatchSettlement(input.match.id);
+      if (settlement === null) throw new Error("Competitive match was not persisted");
+      return settlement;
+    })();
+  }
+
+  /**
+   * Create a competitive match between one queued human and three preset
+   * ranked bots. Identical to {@link createCompetitiveMatch} except only the
+   * human's queue entry is deleted (bots never queue), so the optimistic
+   * delete count is 1 instead of 4. The active-match guard still covers all
+   * four sessions, which is what prevents two simultaneous bot matches from
+   * double-booking the shared bot accounts.
+   */
+  createCompetitiveMatchWithBots(input: CreateCompetitiveMatchWithBotsInput): CompetitiveMatchSettlement {
+    const allPlayers = [input.humanPlayer, ...input.botPlayers];
+    assertFourUniquePlayers(allPlayers);
+    if (input.room.id !== input.match.roomId) {
+      throw new Error("Competitive match roomId must equal the persisted room id");
+    }
+    if (input.botPlayers.length !== 3) {
+      throw new Error("A competitive bot match requires exactly three bot players");
+    }
+    return this.connection.transaction(() => {
+      const sessionIds = allPlayers.map((player) => player.sessionId);
+      const placeholders = sessionIds.map(() => "?").join(", ");
+      const activeMatch = this.connection
+        .prepare(
+          `SELECT competitive_match_players.session_id AS sessionId
+           FROM competitive_match_players
+           JOIN competitive_matches
+             ON competitive_matches.id = competitive_match_players.match_id
+           WHERE competitive_matches.status = 'ACTIVE'
+             AND competitive_match_players.session_id IN (${placeholders})
+           LIMIT 1`,
+        )
+        .get(...sessionIds) as { sessionId: string } | undefined;
+      if (activeMatch !== undefined) {
+        throw new Error(`Session ${activeMatch.sessionId} already has an active competitive match`);
+      }
+
+      const profiles = new Map(
+        sessionIds.map((sessionId) => {
+          const profile = this.ensureCompetitiveProfile(sessionId);
+          return [sessionId, profile] as const;
+        }),
+      );
+      this.saveRoom(input.room, input.stateJson);
+      const createdAt = input.match.createdAt ?? new Date().toISOString();
+      this.connection
+        .prepare(
+          `INSERT INTO competitive_matches
+           (id, room_id, round_id, rule_version, status, result_json, created_at, settled_at)
+           VALUES (?, ?, ?, ?, 'ACTIVE', NULL, ?, NULL)`,
+        )
+        .run(
+          input.match.id,
+          input.match.roomId,
+          input.match.roundId,
+          input.match.ruleVersion,
+          createdAt,
+        );
+      const insertPlayer = this.connection.prepare(
+        `INSERT INTO competitive_match_players
+         (match_id, session_id, seat, pre_rank_level)
+         VALUES (?, ?, ?, ?)`,
+      );
+      for (const player of allPlayers) {
+        const profile = profiles.get(player.sessionId);
+        if (profile === undefined)
+          throw new Error("Missing competitive profile during match creation");
+        insertPlayer.run(input.match.id, player.sessionId, player.seat, profile.rankLevel);
+      }
+      const deleted = this.connection
+        .prepare(
+          `DELETE FROM matchmaking_entries
+           WHERE session_id = ? AND version = ? AND disconnected_at IS NULL`,
+        )
+        .run(input.humanPlayer.sessionId, input.humanPlayer.queueVersion).changes;
+      if (deleted !== 1) {
+        throw new Error(
+          `Competitive bot match creation expected one current online queue entry, deleted ${deleted}`,
         );
       }
       const settlement = this.getCompetitiveMatchSettlement(input.match.id);

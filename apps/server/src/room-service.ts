@@ -209,6 +209,28 @@ function botSeat(seat: Seat): SeatController {
   };
 }
 
+/**
+ * A ranked bot seat for experience-phase MATCH rooms. Unlike {@link botSeat}
+ * this seat carries a real session id (and competitive profile), so the
+ * competitive settlement pipeline — which requires every seat to resolve to a
+ * profile — can apply rank transitions and achievements to the bot just like
+ * a human. The `BOT` controller still routes the seat through the bot AI on
+ * each turn deadline.
+ */
+function rankedBotSeat(
+  seat: Seat,
+  bot: Pick<AnonymousSession, "id" | "nickname" | "avatarUrl">,
+): SeatController {
+  return {
+    seat,
+    sessionId: bot.id,
+    nickname: bot.nickname,
+    avatarUrl: bot.avatarUrl ?? null,
+    controller: "BOT",
+    connected: true,
+  };
+}
+
 function humanSeat(
   seat: Seat,
   session: Pick<AnonymousSession, "id" | "nickname" | "avatarUrl">,
@@ -1088,9 +1110,27 @@ export class RoomService {
             room.competitiveMatch.matchId,
           );
           if (settlement?.match.status === "SETTLED") {
-            const allAcknowledged = settlement.players.every(
-              (player) => player.acknowledgedAt !== null,
+            // Experience-phase bot seats never acknowledge on their own (they
+            // have no client). Auto-ack them here so a ranked bot match closes
+            // promptly once its human player acknowledges, instead of lingering
+            // for the full 24h retention window and keeping the bot accounts
+            // pinned to a settled match.
+            const ackedAt = new Date(now).toISOString();
+            for (const seat of SEATS) {
+              const controller = room.seats[seat];
+              if (controller.controller === "BOT" && controller.sessionId !== null) {
+                this.database.acknowledgeCompetitiveMatchResult(
+                  settlement.match.id,
+                  controller.sessionId,
+                  ackedAt,
+                );
+              }
+            }
+            const refreshed = this.database.getCompetitiveMatchSettlement(
+              room.competitiveMatch.matchId,
             );
+            const allAcknowledged =
+              refreshed?.players.every((player) => player.acknowledgedAt !== null) ?? false;
             const expired =
               settlement.match.settledAt !== null &&
               Date.parse(settlement.match.settledAt) + MATCH_SETTLEMENT_RETENTION_MS <= now;
@@ -1256,6 +1296,107 @@ export class RoomService {
         seat,
         queueVersion: entry.version,
       })),
+    });
+    this.roomsByCode.set(room.code, room);
+    return room;
+  }
+
+  /**
+   * Create a MATCH room for one real human and three preset ranked bots.
+   * Mirrors {@link createCompetitiveMatch} but seats the bots with
+   * {@link rankedBotSeat} so they keep a real session id (settlement works)
+   * while still being driven by the bot AI. Seat order is shuffled so the
+   * human is not always dealer-adjacent to the same bot.
+   */
+  createCompetitiveMatchWithBots(
+    humanSession: AnonymousSession,
+    humanEntry: MatchmakingEntryRow,
+    botSessions: readonly AnonymousSession[],
+  ): RoomState {
+    if (botSessions.length !== 3) {
+      throw new Error("A competitive bot match requires exactly three bot sessions");
+    }
+    const matchId = randomUUID();
+    // Shuffle the four identities into seats 0..3.
+    const identities: AnonymousSession[] = [humanSession, ...botSessions];
+    for (let index = identities.length - 1; index > 0; index -= 1) {
+      const swapIndex = randomInt(index + 1);
+      const current = identities[index];
+      const swap = identities[swapIndex];
+      if (current === undefined || swap === undefined) {
+        throw new Error("Invalid competitive bot seat shuffle");
+      }
+      identities[index] = swap;
+      identities[swapIndex] = current;
+    }
+    const botsById = new Map(botSessions.map((bot) => [bot.id, bot] as const));
+    const isBot = (session: AnonymousSession): boolean => botsById.has(session.id);
+    const seats = {} as Record<Seat, SeatController>;
+    let humanSeatIndex: Seat | null = null;
+    // A plain for loop (not forEach) so TypeScript's control-flow analysis
+    // tracks that `humanSeatIndex` can be assigned inside the body — a
+    // callback-mutated variable stays narrowed to its initializer otherwise.
+    for (let index = 0; index < SEATS.length; index += 1) {
+      const seat = SEATS[index];
+      if (seat === undefined) throw new Error("Competitive bot seat assignment is incomplete");
+      const identity = identities[index];
+      if (identity === undefined) throw new Error("Competitive bot seat assignment is incomplete");
+      if (isBot(identity)) {
+        seats[seat] = rankedBotSeat(seat, identity);
+      } else {
+        seats[seat] = humanSeat(seat, identity);
+        humanSeatIndex = seat;
+      }
+    }
+    if (humanSeatIndex === null) throw new Error("Competitive bot match is missing its human seat");
+
+    const room: RoomState = {
+      id: randomUUID(),
+      code: this.nextRoomCode(),
+      ownerSessionId: humanSession.id,
+      baseScore: 2,
+      turnTimeoutSeconds: 20,
+      botDifficulty: "HIGH",
+      status: "ACTIVE",
+      version: 0,
+      dissolveAfterRound: false,
+      closeReason: null,
+      mode: "MATCH",
+      stage: "PLAYING",
+      seats,
+      readySessionIds: [],
+      spectators: [],
+      scores: { ...ZERO_SCORES },
+      fullTableScoreResetDone: false,
+      nextDealerSeat: randomInt(4) as Seat,
+      round: null,
+      roundStartedAt: null,
+      waitingExpiresAt: null,
+      actionDeadlineAt: null,
+      nextRoundAt: null,
+      pendingEffectTransition: null,
+      competitiveMatch: { matchId, ruleVersion: COMPETITIVE_RULE_VERSION },
+    };
+    this.startRound(room);
+    const round = room.round;
+    if (round === null) throw new Error("Competitive bot room failed to start its round");
+    const botPlayers = SEATS.flatMap((seat) => {
+      const controller = room.seats[seat];
+      return controller.controller === "BOT" && controller.sessionId !== null
+        ? [{ sessionId: controller.sessionId, seat }]
+        : [];
+    });
+    this.database.createCompetitiveMatchWithBots({
+      match: {
+        id: matchId,
+        roomId: room.id,
+        roundId: round.id,
+        ruleVersion: COMPETITIVE_RULE_VERSION,
+      },
+      room,
+      stateJson: JSON.stringify(room),
+      humanPlayer: { sessionId: humanSession.id, seat: humanSeatIndex, queueVersion: humanEntry.version },
+      botPlayers,
     });
     this.roomsByCode.set(room.code, room);
     return room;

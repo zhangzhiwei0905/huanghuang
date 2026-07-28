@@ -11,6 +11,18 @@ type CompetitiveRoomCreator = (
   now: number,
 ) => { matchId: string; roomId: string };
 
+type CompetitiveBotRoomCreator = (
+  human: { session: AnonymousSession; entry: MatchmakingEntryRow },
+  bots: readonly AnonymousSession[],
+  now: number,
+) => { matchId: string; roomId: string };
+
+export type MatchmakingBotOptions = {
+  enabled: boolean;
+  bots: readonly AnonymousSession[];
+  createRoom: CompetitiveBotRoomCreator;
+};
+
 export type MatchmakingTickResult = {
   changedSessionIds: string[];
   matches: { matchId: string; roomId: string; sessionIds: string[] }[];
@@ -19,12 +31,23 @@ export type MatchmakingTickResult = {
 export class MatchmakingService {
   private ticking = false;
   private readonly heartbeatAtBySessionId = new Map<string, number>();
+  // Experience-phase per-session "allow bots" preference. Acted on inside
+  // tick() the moment bots are free, so it never needs to survive a restart —
+  // a cold start simply drops pending preferences and the player re-queues.
+  private readonly allowBotsBySessionId = new Map<string, boolean>();
 
   constructor(
     private readonly database: GameDatabase,
     private readonly isSessionOnline: (sessionId: string) => boolean,
     private readonly createCompetitiveRoom: CompetitiveRoomCreator,
     startupAt = Date.now(),
+    private readonly botOptions: MatchmakingBotOptions = {
+      enabled: false,
+      bots: [],
+      createRoom: () => {
+        throw new Error("Bot matchmaking is not configured");
+      },
+    },
   ) {
     this.database.markAllMatchmakingEntriesDisconnected(new Date(startupAt).toISOString());
   }
@@ -71,7 +94,7 @@ export class MatchmakingService {
     return this.getState(sessionId);
   }
 
-  enqueue(session: AnonymousSession, now = Date.now()): MatchmakingState {
+  enqueue(session: AnonymousSession, now = Date.now(), allowBots = false): MatchmakingState {
     this.assertWechatLinked(session);
     this.heartbeatAtBySessionId.set(session.id, now);
     const current = this.database.getCurrentCompetitiveMatch(session.id);
@@ -82,6 +105,7 @@ export class MatchmakingService {
       rankLevelSnapshot: profile.rankLevel,
       enqueuedAt: new Date(now).toISOString(),
     });
+    this.allowBotsBySessionId.set(session.id, allowBots && this.botOptions.enabled);
     return this.getState(session.id);
   }
 
@@ -89,6 +113,7 @@ export class MatchmakingService {
     session: AnonymousSession,
     previousMatchId: string,
     now = Date.now(),
+    allowBots = false,
   ): MatchmakingState {
     this.assertWechatLinked(session);
     this.heartbeatAtBySessionId.set(session.id, now);
@@ -97,6 +122,7 @@ export class MatchmakingService {
       session.id,
       new Date(now).toISOString(),
     );
+    this.allowBotsBySessionId.set(session.id, allowBots && this.botOptions.enabled);
     return this.getState(session.id);
   }
 
@@ -115,6 +141,7 @@ export class MatchmakingService {
       return this.getState(sessionId);
     }
     this.database.cancelMatchmakingEntry(sessionId);
+    this.allowBotsBySessionId.delete(sessionId);
     return { status: "IDLE" };
   }
 
@@ -153,6 +180,45 @@ export class MatchmakingService {
       );
       const matches: MatchmakingTickResult["matches"] = [];
 
+      // Experience-phase bot matching: a queued player who opted into bots is
+      // matched immediately against the three preset ranked bots (if they are
+      // all free). Only one bot match can run at a time because the bots are
+      // shared, so the first successful match breaks and any other bot-opted
+      // players simply wait for the next tick.
+      if (this.botOptions.enabled && this.botOptions.bots.length === 3) {
+        const botEntries = this.database
+          .listMatchmakingEntries()
+          .filter(
+            (entry) =>
+              entry.disconnectedAt === null &&
+              this.isOnline(entry.sessionId, now) &&
+              this.allowBotsBySessionId.get(entry.sessionId) === true,
+          )
+          .sort((a, b) => a.enqueuedAt.localeCompare(b.enqueuedAt));
+        for (const entry of botEntries) {
+          if (this.botOptions.bots.some((bot) => this.database.hasActiveCompetitiveMatch(bot.id))) {
+            break; // bots are in another match; stop trying this tick
+          }
+          const session = this.database.findSessionsByIds([entry.sessionId])[0];
+          if (session?.wechatOpenId == null) continue;
+          try {
+            const match = this.botOptions.createRoom({ session, entry }, this.botOptions.bots, now);
+            matches.push({ ...match, sessionIds: [session.id] });
+            changedSessionIds.push(session.id);
+            this.allowBotsBySessionId.delete(session.id);
+            break; // bots are now booked for this tick
+          } catch (cause) {
+            if (
+              cause instanceof Error &&
+              cause.message.includes("already has an active competitive match")
+            ) {
+              break; // lost a race for the bots; retry next tick
+            }
+            throw cause;
+          }
+        }
+      }
+
       for (;;) {
         const entries = this.database
           .listMatchmakingEntries()
@@ -190,6 +256,7 @@ export class MatchmakingService {
           const match = this.createCompetitiveRoom(players, now);
           matches.push({ ...match, sessionIds });
           changedSessionIds.push(...sessionIds);
+          for (const sessionId of sessionIds) this.allowBotsBySessionId.delete(sessionId);
         } catch (cause) {
           // Queue-version and online checks inside the creation transaction are
           // authoritative. A conflict leaves every queue row unchanged so the

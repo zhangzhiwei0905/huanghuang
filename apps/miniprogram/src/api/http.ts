@@ -68,6 +68,27 @@ async function request<T>(
 export type MatchmakingResponse = {
   state: MatchmakingState;
   room: RoomProjection | null;
+  // Server-side switch: when false the "allow bots" toggle is hidden and the
+  // queue always waits for four real humans (launch-state safety valve).
+  botsEnabled: boolean;
+};
+
+// The "allow bots" preference is chosen on the home page but must survive the
+// navigation into a match and back, so the post-match "继续匹配" action can
+// re-queue with the same preference without re-prompting.
+const MATCHMAKING_ALLOW_BOTS_STORAGE_KEY = "huanghuang_matchmaking_allow_bots";
+
+export function getStoredMatchmakingAllowBots(): boolean {
+  return Taro.getStorageSync(MATCHMAKING_ALLOW_BOTS_STORAGE_KEY) === true;
+}
+
+export function setStoredMatchmakingAllowBots(value: boolean): void {
+  Taro.setStorageSync(MATCHMAKING_ALLOW_BOTS_STORAGE_KEY, value);
+}
+
+export type MatchmakingQueueOptions = {
+  previousMatchId?: string;
+  allowBots?: boolean;
 };
 
 export const competitiveApi = {
@@ -77,11 +98,11 @@ export const competitiveApi = {
   status(): Promise<MatchmakingResponse> {
     return request("/api/matchmaking/status");
   },
-  queue(previousMatchId?: string): Promise<MatchmakingResponse> {
-    return request("/api/matchmaking/queue", {
-      method: "POST",
-      data: previousMatchId === undefined ? {} : { previousMatchId },
-    });
+  queue(options: MatchmakingQueueOptions = {}): Promise<MatchmakingResponse> {
+    const data: { previousMatchId?: string; allowBots?: boolean } = {};
+    if (options.previousMatchId !== undefined) data.previousMatchId = options.previousMatchId;
+    if (options.allowBots === true) data.allowBots = true;
+    return request("/api/matchmaking/queue", { method: "POST", data });
   },
   cancel(): Promise<MatchmakingResponse> {
     return request("/api/matchmaking/queue", { method: "DELETE" });

@@ -103,6 +103,12 @@ export const competitiveSettlementProjectionSchema = competitiveMatchProjectionS
 
 export const matchmakingQueueInputSchema = z.object({
   previousMatchId: z.string().min(1).optional(),
+  // Experience-phase toggle: when true and the server has ranked bots
+  // enabled, the queued player is matched immediately against three preset
+  // ranked bot accounts instead of waiting for four real humans. The server
+  // ignores this flag when its bot switch is off, so the same client build is
+  // safe to ship after launch.
+  allowBots: z.boolean().optional(),
 });
 
 export const matchmakingStateSchema = z.discriminatedUnion("status", [

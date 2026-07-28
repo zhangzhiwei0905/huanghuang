@@ -19,6 +19,11 @@ import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Server } from "socket.io";
 import { AvatarUploadError, decodeAvatarData, MAX_AVATAR_BASE64_LENGTH } from "./avatar-upload.js";
+import {
+  RANKED_BOTS,
+  matchmakingBotsEnabled,
+  rankedBotSession,
+} from "./competitive-bots.js";
 import { GameDatabase } from "./database.js";
 import { MatchmakingService } from "./matchmaking-service.js";
 import { RoomPresence } from "./room-presence.js";
@@ -54,6 +59,16 @@ const sessions = new SessionService(database);
 const rooms = new RoomService(database);
 const presence = new SessionPresence();
 const roomPresence = new RoomPresence();
+// Seed the preset ranked bot accounts once the database exists so the
+// matchmaking bot path can hand real sessions (with competitive profiles) to
+// the room service. Idempotent — safe on every boot, and only writes the
+// configured rank on first creation so earned rank survives restarts.
+const rankedBotSessions = matchmakingBotsEnabled
+  ? RANKED_BOTS.map((bot) => {
+      database.ensureRankedBotSession(bot);
+      return rankedBotSession(bot);
+    })
+  : [];
 const matchmaking = new MatchmakingService(
   database,
   (sessionId) => presence.isConnected(sessionId),
@@ -65,6 +80,19 @@ const matchmaking = new MatchmakingService(
     const competitiveMatch = room.competitiveMatch;
     if (competitiveMatch === null) throw new Error("Competitive room is missing match metadata");
     return { matchId: competitiveMatch.matchId, roomId: room.id };
+  },
+  Date.now(),
+  {
+    enabled: matchmakingBotsEnabled,
+    bots: rankedBotSessions,
+    createRoom: (human, bots) => {
+      const room = rooms.createCompetitiveMatchWithBots(human.session, human.entry, bots);
+      const competitiveMatch = room.competitiveMatch;
+      if (competitiveMatch === null) {
+        throw new Error("Competitive bot room is missing match metadata");
+      }
+      return { matchId: competitiveMatch.matchId, roomId: room.id };
+    },
   },
 );
 
@@ -93,10 +121,11 @@ const sockets = new Server(app.server, {
 
 function matchmakingResponse(sessionId: string) {
   const state = matchmaking.getState(sessionId);
-  if (state.status !== "MATCHED") return { state, room: null };
+  if (state.status !== "MATCHED") return { state, room: null, botsEnabled: matchmakingBotsEnabled };
   const room = rooms.getRoomById(state.roomId);
   return {
     state,
+    botsEnabled: matchmakingBotsEnabled,
     room:
       room !== null && rooms.hasMember(sessionId, room.code)
         ? rooms.project(room, sessionId)
@@ -296,9 +325,14 @@ app.post("/api/matchmaking/queue", (request, reply) => {
   if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
   try {
     if (parsed.data.previousMatchId === undefined) {
-      matchmaking.enqueue(session);
+      matchmaking.enqueue(session, Date.now(), parsed.data.allowBots === true);
     } else {
-      matchmaking.continueMatchmaking(session, parsed.data.previousMatchId);
+      matchmaking.continueMatchmaking(
+        session,
+        parsed.data.previousMatchId,
+        Date.now(),
+        parsed.data.allowBots === true,
+      );
     }
     matchmaking.tick();
     return matchmakingResponse(session.id);

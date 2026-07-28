@@ -638,9 +638,53 @@
   margin-top: 0.4vmin !important;
 }
 
+.mp-home__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.4vmin;
+  margin-top: 2vmin;
+  padding: 1.4vmin 2.4vmin;
+  border-radius: 2vmin;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  animation: home-rise 380ms cubic-bezier(0.34, 1.4, 0.64, 1) 200ms backwards;
+}
+
+.mp-home__toggle.is-on {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent, #d9b06a);
+}
+
+.mp-home__toggle-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.4vmin;
+  height: 4.4vmin;
+  border-radius: 1.2vmin;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.24));
+  color: #fff;
+  font-size: clamp(12px, 2.8vmin, 16px);
+  line-height: 1;
+}
+
+.mp-home__toggle.is-on .mp-home__toggle-box {
+  background: var(--accent, #d9b06a);
+  border-color: var(--accent, #d9b06a);
+  color: #1a1a1a;
+}
+
+.mp-home__toggle-label {
+  color: var(--ink, #f4efe6);
+  font-size: clamp(11px, 2.3vmin, 14px);
+  opacity: 0.86;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mp-login-layer__scrim,
-  .mp-login-entry__button {
+  .mp-login-entry__button,
+  .mp-home__toggle {
     animation-duration: 1ms;
     animation-iteration-count: 1;
   }
