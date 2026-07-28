@@ -705,7 +705,7 @@ export default function IndexPage() {
             ) : (
               <Text className="mp-matchmaking__notice">
                 {allowBots && botsEnabled
-                  ? "已加入机器人，预计立刻开局"
+                  ? "正在等待其他玩家，5 秒后用机器人补位开局"
                   : "仅匹配四名真人玩家"}
               </Text>
             )}

@@ -1308,17 +1308,34 @@ export class RoomService {
    * while still being driven by the bot AI. Seat order is shuffled so the
    * human is not always dealer-adjacent to the same bot.
    */
+  /**
+   * Create a MATCH room for one to three real humans plus preset ranked bots
+   * filling the remaining seats. Mirrors {@link createCompetitiveMatch} but
+   * seats the bots with {@link rankedBotSeat} so they keep a real session id
+   * (settlement works) while still being driven by the bot AI. Seat order is
+   * shuffled so the humans are not always in fixed positions.
+   */
   createCompetitiveMatchWithBots(
-    humanSession: AnonymousSession,
-    humanEntry: MatchmakingEntryRow,
+    humanSessions: readonly AnonymousSession[],
+    humanEntries: readonly MatchmakingEntryRow[],
     botSessions: readonly AnonymousSession[],
   ): RoomState {
-    if (botSessions.length !== 3) {
-      throw new Error("A competitive bot match requires exactly three bot sessions");
+    if (
+      humanSessions.length < 1 ||
+      humanSessions.length > 3 ||
+      humanEntries.length !== humanSessions.length ||
+      botSessions.length !== 4 - humanSessions.length
+    ) {
+      throw new Error("A competitive bot match needs 1-3 humans plus bots filling the rest of the table");
+    }
+    const firstHuman = humanSessions[0];
+    if (firstHuman === undefined) {
+      throw new Error("A competitive bot match requires at least one human session");
     }
     const matchId = randomUUID();
+    const entriesBySessionId = new Map(humanEntries.map((entry) => [entry.sessionId, entry] as const));
     // Shuffle the four identities into seats 0..3.
-    const identities: AnonymousSession[] = [humanSession, ...botSessions];
+    const identities: AnonymousSession[] = [...humanSessions, ...botSessions];
     for (let index = identities.length - 1; index > 0; index -= 1) {
       const swapIndex = randomInt(index + 1);
       const current = identities[index];
@@ -1332,10 +1349,9 @@ export class RoomService {
     const botsById = new Map(botSessions.map((bot) => [bot.id, bot] as const));
     const isBot = (session: AnonymousSession): boolean => botsById.has(session.id);
     const seats = {} as Record<Seat, SeatController>;
-    let humanSeatIndex: Seat | null = null;
+    const humanPlayers: { sessionId: string; seat: Seat; queueVersion: number }[] = [];
     // A plain for loop (not forEach) so TypeScript's control-flow analysis
-    // tracks that `humanSeatIndex` can be assigned inside the body — a
-    // callback-mutated variable stays narrowed to its initializer otherwise.
+    // tracks mutations inside the body.
     for (let index = 0; index < SEATS.length; index += 1) {
       const seat = SEATS[index];
       if (seat === undefined) throw new Error("Competitive bot seat assignment is incomplete");
@@ -1344,16 +1360,28 @@ export class RoomService {
       if (isBot(identity)) {
         seats[seat] = rankedBotSeat(seat, identity);
       } else {
+        const entry = entriesBySessionId.get(identity.id);
+        if (entry === undefined) {
+          throw new Error(`Missing matchmaking entry for human ${identity.id}`);
+        }
         seats[seat] = humanSeat(seat, identity);
-        humanSeatIndex = seat;
+        humanPlayers.push({ sessionId: identity.id, seat, queueVersion: entry.version });
       }
     }
-    if (humanSeatIndex === null) throw new Error("Competitive bot match is missing its human seat");
+    if (humanPlayers.length !== humanSessions.length) {
+      throw new Error("Competitive bot match is missing human seat assignments");
+    }
+    const botPlayers = SEATS.flatMap((seat) => {
+      const controller = seats[seat];
+      return controller.controller === "BOT" && controller.sessionId !== null
+        ? [{ sessionId: controller.sessionId, seat }]
+        : [];
+    });
 
     const room: RoomState = {
       id: randomUUID(),
       code: this.nextRoomCode(),
-      ownerSessionId: humanSession.id,
+      ownerSessionId: firstHuman.id,
       baseScore: 2,
       turnTimeoutSeconds: 20,
       botDifficulty: "HIGH",
@@ -1380,12 +1408,6 @@ export class RoomService {
     this.startRound(room);
     const round = room.round;
     if (round === null) throw new Error("Competitive bot room failed to start its round");
-    const botPlayers = SEATS.flatMap((seat) => {
-      const controller = room.seats[seat];
-      return controller.controller === "BOT" && controller.sessionId !== null
-        ? [{ sessionId: controller.sessionId, seat }]
-        : [];
-    });
     this.database.createCompetitiveMatchWithBots({
       match: {
         id: matchId,
@@ -1395,7 +1417,7 @@ export class RoomService {
       },
       room,
       stateJson: JSON.stringify(room),
-      humanPlayer: { sessionId: humanSession.id, seat: humanSeatIndex, queueVersion: humanEntry.version },
+      humanPlayers,
       botPlayers,
     });
     this.roomsByCode.set(room.code, room);

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { GameDatabase, type AnonymousSession } from "./database.js";
 import {
+  MATCHMAKING_BOT_FILL_WAIT_MS,
   MATCHMAKING_DISCONNECT_GRACE_MS,
   MATCHMAKING_HEARTBEAT_TIMEOUT_MS,
   MatchmakingService,
@@ -165,5 +166,79 @@ describe("MatchmakingService", () => {
       matchId: "match-1",
       roomId: "room-1",
     });
+  });
+
+  it("groups allowBots players after the wait window and fills the table with bots", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const humans: [AnonymousSession, AnonymousSession] = [player(0), player(1)];
+    for (const [index, session] of humans.entries()) {
+      database.createSession(session, `token-${index}`);
+    }
+    const botSessions: AnonymousSession[] = [
+      { id: "bot-a", nickname: "赌神", wechatOpenId: null, avatarUrl: null },
+      { id: "bot-b", nickname: "赌侠", wechatOpenId: null, avatarUrl: null },
+      { id: "bot-c", nickname: "赌圣", wechatOpenId: null, avatarUrl: null },
+    ];
+    for (const bot of botSessions) {
+      database.ensureRankedBotSession({ id: bot.id, nickname: bot.nickname, avatarUrl: null, rankLevel: 17 });
+    }
+    const onlineIds = new Set<string>(humans.map((human) => human.id));
+    let matchNumber = 0;
+    const service = new MatchmakingService(
+      database,
+      (sessionId) => onlineIds.has(sessionId),
+      () => {
+        throw new Error("human-only path should not run for a bot match");
+      },
+      NOW,
+      {
+        enabled: true,
+        bots: botSessions,
+        createRoom: (matchedHumans, bots, now) => {
+          matchNumber += 1;
+          const matchId = `bot-match-${matchNumber}`;
+          const roomId = `bot-room-${matchNumber}`;
+          const room = { id: roomId, code: `500${matchNumber}`, status: "ACTIVE", version: 1 };
+          database.createCompetitiveMatchWithBots({
+            match: {
+              id: matchId,
+              roomId,
+              roundId: `round-${matchNumber}`,
+              ruleVersion: 1,
+              createdAt: new Date(now).toISOString(),
+            },
+            room,
+            stateJson: JSON.stringify(room),
+            humanPlayers: matchedHumans.map(({ session, entry }, seat) => ({
+              sessionId: session.id,
+              seat,
+              queueVersion: entry.version,
+            })),
+            botPlayers: bots.map((bot, offset) => ({
+              sessionId: bot.id,
+              seat: matchedHumans.length + offset,
+            })),
+          });
+          return { matchId, roomId };
+        },
+      },
+    );
+
+    // Two friends queue with allowBots within the same window.
+    service.enqueue(humans[0]!, NOW, true);
+    service.enqueue(humans[1]!, NOW + 1_000, true);
+
+    // Before the wait window expires: no match yet — friends are still gathering.
+    expect(service.tick(NOW + 2_000).matches).toEqual([]);
+
+    // After the window: both humans land in the same match, bots fill the rest.
+    const result = service.tick(NOW + MATCHMAKING_BOT_FILL_WAIT_MS + 1);
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0]?.sessionIds).toEqual([humans[0]!.id, humans[1]!.id]);
+    expect(database.listMatchmakingEntries()).toEqual([]);
+    for (const human of humans) {
+      expect(service.getState(human.id).status).toBe("MATCHED");
+    }
   });
 });

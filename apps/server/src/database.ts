@@ -110,15 +110,15 @@ export type CreateCompetitiveMatchInput = {
 
 /**
  * Variant of {@link CreateCompetitiveMatchInput} for an experience-phase bot
- * match: one real queued human plus three preset ranked bot accounts. Bots
- * never queue, so only the human carries a `queueVersion`; the match-creation
- * transaction deletes just that one queue entry.
+ * match: one to three real queued humans plus preset ranked bots filling the
+ * remaining seats. Bots never queue, so only the humans carry a `queueVersion`;
+ * the match-creation transaction deletes exactly the humans' queue entries.
  */
 export type CreateCompetitiveMatchWithBotsInput = {
   match: CreateCompetitiveMatchInput["match"];
   room: RoomSnapshotInput;
   stateJson: string;
-  humanPlayer: { sessionId: string; seat: number; queueVersion: number };
+  humanPlayers: readonly { sessionId: string; seat: number; queueVersion: number }[];
   botPlayers: readonly { sessionId: string; seat: number }[];
 };
 
@@ -841,21 +841,26 @@ export class GameDatabase {
   }
 
   /**
-   * Create a competitive match between one queued human and three preset
-   * ranked bots. Identical to {@link createCompetitiveMatch} except only the
-   * human's queue entry is deleted (bots never queue), so the optimistic
-   * delete count is 1 instead of 4. The active-match guard still covers all
+   * Create a competitive match between one to three queued humans and preset
+   * ranked bots filling the remaining seats. Identical to
+   * {@link createCompetitiveMatch} except only the humans' queue entries are
+   * deleted (bots never queue), so the optimistic delete count equals the
+   * number of humans instead of 4. The active-match guard still covers all
    * four sessions, which is what prevents two simultaneous bot matches from
    * double-booking the shared bot accounts.
    */
   createCompetitiveMatchWithBots(input: CreateCompetitiveMatchWithBotsInput): CompetitiveMatchSettlement {
-    const allPlayers = [input.humanPlayer, ...input.botPlayers];
+    const allPlayers = [...input.humanPlayers, ...input.botPlayers];
     assertFourUniquePlayers(allPlayers);
     if (input.room.id !== input.match.roomId) {
       throw new Error("Competitive match roomId must equal the persisted room id");
     }
-    if (input.botPlayers.length !== 3) {
-      throw new Error("A competitive bot match requires exactly three bot players");
+    if (
+      input.humanPlayers.length < 1 ||
+      input.humanPlayers.length > 3 ||
+      input.botPlayers.length !== 4 - input.humanPlayers.length
+    ) {
+      throw new Error("A competitive bot match needs 1-3 humans plus bots filling the rest of the table");
     }
     return this.connection.transaction(() => {
       const sessionIds = allPlayers.map((player) => player.sessionId);
@@ -907,15 +912,18 @@ export class GameDatabase {
           throw new Error("Missing competitive profile during match creation");
         insertPlayer.run(input.match.id, player.sessionId, player.seat, profile.rankLevel);
       }
-      const deleted = this.connection
-        .prepare(
-          `DELETE FROM matchmaking_entries
-           WHERE session_id = ? AND version = ? AND disconnected_at IS NULL`,
-        )
-        .run(input.humanPlayer.sessionId, input.humanPlayer.queueVersion).changes;
-      if (deleted !== 1) {
+      // Bots never queue, so only the humans' queue entries are consumed.
+      const deleteQueuedPlayer = this.connection.prepare(
+        `DELETE FROM matchmaking_entries
+         WHERE session_id = ? AND version = ? AND disconnected_at IS NULL`,
+      );
+      let deleted = 0;
+      for (const human of input.humanPlayers) {
+        deleted += deleteQueuedPlayer.run(human.sessionId, human.queueVersion).changes;
+      }
+      if (deleted !== input.humanPlayers.length) {
         throw new Error(
-          `Competitive bot match creation expected one current online queue entry, deleted ${deleted}`,
+          `Competitive bot match creation expected ${input.humanPlayers.length} current online queue entries, deleted ${deleted}`,
         );
       }
       const settlement = this.getCompetitiveMatchSettlement(input.match.id);

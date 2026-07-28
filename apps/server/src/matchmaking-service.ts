@@ -5,6 +5,13 @@ import { selectMatchmakingGroup, type MatchmakingCandidate } from "./matchmaking
 
 export const MATCHMAKING_DISCONNECT_GRACE_MS = 10_000;
 export const MATCHMAKING_HEARTBEAT_TIMEOUT_MS = 3_000;
+// Experience-phase "allow bots" players wait this long before the queue is
+// resolved with bots, so friends queueing near-simultaneously land in the
+// same match (2 humans + 2 bots, 3 humans + 1 bot) instead of each getting a
+// solo 1+3 split. After the window the earliest allowBots entry has waited,
+// every currently-queued allowBots human (up to 3) is grouped and the rest of
+// the table is filled with bots.
+export const MATCHMAKING_BOT_FILL_WAIT_MS = 5_000;
 
 type CompetitiveRoomCreator = (
   players: readonly { session: AnonymousSession; entry: MatchmakingEntryRow }[],
@@ -12,7 +19,7 @@ type CompetitiveRoomCreator = (
 ) => { matchId: string; roomId: string };
 
 type CompetitiveBotRoomCreator = (
-  human: { session: AnonymousSession; entry: MatchmakingEntryRow },
+  humans: readonly { session: AnonymousSession; entry: MatchmakingEntryRow }[],
   bots: readonly AnonymousSession[],
   now: number,
 ) => { matchId: string; roomId: string };
@@ -180,11 +187,10 @@ export class MatchmakingService {
       );
       const matches: MatchmakingTickResult["matches"] = [];
 
-      // Experience-phase bot matching: a queued player who opted into bots is
-      // matched immediately against the three preset ranked bots (if they are
-      // all free). Only one bot match can run at a time because the bots are
-      // shared, so the first successful match breaks and any other bot-opted
-      // players simply wait for the next tick.
+      // Experience-phase bot matching: allowBots players wait a short window
+      // so friends can land in the same match, then the table is filled with
+      // bots. Only one bot match can run at a time because the bots are
+      // shared, so the active-match guard on the bots is what serializes it.
       if (this.botOptions.enabled && this.botOptions.bots.length === 3) {
         const botEntries = this.database
           .listMatchmakingEntries()
@@ -195,26 +201,59 @@ export class MatchmakingService {
               this.allowBotsBySessionId.get(entry.sessionId) === true,
           )
           .sort((a, b) => a.enqueuedAt.localeCompare(b.enqueuedAt));
-        for (const entry of botEntries) {
-          if (this.botOptions.bots.some((bot) => this.database.hasActiveCompetitiveMatch(bot.id))) {
-            break; // bots are in another match; stop trying this tick
-          }
-          const session = this.database.findSessionsByIds([entry.sessionId])[0];
-          if (session?.wechatOpenId == null) continue;
-          try {
-            const match = this.botOptions.createRoom({ session, entry }, this.botOptions.bots, now);
-            matches.push({ ...match, sessionIds: [session.id] });
-            changedSessionIds.push(session.id);
-            this.allowBotsBySessionId.delete(session.id);
-            break; // bots are now booked for this tick
-          } catch (cause) {
-            if (
-              cause instanceof Error &&
-              cause.message.includes("already has an active competitive match")
-            ) {
-              break; // lost a race for the bots; retry next tick
+        const earliest = botEntries[0];
+        if (
+          earliest !== undefined &&
+          now - Date.parse(earliest.enqueuedAt) >= MATCHMAKING_BOT_FILL_WAIT_MS
+        ) {
+          const sessionsById = new Map(
+            this.database
+              .findSessionsByIds(botEntries.map((entry) => entry.sessionId))
+              .map((session) => [session.id, session] as const),
+          );
+          // Drop (and cancel) any allowBots entry whose session vanished or
+          // lost its wechat link, so it can't keep the group waiting forever.
+          const isValid = (entry: MatchmakingEntryRow): boolean => {
+            const session = sessionsById.get(entry.sessionId);
+            return session?.wechatOpenId != null;
+          };
+          const validEntries = botEntries.filter(isValid);
+          for (const entry of botEntries) {
+            if (!isValid(entry)) {
+              this.database.cancelMatchmakingEntry(entry.sessionId);
+              this.allowBotsBySessionId.delete(entry.sessionId);
+              changedSessionIds.push(entry.sessionId);
             }
-            throw cause;
+          }
+          if (
+            validEntries.length > 0 &&
+            !this.botOptions.bots.some((bot) => this.database.hasActiveCompetitiveMatch(bot.id))
+          ) {
+            const humanCount = Math.min(validEntries.length, 3);
+            const humans = validEntries.slice(0, humanCount).flatMap((entry) => {
+              const session = sessionsById.get(entry.sessionId);
+              return session !== undefined ? [{ session, entry }] : [];
+            });
+            if (humans.length === humanCount) {
+              const chosenBots = this.botOptions.bots.slice(0, 4 - humanCount);
+              try {
+                const match = this.botOptions.createRoom(humans, chosenBots, now);
+                const sessionIds = humans.map((human) => human.session.id);
+                matches.push({ ...match, sessionIds });
+                changedSessionIds.push(...sessionIds);
+                for (const sessionId of sessionIds) this.allowBotsBySessionId.delete(sessionId);
+              } catch (cause) {
+                // Lost a race for the bots (another match booked them between
+                // the guard check and the transaction). Retry next tick
+                // instead of crashing the scheduler.
+                if (
+                  !(cause instanceof Error &&
+                    cause.message.includes("already has an active competitive match"))
+                ) {
+                  throw cause;
+                }
+              }
+            }
           }
         }
       }

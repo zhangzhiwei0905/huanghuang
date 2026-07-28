@@ -85,8 +85,12 @@ const matchmaking = new MatchmakingService(
   {
     enabled: matchmakingBotsEnabled,
     bots: rankedBotSessions,
-    createRoom: (human, bots) => {
-      const room = rooms.createCompetitiveMatchWithBots(human.session, human.entry, bots);
+    createRoom: (humans, bots) => {
+      const room = rooms.createCompetitiveMatchWithBots(
+        humans.map((human) => human.session),
+        humans.map((human) => human.entry),
+        bots,
+      );
       const competitiveMatch = room.competitiveMatch;
       if (competitiveMatch === null) {
         throw new Error("Competitive bot room is missing match metadata");
