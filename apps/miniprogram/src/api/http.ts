@@ -152,7 +152,8 @@ export function createCommand(
   };
 }
 
-export type CommandAcknowledge = CommandResult | { accepted: false; errorCode: string };
+export type CommandAcknowledge =
+  (CommandResult & { projection?: RoomProjection }) | { accepted: false; errorCode: string };
 
 export function requireSessionToken(): string {
   const token = getStoredSessionToken();

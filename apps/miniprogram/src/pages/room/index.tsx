@@ -272,6 +272,10 @@ function useGameAudio(
       playerRef.current = null;
       return;
     }
+    if (room !== null && connectionStatus === "connected") {
+      if (playerRef.current === null) playerRef.current = createGameAudioPlayer();
+      playerRef.current.warmup();
+    }
     if (files.length === 0) return;
     if (playerRef.current === null) playerRef.current = createGameAudioPlayer();
     for (const fileName of files) playerRef.current.play(fileName);
@@ -1059,7 +1063,9 @@ export default function RoomPage() {
               ) : null}
             </View>
 
-            <MahjongEffectOverlay cue={room.effectCue} />
+            {room.roundSettlement === null ? (
+              <MahjongEffectOverlay cue={room.effectCue} selfSeat={room.selfSeat ?? 0} />
+            ) : null}
 
             {room.roundSettlement !== null ? (
               <RoundSettlementModal

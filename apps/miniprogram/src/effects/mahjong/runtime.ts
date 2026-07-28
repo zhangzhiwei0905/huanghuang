@@ -27,6 +27,11 @@ type TileFacesRuntime = {
   ): MahjongAnimationData;
 };
 
+type PresentationProfile = {
+  outPoint: number;
+  name: string;
+};
+
 const tileFaces = require("./tile-faces.cjs") as TileFacesRuntime;
 
 const animationLoaders: Record<MahjongEffectKey, () => MahjongAnimationData> = {
@@ -37,31 +42,35 @@ const animationLoaders: Record<MahjongEffectKey, () => MahjongAnimationData> = {
   "hu-pai": () => require("./data/hu-pai.cjs") as MahjongAnimationData,
 };
 
-const COMPACT_PONG_LAYER_NAMES = new Set([
-  "碰 · 动作章",
-  "彩屑 1",
-  "彩屑 3",
-  "彩屑 5",
-  "彩屑 7",
-  "彩屑 9",
-  "冲击波 11",
-  "冲击波 12",
-]);
+// Each outPoint lands right after its badge/主体 has settled into a legible
+// final state, before the source asset's authored hold-and-fade tail. The
+// overlay's own 90ms CSS opacity transition supplies the disappearance, so
+// there is no need to play out an authored fade here. See
+// .trellis/tasks/07-27-mahjong-effect-redesign/design.md for the per-frame
+// rationale behind each cut.
+const presentationProfiles: Record<MahjongEffectKey, PresentationProfile> = {
+  peng: { outPoint: 27, name: "collision-badge" },
+  gang: { outPoint: 42, name: "four-tile-slam" },
+  "bu-gang": { outPoint: 39, name: "slot-lock-in" },
+  "fang-lai": { outPoint: 48, name: "double-strike-lightning" },
+  "hu-pai": { outPoint: 63, name: "seal-drop-celebration" },
+};
 
 function cloneAnimationData(animationData: MahjongAnimationData): MahjongAnimationData {
   return JSON.parse(JSON.stringify(animationData)) as MahjongAnimationData;
 }
 
-function compactPongAnimation(animationData: MahjongAnimationData): MahjongAnimationData {
+function applyPresentation(
+  key: MahjongEffectKey,
+  animationData: MahjongAnimationData,
+): MahjongAnimationData {
+  const profile = presentationProfiles[key];
   return {
     ...animationData,
-    ip: 18,
-    layers: (animationData.layers ?? [])
-      .filter((layer) => COMPACT_PONG_LAYER_NAMES.has(layer.nm ?? ""))
-      .map((layer) => JSON.parse(JSON.stringify(layer)) as MahjongAnimationLayer),
+    op: Math.min(profile.outPoint, animationData.op),
     meta: {
       ...animationData.meta,
-      presentation: "compact-text-only",
+      presentation: profile.name,
     },
   };
 }
@@ -74,14 +83,9 @@ export function loadMahjongAnimationData(
   const source = animationLoaders[key]();
   let animationData: MahjongAnimationData;
 
-  if (key === "peng") {
-    // The compact pong feedback intentionally contains no tile face. Besides
-    // matching the table's restrained visual language, dropping the three tile
-    // layers and most particles materially reduces per-frame Canvas work.
-    animationData = compactPongAnimation(source);
-  } else if (key === "hu-pai") {
-    // Win has no runtime tile slots, so avoid walking the large celebration
-    // data through the tile substitution runtime before playback.
+  if (key === "peng" || key === "hu-pai") {
+    // Pong intentionally uses no tile faces, while win has no runtime tile
+    // slots. Avoid walking either animation through the substitution runtime.
     animationData = cloneAnimationData(source);
   } else {
     const tileCode = tileKindCode(tileKind);
@@ -91,5 +95,5 @@ export function loadMahjongAnimationData(
     });
   }
 
-  return stretchLottieTiming(animationData, durationMs);
+  return stretchLottieTiming(applyPresentation(key, animationData), durationMs);
 }

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Canvas, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import type { GameEffectCue } from "@huanghuang/protocol";
+import type { GameEffectCue, Seat } from "@huanghuang/protocol";
 import lottie from "lottie-miniprogram";
 import { loadMahjongAnimationData } from "../effects/mahjong/runtime";
+import { relativeSeatPosition, stationEffectAnchor } from "../lib/effectAnchors";
 import {
   effectPlacement,
   effectProgress,
+  effectVisualEndsAt,
   lottieResumeFrame,
   mahjongEffectKey,
   type EffectRect,
@@ -33,21 +35,13 @@ function viewportSize() {
   }
 }
 
-function rectFromResult(result: unknown): EffectRect | null {
-  if (result === null || typeof result !== "object") return null;
-  const rect = result as Partial<EffectRect>;
-  if (
-    typeof rect.left !== "number" ||
-    typeof rect.top !== "number" ||
-    typeof rect.width !== "number" ||
-    typeof rect.height !== "number"
-  ) {
-    return null;
-  }
-  return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-}
-
-export function MahjongEffectOverlay({ cue }: { cue: GameEffectCue | null }) {
+export function MahjongEffectOverlay({
+  cue,
+  selfSeat,
+}: {
+  cue: GameEffectCue | null;
+  selfSeat: Seat;
+}) {
   const [canvas, setCanvas] = useState<CanvasNode | null>(null);
   const [placement, setPlacement] = useState<EffectRect>({
     left: 0,
@@ -91,22 +85,42 @@ export function MahjongEffectOverlay({ cue }: { cue: GameEffectCue | null }) {
     if (cue === null || canvas === null) return;
 
     let cancelled = false;
+    let animation: Animation | null = null;
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const hideAndDestroy = () => {
+      if (animation === null) return;
+      const completedAnimation = animation;
+      animation = null;
+      completedAnimation.removeEventListener("complete", hideAndDestroy);
+      if (hideTimer !== null) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+      if (animationRef.current === completedAnimation) {
+        if (!cancelled) setVisible(false);
+        animationRef.current = null;
+      }
+      completedAnimation.destroy();
+    };
+
     const play = (actorRect: EffectRect | null) => {
       if (cancelled) return;
       const now = Date.now();
-      const endsAt = Date.parse(cue.endsAt);
-      if (now >= endsAt) return;
+      const startedAt = Date.parse(cue.startedAt);
+      const visualEndsAt = effectVisualEndsAt(cue);
+      if (now >= visualEndsAt) return;
 
       try {
         const viewport = viewportSize();
         setPlacement(effectPlacement(cue.action, actorRect, viewport));
-        const durationMs = Math.max(1, endsAt - Date.parse(cue.startedAt));
+        const durationMs = Math.max(1, visualEndsAt - startedAt);
         const animationData = loadMahjongAnimationData(
           mahjongEffectKey(cue.action),
           cue.tileKind,
           durationMs,
         );
-        const animation = lottie.loadAnimation({
+        animation = lottie.loadAnimation({
           renderer: "canvas",
           loop: false,
           autoplay: false,
@@ -117,31 +131,39 @@ export function MahjongEffectOverlay({ cue }: { cue: GameEffectCue | null }) {
           },
         });
         animationRef.current = animation;
+        animation.addEventListener("complete", hideAndDestroy);
         setVisible(true);
-        animation.goToAndPlay(lottieResumeFrame(animationData, effectProgress(cue, now)), true);
+        const resumeFrame = lottieResumeFrame(
+          animationData,
+          effectProgress(
+            { startedAt: cue.startedAt, endsAt: new Date(visualEndsAt).toISOString() },
+            now,
+          ),
+        );
+        animation.goToAndPlay(resumeFrame, true);
+        hideTimer = setTimeout(hideAndDestroy, Math.max(1, visualEndsAt - now));
       } catch (cause) {
+        hideAndDestroy();
         setVisible(false);
-        animationRef.current?.destroy();
         animationRef.current = null;
         console.error("Failed to play Mahjong effect", cause);
       }
     };
 
-    if (cue.action === "WIN") {
-      play(null);
-    } else {
-      Taro.createSelectorQuery()
-        .select(`#player-station-${cue.actorSeat}`)
-        .boundingClientRect((result) => play(rectFromResult(result)))
-        .exec();
-    }
+    const viewport = viewportSize();
+    const actorRect =
+      cue.action === "WIN"
+        ? null
+        : stationEffectAnchor(relativeSeatPosition(cue.actorSeat, selfSeat), viewport);
+    play(actorRect);
 
     return () => {
       cancelled = true;
-      animationRef.current?.destroy();
-      animationRef.current = null;
+      hideAndDestroy();
+      if (hideTimer !== null) clearTimeout(hideTimer);
+      if (animationRef.current === animation) animationRef.current = null;
     };
-  }, [canvas, cue?.id]);
+  }, [canvas, cue?.id, selfSeat]);
 
   const style = {
     left: `${placement.left}px`,

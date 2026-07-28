@@ -2,6 +2,16 @@ import type { GameEffectAction, GameEffectCue, TileKind } from "@huanghuang/prot
 
 export type MahjongEffectKey = "peng" | "gang" | "bu-gang" | "fang-lai" | "hu-pai";
 
+const EFFECT_VISUAL_DURATION_MS = {
+  PONG: 450,
+  EXPOSED_KONG: 700,
+  CONCEALED_KONG: 700,
+  INDICATOR_PONG_KONG: 700,
+  ADDED_KONG: 650,
+  RELEASE_WILDCARD: 800,
+  WIN: 1_050,
+} satisfies Record<GameEffectAction, number>;
+
 export type EffectRect = {
   left: number;
   top: number;
@@ -26,6 +36,13 @@ export function mahjongEffectKey(action: GameEffectAction): MahjongEffectKey {
   if (action === "RELEASE_WILDCARD") return "fang-lai";
   if (action === "WIN") return "hu-pai";
   return "gang";
+}
+
+export function effectVisualEndsAt(
+  cue: Pick<GameEffectCue, "action" | "startedAt" | "endsAt">,
+): number {
+  const startedAt = Date.parse(cue.startedAt);
+  return Math.min(Date.parse(cue.endsAt), startedAt + EFFECT_VISUAL_DURATION_MS[cue.action]);
 }
 
 export function tileKindCode(tileKind: TileKind | null): string {
@@ -67,7 +84,7 @@ export function effectPlacement(
   viewport: EffectViewport,
 ): EffectRect {
   if (action === "WIN") {
-    const size = Math.round(Math.min(512, viewport.width * 0.66, viewport.height * 0.9));
+    const size = Math.round(Math.min(420, viewport.width * 0.58, viewport.height * 0.8));
     return {
       left: (viewport.width - size) / 2,
       top: (viewport.height - size) / 2,
@@ -76,12 +93,18 @@ export function effectPlacement(
     };
   }
 
-  const compact = action === "PONG";
+  const sizing =
+    action === "PONG"
+      ? { min: 136, max: 168, heightRatio: 0.38 }
+      : action === "ADDED_KONG"
+        ? { min: 166, max: 208, heightRatio: 0.49 }
+        : action === "RELEASE_WILDCARD"
+          ? { min: 170, max: 214, heightRatio: 0.5 }
+          : { min: 158, max: 198, heightRatio: 0.46 };
   const size = Math.round(
-    compact
-      ? Math.min(184, Math.max(150, viewport.height * 0.44))
-      : Math.min(224, Math.max(176, viewport.height * 0.52)),
+    Math.min(sizing.max, Math.max(sizing.min, viewport.height * sizing.heightRatio)),
   );
+  const compact = action === "PONG";
   const edgeGap = 8;
   if (actorRect === null) {
     return {

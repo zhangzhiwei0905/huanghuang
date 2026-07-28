@@ -72,6 +72,30 @@ const sockets = new Server(app.server, {
   },
 });
 
+async function emitRoomProjection(roomId: string, excludedSocketId: string | null = null) {
+  const room = rooms.getRoomById(roomId);
+  if (room === null) return;
+  try {
+    const roomSockets = await sockets.in(roomId).fetchSockets();
+    for (const memberSocket of roomSockets) {
+      if (memberSocket.id === excludedSocketId) continue;
+      const memberData = memberSocket.data as { sessionId?: string };
+      if (memberData.sessionId === undefined) continue;
+      memberSocket.emit("room:update", {
+        version: room.version,
+        projection: rooms.project(room, memberData.sessionId),
+      });
+    }
+  } catch (cause) {
+    // Preserve the older recovery path if adapter socket enumeration ever
+    // fails: clients can still turn this version hint into an HTTP snapshot.
+    app.log.error({ err: cause, roomId }, "failed to push member room projections");
+    const target =
+      excludedSocketId === null ? sockets.to(roomId) : sockets.to(roomId).except(excludedSocketId);
+    target.emit("room:update", { version: room.version });
+  }
+}
+
 // Mini-program clients read X-Session-Token; browsers expose it only if allowed.
 app.addHook("onRequest", async (_request, reply) => {
   reply.header(
@@ -436,9 +460,17 @@ sockets.on("connection", (socket) => {
     const parsed = commandEnvelopeSchema.safeParse(unknownCommand);
     if (!parsed.success) return acknowledge({ accepted: false, errorCode: "INVALID_COMMAND" });
     const result = rooms.execute(sessionId, parsed.data);
-    acknowledge(result);
     if (result.accepted) {
-      sockets.to(parsed.data.roomId).emit("room:update", { version: result.serverVersion });
+      const room = rooms.getRoomById(parsed.data.roomId);
+      acknowledge(
+        room === null ? result : { ...result, projection: rooms.project(room, sessionId) },
+      );
+      // The sender already receives its member-specific projection in the
+      // acknowledgement. Push member-specific projections to peers so nobody
+      // needs an extra HTTP snapshot request before rendering the accepted cue.
+      void emitRoomProjection(parsed.data.roomId, socket.id);
+    } else {
+      acknowledge(result);
     }
   });
   socket.on("disconnect", () => {
@@ -448,11 +480,16 @@ sockets.on("connection", (socket) => {
   });
 });
 
+// Effect transitions share their deadline with the visible animation. Keep the
+// scheduler fine-grained so the accepted state lands with the final frame
+// instead of sitting behind a noticeable polling tail.
 const roomTimer = setInterval(() => {
   for (const update of rooms.tick()) {
-    sockets.to(update.roomId).emit("room:update", { version: update.version });
+    // Effect completion is latency-sensitive: directly push the new private
+    // projection instead of asking every client to perform a follow-up GET.
+    void emitRoomProjection(update.roomId);
   }
-}, 250);
+}, 50);
 roomTimer.unref();
 
 app.addHook("onClose", async () => {

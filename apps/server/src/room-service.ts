@@ -151,13 +151,13 @@ const BOT_DELAY_MS = 650;
 const RESPONSE_TIMEOUT_MS = 5_000;
 const ROUND_RESULT_MS = 4_000;
 const EFFECT_DURATION_MS = {
-  PONG: 2_000,
-  EXPOSED_KONG: 2_200,
-  CONCEALED_KONG: 2_200,
-  ADDED_KONG: 2_300,
-  INDICATOR_PONG_KONG: 2_200,
-  RELEASE_WILDCARD: 2_500,
-  WIN: 2_800,
+  PONG: 450,
+  EXPOSED_KONG: 700,
+  CONCEALED_KONG: 700,
+  ADDED_KONG: 650,
+  INDICATOR_PONG_KONG: 700,
+  RELEASE_WILDCARD: 800,
+  WIN: 1_050,
 } satisfies Record<GameEffectAction, number>;
 export const WAITING_ROOM_TIMEOUT_MS = 3 * 60_000;
 export const CLOSED_ROOM_EVICTION_MS = 30_000;
@@ -1000,6 +1000,10 @@ export class RoomService {
     return this.roomsByCode.get(code) ?? null;
   }
 
+  getRoomById(roomId: string): RoomState | null {
+    return [...this.roomsByCode.values()].find((room) => room.id === roomId) ?? null;
+  }
+
   hasMember(sessionId: string, code: string): boolean {
     const room = this.roomsByCode.get(code);
     return (
@@ -1164,20 +1168,26 @@ export class RoomService {
   project(room: RoomState, sessionId: string): RoomProjection {
     const selfSeat = sessionSeat(room, sessionId);
     const round = room.round;
+    const presentationRound =
+      room.pendingEffectTransition?.cue.action === "PONG"
+        ? room.pendingEffectTransition.nextRound
+        : round;
     const selfDrawnTileId =
       room.stage === "PLAYING" &&
       selfSeat !== null &&
-      round?.phase === "TURN_DECISION" &&
-      round.lastDrawSeat === selfSeat &&
-      round.players[selfSeat].hand.some((tile) => tile.id === round.lastDrawnTileId)
-        ? round.lastDrawnTileId
+      presentationRound?.phase === "TURN_DECISION" &&
+      presentationRound.lastDrawSeat === selfSeat &&
+      presentationRound.players[selfSeat].hand.some(
+        (tile) => tile.id === presentationRound.lastDrawnTileId,
+      )
+        ? presentationRound.lastDrawnTileId
         : null;
     const players =
-      round === null
+      presentationRound === null
         ? []
         : SEATS.map((seat) => {
             const controller = room.seats[seat];
-            const roundPlayer = round.players[seat];
+            const roundPlayer = presentationRound.players[seat];
             const playerController: PlayerController =
               controller.controller === "EMPTY" ? "BOT" : controller.controller;
             return {
@@ -1286,12 +1296,12 @@ export class RoomService {
       status: room.status,
       closeReason: room.closeReason,
       dissolveAfterRound: room.dissolveAfterRound,
-      indicatorTile: round?.indicatorTile ?? null,
-      wildcardKind: round?.wildcardKind ?? null,
-      wallRemaining: round?.wall.length ?? 0,
+      indicatorTile: presentationRound?.indicatorTile ?? null,
+      wildcardKind: presentationRound?.wildcardKind ?? null,
+      wallRemaining: presentationRound?.wall.length ?? 0,
       actingSeat: this.actingSeat(room),
-      currentSeat: room.stage === "PLAYING" ? (round?.currentSeat ?? null) : null,
-      roundPhase: round?.phase ?? null,
+      currentSeat: room.stage === "PLAYING" ? (presentationRound?.currentSeat ?? null) : null,
+      roundPhase: presentationRound?.phase ?? null,
       actionDeadlineAt: room.stage === "PLAYING" ? room.actionDeadlineAt : null,
       roundOutcome,
       roundSettlement,

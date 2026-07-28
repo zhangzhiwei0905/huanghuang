@@ -8,17 +8,15 @@ vi.mock("@tarojs/taro", () => ({
     createInnerAudioContext: vi.fn(),
     cloud: {
       init: vi.fn(),
-      getTempFileURL: vi.fn(
-        async ({ fileList }: { fileList: string[] }) => ({
-          fileList: fileList.map((fileID) => ({
-            fileID,
-            tempFileURL: `https://mock.example/${encodeURIComponent(fileID)}`,
-            maxAge: 600,
-            status: 0,
-            errMsg: "getTempFileURL:ok",
-          })),
-        }),
-      ),
+      getTempFileURL: vi.fn(async ({ fileList }: { fileList: string[] }) => ({
+        fileList: fileList.map((fileID) => ({
+          fileID,
+          tempFileURL: `https://mock.example/${encodeURIComponent(fileID)}`,
+          maxAge: 600,
+          status: 0,
+          errMsg: "getTempFileURL:ok",
+        })),
+      })),
     },
   },
 }));
@@ -44,6 +42,12 @@ function createAudioContextMock() {
     onEnded: vi.fn((handler: EndedHandler) => {
       endedHandler = handler;
     }),
+    offError: vi.fn((handler?: ErrorHandler) => {
+      if (handler === undefined || handler === errorHandler) errorHandler = null;
+    }),
+    offEnded: vi.fn((handler?: EndedHandler) => {
+      if (handler === undefined || handler === endedHandler) endedHandler = null;
+    }),
     emitError: () => errorHandler?.(),
     emitEnded: () => endedHandler?.(),
   };
@@ -60,7 +64,7 @@ describe("game audio player", () => {
     vi.restoreAllMocks();
   });
 
-  it("resolves cloud URLs before skipping leading silence and starting rapid cues", async () => {
+  it("warms two contexts and lets two short cues finish without interruption", async () => {
     const firstAudio = createAudioContextMock();
     const secondAudio = createAudioContextMock();
     vi.mocked(Taro.createInnerAudioContext)
@@ -69,6 +73,11 @@ describe("game audio player", () => {
         secondAudio as unknown as ReturnType<typeof Taro.createInnerAudioContext>,
       );
     const player = createGameAudioPlayer();
+
+    player.warmup();
+    await vi.waitFor(() => {
+      expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(2);
+    });
 
     player.play("tile-wan-1.mp3");
     player.play("tile-wan-2.mp3");
@@ -84,10 +93,19 @@ describe("game audio player", () => {
     expect(firstAudio.stop).not.toHaveBeenCalled();
     expect(secondAudio.stop).not.toHaveBeenCalled();
 
+    firstAudio.emitEnded();
+    secondAudio.emitEnded();
+    expect(firstAudio.destroy).not.toHaveBeenCalled();
+    expect(secondAudio.destroy).not.toHaveBeenCalled();
+    expect(firstAudio.offEnded).toHaveBeenCalledTimes(1);
+    expect(secondAudio.offEnded).toHaveBeenCalledTimes(1);
+
     player.destroy();
+    expect(firstAudio.destroy).toHaveBeenCalledTimes(1);
+    expect(secondAudio.destroy).toHaveBeenCalledTimes(1);
   });
 
-  it("stops every active cue when the page player is destroyed", async () => {
+  it("drops a third simultaneous cue instead of queueing or creating another context", async () => {
     const firstAudio = createAudioContextMock();
     const secondAudio = createAudioContextMock();
     vi.mocked(Taro.createInnerAudioContext)
@@ -97,17 +115,80 @@ describe("game audio player", () => {
       );
     const player = createGameAudioPlayer();
 
-    player.play("action-pong.mp3");
-    player.play("action-kong.mp3");
+    player.warmup();
+    await vi.waitFor(() => {
+      expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(2);
+    });
+    player.play("tile-wan-1.mp3");
+    player.play("tile-wan-2.mp3");
+    player.play("tile-wan-3.mp3");
     await vi.waitFor(() => {
       expect(firstAudio.play).toHaveBeenCalledTimes(1);
       expect(secondAudio.play).toHaveBeenCalledTimes(1);
+    });
+
+    expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(2);
+    expect(firstAudio.src).not.toContain("tile-wan-3.mp3");
+    expect(secondAudio.src).not.toContain("tile-wan-3.mp3");
+
+    firstAudio.emitEnded();
+    player.play("tile-wan-4.mp3");
+    await vi.waitFor(() => {
+      expect(firstAudio.play).toHaveBeenCalledTimes(2);
+    });
+    expect(firstAudio.src).toContain("tile-wan-4.mp3");
+    player.destroy();
+  });
+
+  it("returns a timed-out clip to its slot and clears old event listeners", async () => {
+    const audio = createAudioContextMock();
+    vi.mocked(Taro.createInnerAudioContext).mockReturnValueOnce(
+      audio as unknown as ReturnType<typeof Taro.createInnerAudioContext>,
+    );
+    const player = createGameAudioPlayer();
+
+    player.play("action-pong.mp3");
+    await vi.waitFor(() => {
+      expect(audio.play).toHaveBeenCalledTimes(1);
+    });
+    vi.advanceTimersByTime(380);
+
+    expect(audio.stop).toHaveBeenCalledTimes(1);
+    expect(audio.destroy).not.toHaveBeenCalled();
+    expect(audio.offEnded).toHaveBeenCalledTimes(1);
+    expect(audio.offError).toHaveBeenCalledTimes(1);
+    expect(audio.src).toBe("");
+
+    player.play("action-kong.mp3");
+    await vi.waitFor(() => {
+      expect(audio.play).toHaveBeenCalledTimes(2);
+    });
+    expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(1);
+    player.destroy();
+  });
+
+  it("stops active slots and destroys the fixed pool with the page player", async () => {
+    const firstAudio = createAudioContextMock();
+    const secondAudio = createAudioContextMock();
+    vi.mocked(Taro.createInnerAudioContext)
+      .mockReturnValueOnce(firstAudio as unknown as ReturnType<typeof Taro.createInnerAudioContext>)
+      .mockReturnValueOnce(
+        secondAudio as unknown as ReturnType<typeof Taro.createInnerAudioContext>,
+      );
+    const player = createGameAudioPlayer();
+
+    player.warmup();
+    await vi.waitFor(() => {
+      expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(2);
+    });
+    player.play("action-pong.mp3");
+    await vi.waitFor(() => {
+      expect(firstAudio.play).toHaveBeenCalledTimes(1);
     });
     player.destroy();
     vi.runAllTimers();
 
     expect(firstAudio.stop).toHaveBeenCalledTimes(1);
-    expect(secondAudio.stop).toHaveBeenCalledTimes(1);
     expect(firstAudio.destroy).toHaveBeenCalledTimes(1);
     expect(secondAudio.destroy).toHaveBeenCalledTimes(1);
   });

@@ -4,6 +4,8 @@
   inset: 0;
   pointer-events: none;
   opacity: 0;
+  transition: opacity 90ms ease-out;
+  will-change: opacity;
 }
 
 .mahjong-effect-overlay.is-visible {
@@ -11,17 +13,24 @@
 }
 
 .mahjong-effect-overlay.is-win {
-  background: rgb(11 28 21 / 38%);
+  background: radial-gradient(
+    circle at center,
+    rgb(154 49 34 / 28%) 0%,
+    rgb(38 30 21 / 18%) 48%,
+    rgb(11 28 21 / 8%) 72%,
+    transparent 100%
+  );
 }
 
 .mahjong-effect-overlay__stage {
   position: absolute;
   overflow: hidden;
+  border-radius: 2.4vmin;
   transform: translateZ(0);
 }
 
 .mahjong-effect-overlay.is-win .mahjong-effect-overlay__stage {
-  border-radius: 2.4vmin;
+  border-radius: 50%;
 }
 
 .mahjong-effect-overlay__canvas {

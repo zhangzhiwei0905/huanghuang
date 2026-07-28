@@ -48,24 +48,51 @@ const AUDIO_WINDOWS: Record<GameAudioFileName, AudioWindow> = {
 };
 
 const AUDIO_FILE_NAMES = Object.keys(AUDIO_WINDOWS) as GameAudioFileName[];
+const POOL_SIZE = 2;
 
 type AudioContext = ReturnType<typeof Taro.createInnerAudioContext>;
 type PlaybackTimer = ReturnType<typeof setTimeout>;
 type ActivePlayback = {
-  context: AudioContext;
+  slot: AudioSlot;
   timer: PlaybackTimer | null;
+  endedHandler: () => void;
+  errorHandler: () => void;
   destroyed: boolean;
+};
+type AudioSlot = {
+  context: AudioContext;
+  playback: ActivePlayback | null;
 };
 
 export type GameAudioPlayer = {
   play: (fileName: GameAudioFileName) => void;
+  warmup: () => void;
   destroy: () => void;
 };
 
 export function createGameAudioPlayer(): GameAudioPlayer {
-  const activePlaybacks = new Set<ActivePlayback>();
+  const slots: AudioSlot[] = [];
   const leadInSafetySeconds = 0.05;
   let playerDestroyed = false;
+
+  function createSlot(): AudioSlot | null {
+    if (playerDestroyed || slots.length >= POOL_SIZE) return null;
+    try {
+      const context = Taro.createInnerAudioContext({ useWebAudioImplement: true });
+      context.autoplay = false;
+      context.loop = false;
+      context.obeyMuteSwitch = true;
+      const slot: AudioSlot = { context, playback: null };
+      slots.push(slot);
+      return slot;
+    } catch {
+      return null;
+    }
+  }
+
+  function acquireSlot(): AudioSlot | null {
+    return slots.find((slot) => slot.playback === null) ?? createSlot();
+  }
 
   function dispose(playback: ActivePlayback, stop: boolean): void {
     if (playback.destroyed) return;
@@ -74,56 +101,76 @@ export function createGameAudioPlayer(): GameAudioPlayer {
       clearTimeout(playback.timer);
       playback.timer = null;
     }
-    activePlaybacks.delete(playback);
-    if (stop) playback.context.stop();
-    playback.context.destroy();
+    const { context } = playback.slot;
+    context.offEnded(playback.endedHandler);
+    context.offError(playback.errorHandler);
+    if (stop) context.stop();
+    context.src = "";
+    if (playback.slot.playback === playback) playback.slot.playback = null;
+  }
+
+  function start(fileName: GameAudioFileName, urls: Map<string, string>): void {
+    if (playerDestroyed) return;
+    const src = urls.get(fileName);
+    if (src === undefined) return;
+    const slot = acquireSlot();
+    // More than two simultaneous short calls means the table is moving
+    // faster than speech can remain useful. Drop the excess instead of
+    // queueing history or interrupting either cue already being spoken.
+    if (slot === null) return;
+
+    const clip = AUDIO_WINDOWS[fileName];
+    const playback: ActivePlayback = {
+      slot,
+      timer: null,
+      endedHandler: () => undefined,
+      errorHandler: () => undefined,
+      destroyed: false,
+    };
+    playback.endedHandler = () => dispose(playback, false);
+    playback.errorHandler = () => {
+      invalidateAudioFileUrls();
+      dispose(playback, false);
+    };
+    slot.playback = playback;
+
+    const { context } = slot;
+    context.startTime = Math.max(0, clip.startTime - leadInSafetySeconds);
+    context.src = src;
+    context.onEnded(playback.endedHandler);
+    context.onError(playback.errorHandler);
+    playback.timer = setTimeout(
+      () => dispose(playback, true),
+      Math.ceil((clip.duration + leadInSafetySeconds) * 1000),
+    );
+
+    try {
+      context.play();
+    } catch {
+      dispose(playback, false);
+    }
   }
 
   return {
     play(fileName) {
-      const clip = AUDIO_WINDOWS[fileName];
-      void resolveAudioFileUrls(AUDIO_FILE_NAMES).then((urls) => {
+      if (playerDestroyed) return;
+      void resolveAudioFileUrls(AUDIO_FILE_NAMES).then((urls) => start(fileName, urls));
+    },
+    warmup() {
+      void resolveAudioFileUrls(AUDIO_FILE_NAMES).then(() => {
         if (playerDestroyed) return;
-        const src = urls.get(fileName);
-        if (src === undefined) return;
-
-        const context = Taro.createInnerAudioContext({ useWebAudioImplement: true });
-        const playback: ActivePlayback = {
-          context,
-          timer: null,
-          destroyed: false,
-        };
-        activePlaybacks.add(playback);
-
-        context.autoplay = false;
-        context.loop = false;
-        context.obeyMuteSwitch = true;
-        context.startTime = Math.max(0, clip.startTime - leadInSafetySeconds);
-        context.src = src;
-        context.onEnded(() => dispose(playback, false));
-        context.onError(() => {
-          // Most likely a stale cloud temp URL (10-minute expiry on a
-          // private bucket) — drop the cache so the next play() call
-          // re-resolves instead of retrying the same dead URL forever.
-          invalidateAudioFileUrls();
-          dispose(playback, false);
-        });
-        playback.timer = setTimeout(
-          () => dispose(playback, true),
-          Math.ceil((clip.duration + leadInSafetySeconds) * 1000),
-        );
-
-        try {
-          context.play();
-        } catch {
-          dispose(playback, false);
+        while (slots.length < POOL_SIZE) {
+          if (createSlot() === null) break;
         }
       });
     },
     destroy() {
       playerDestroyed = true;
-      for (const playback of [...activePlaybacks]) {
-        dispose(playback, true);
+      for (const slot of slots.splice(0)) {
+        if (slot.playback !== null) dispose(slot.playback, true);
+        slot.context.offEnded();
+        slot.context.offError();
+        slot.context.destroy();
       }
     },
   };

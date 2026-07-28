@@ -230,8 +230,15 @@ export function useRoom(): RoomController {
       }
       scheduleHardReconnect();
     };
-    const handleRoomUpdate = () => {
-      if (!disposed) void refresh();
+    const handleRoomUpdate = (update?: { projection?: RoomProjection }) => {
+      if (disposed) return;
+      if (update?.projection !== undefined) {
+        replaceProjection(update.projection);
+      } else {
+        // Compatibility fallback for older servers that publish only a
+        // version hint and require clients to fetch the member projection.
+        void refresh();
+      }
     };
     const handleChatMessage = (payload: ChatMessageProjection) => {
       if (!disposed) setLastChatMessage(payload);
@@ -397,15 +404,21 @@ export function useRoom(): RoomController {
           );
           if (!acknowledgement.accepted) {
             setError(errorLabel(acknowledgement.errorCode ?? "UNKNOWN_ERROR"));
+            await refresh();
+          } else if ("projection" in acknowledgement && acknowledgement.projection !== undefined) {
+            replaceProjection(acknowledgement.projection);
+          } else {
+            // Compatibility fallback for an older server that acknowledges
+            // only CommandResult without the new member-specific projection.
+            await refresh();
           }
-          await refresh();
         } catch {
           setError("操作发送超时，正在同步牌局状态");
           await refresh();
         }
       });
     },
-    [refresh, runExclusive],
+    [refresh, replaceProjection, runExclusive],
   );
 
   const sendVoiceMessage = useCallback((message: string) => {

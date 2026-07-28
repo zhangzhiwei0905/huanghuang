@@ -268,19 +268,31 @@ entry point.
 - The game engine still returns one complete `RuleResult`. `RoomService`
   compares the current and accepted rounds, then either applies a non-effect
   result immediately or persists `{ old round, cue, nextRound }`.
-- Durations are server-owned: pong 2000 ms; exposed, concealed and indicator
-  kong 2200 ms; added kong 2300 ms; wildcard release 2500 ms; win 2800 ms.
+- Durations are server-owned and aligned to the client visual budgets so a
+  completed animation leaves no blank interaction lock: pong 450 ms; exposed,
+  concealed and indicator kong 700 ms; added kong 650 ms; wildcard release
+  800 ms; win 1050 ms. The process scheduler polls at 50ms, so the first tick
+  after `endsAt` adds at most 50ms of completion latency.
 - Cue identity, actor, tile and win type come from the accepted round delta,
   never from the command payload.
 - Scheduling and completion each increment room version once. The accepted
   command result and pending transition snapshot are committed together by
   `saveRoomAndProcessedRequest`.
-- While pending, projections keep the old public round and expose the cue with
-  `legalActions = []`, `actingSeat = null` and `actionDeadlineAt = null`.
-  The private `nextRound` is never projected.
+- `CommandResult` remains the persisted deduplication contract. At the Socket
+  transport boundary, an accepted acknowledgement additionally carries
+  `RoomService.project(room, requesterSessionId)` so the requester can render
+  without an HTTP round trip. Peer sockets receive their own member-specific
+  projections, never the requester's private projection.
+- While pending, projections expose the cue with `legalActions = []`,
+  `actingSeat = null` and `actionDeadlineAt = null`. Pong may project the
+  already-accepted next-round public meld/hand layout immediately so the
+  claimed tiles land together with its short visual beat; the authoritative
+  round and all other effect transitions still commit only on expiry.
 - `tick(now < endsAt)` does nothing. The first `tick(now >= endsAt)` replaces
-  the live round, clears the transition, refreshes the real next deadline,
-  persists and broadcasts. Later ticks cannot apply it again.
+  the live round, clears the transition, refreshes the real next deadline and
+  persists. The Socket scheduler then pushes a freshly projected private
+  payload to each subscribed member, avoiding a version-notice → HTTP GET tail
+  after the visual completes. Later ticks cannot apply it again.
 - Startup restores an active transition. Bot, trustee and human command paths
   cannot advance it early. Lifecycle paths that discard/end the active round
   clear irrelevant pending state.
@@ -326,6 +338,9 @@ entry point.
   loss, early application or duplicate application.
 - Deduplication tests repeat the accepted request and assert the room/cue
   version does not change.
+- Transport type-checking must preserve member-specific projection privacy;
+  mini-program playback tests cover direct projection replacement separately
+  from the legacy refresh fallback.
 
 ### 7. Wrong vs Correct
 
@@ -333,7 +348,7 @@ Wrong:
 
 ```ts
 room.round = result.state;
-setTimeout(() => broadcastSettlement(room), 2_800);
+setTimeout(() => broadcastSettlement(room), 1_050);
 ```
 
 Correct:

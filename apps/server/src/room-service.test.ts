@@ -798,7 +798,7 @@ describe("RoomService", () => {
         tileKind: null,
         winType: "SOFT",
         startedAt: new Date(effectStartedAt).toISOString(),
-        endsAt: new Date(effectStartedAt + 2_800).toISOString(),
+        endsAt: new Date(effectStartedAt + 1_050).toISOString(),
       },
       roundSettlement: null,
     });
@@ -868,14 +868,14 @@ describe("RoomService", () => {
       tileKind: kind,
       winType: null,
       startedAt: new Date(effectStartedAt).toISOString(),
-      endsAt: new Date(effectStartedAt + 2_200).toISOString(),
+      endsAt: new Date(effectStartedAt + 700).toISOString(),
     });
     expect(room.version).toBe(versionBefore + 1);
 
-    service.tick(effectStartedAt + 2_199);
+    service.tick(effectStartedAt + 699);
     expect(activeRound(room).players[1].melds.at(-1)).toBeUndefined();
 
-    service.tick(effectStartedAt + 2_200);
+    service.tick(effectStartedAt + 700);
     expect(activeRound(room).players[1].melds.at(-1)?.kind).toBe("EXPOSED_KONG");
     expect(activeRound(room).players[1].hand).toHaveLength(handCountBefore - 2);
     expect(activeRound(room).currentSeat).toBe(1);
@@ -917,7 +917,7 @@ describe("RoomService", () => {
     expect(
       Date.parse(concealedRoom.pendingEffectTransition?.cue.endsAt ?? "") -
         Date.parse(concealedRoom.pendingEffectTransition?.cue.startedAt ?? ""),
-    ).toBe(2_200);
+    ).toBe(700);
 
     const addedService = createService();
     const addedRoom = addedService.createRoom(owner, 2, "BOT");
@@ -958,7 +958,7 @@ describe("RoomService", () => {
     expect(
       Date.parse(addedRoom.pendingEffectTransition?.cue.endsAt ?? "") -
         Date.parse(addedRoom.pendingEffectTransition?.cue.startedAt ?? ""),
-    ).toBe(2_300);
+    ).toBe(650);
 
     const indicatorService = createService();
     const indicatorRoom = indicatorService.createRoom(owner, 2, "BOT");
@@ -1001,7 +1001,7 @@ describe("RoomService", () => {
     expect(
       Date.parse(indicatorRoom.pendingEffectTransition?.cue.endsAt ?? "") -
         Date.parse(indicatorRoom.pendingEffectTransition?.cue.startedAt ?? ""),
-    ).toBe(2_200);
+    ).toBe(700);
   });
 
   it("projects reducer-driven kong and self-draw transfers as one round delta", () => {
@@ -1201,7 +1201,7 @@ describe("RoomService", () => {
     expect(settlement?.finalHands.map((hand) => hand.personalMultiplier)).toEqual([1, 1, 1, 1]);
   });
 
-  it("persists a pong cue across restart and applies the accepted transition only on expiry", () => {
+  it("projects a pong immediately while committing the transition only on expiry", () => {
     const database = new GameDatabase(":memory:");
     databases.push(database);
     const service = new RoomService(database);
@@ -1224,6 +1224,8 @@ describe("RoomService", () => {
       { id: "persisted-pong-a", ...kind },
       { id: "persisted-pong-b", ...kind },
     );
+    const handCountBefore = round.players[0].hand.length;
+    const discardCountBefore = round.players[1].discards.length;
     const versionBefore = room.version;
     const command = {
       type: "CLAIM_PONG",
@@ -1238,8 +1240,11 @@ describe("RoomService", () => {
     expect(result.accepted).toBe(true);
     expect(activeRound(room).players[0].melds.at(-1)).toBeUndefined();
     expect(room.version).toBe(versionBefore + 1);
-    expect(service.project(room, owner.id)).toMatchObject({
+    const pendingProjection = service.project(room, owner.id);
+    expect(pendingProjection).toMatchObject({
       actingSeat: null,
+      currentSeat: 0,
+      roundPhase: "TURN_DECISION",
       actionDeadlineAt: null,
       legalActions: [],
       effectCue: {
@@ -1249,10 +1254,14 @@ describe("RoomService", () => {
         winType: null,
       },
     });
+    expect(pendingProjection.players[0]?.handCount).toBe(handCountBefore - 2);
+    expect(pendingProjection.players[0]?.hand).toHaveLength(handCountBefore - 2);
+    expect(pendingProjection.players[0]?.melds.at(-1)?.kind).toBe("PONG");
+    expect(pendingProjection.players[1]?.discards).toHaveLength(discardCountBefore);
     expect(
       Date.parse(room.pendingEffectTransition?.cue.endsAt ?? "") -
         Date.parse(room.pendingEffectTransition?.cue.startedAt ?? ""),
-    ).toBe(2_000);
+    ).toBe(450);
     expect(service.execute(owner.id, command)).toEqual(result);
     expect(room.version).toBe(versionBefore + 1);
     const blocked = service.execute(owner.id, {
@@ -1271,6 +1280,7 @@ describe("RoomService", () => {
     const endsAt = Date.parse(restored.pendingEffectTransition?.cue.endsAt ?? "");
     restoredService.tick(endsAt - 1);
     expect(activeRound(restored).players[0].melds.at(-1)).toBeUndefined();
+    expect(restoredService.project(restored, owner.id).players[0]?.melds.at(-1)?.kind).toBe("PONG");
 
     restoredService.tick(endsAt);
     expect(restored.pendingEffectTransition).toBeNull();
@@ -1278,7 +1288,7 @@ describe("RoomService", () => {
     expect(restored.version).toBe(versionBefore + 2);
   });
 
-  it("keeps a wildcard in hand until its 2.5-second release effect completes", () => {
+  it("keeps a wildcard in hand until its release effect completes", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "BOT");
     const round = activeRound(room);
@@ -1300,7 +1310,7 @@ describe("RoomService", () => {
     const transition = room.pendingEffectTransition;
     if (transition === null) throw new Error("Expected a release effect transition");
     expect(transition.cue.action).toBe("RELEASE_WILDCARD");
-    expect(Date.parse(transition.cue.endsAt) - Date.parse(transition.cue.startedAt)).toBe(2_500);
+    expect(Date.parse(transition.cue.endsAt) - Date.parse(transition.cue.startedAt)).toBe(800);
     expect(activeRound(room).players[0].releasedWildcards).toHaveLength(releasedBefore);
     expect(activeRound(room).players[0].hand.some((tile) => tile.id === wildcard.id)).toBe(true);
 

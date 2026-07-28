@@ -100,6 +100,30 @@ create one owner for:
 
 Rendering code may format fields, but it must not redefine the payload contract.
 
+### Mistake 5: Measuring A Timed UI Inside One Layer
+
+**Bad**: Shorten an animation or server timer, then assume click-to-render and
+animation-end-to-next-state latency shortened by the same amount.
+
+A real-time interaction can still contain hidden boundary waits:
+
+```text
+click → Socket ACK → HTTP snapshot → layout query → animation
+timer → version event → HTTP snapshot → next state
+```
+
+**Good**: Map and measure both ends of the interaction. When the server already
+owns a member-specific authoritative projection, attach it to the accepted
+Socket acknowledgement and push a separately projected payload to each
+subscribed member at timed completion. Keep version-hint → HTTP fetch only as a
+compatibility fallback. For stable absolute layout, derive an animation anchor
+synchronously instead of placing an asynchronous geometry query on the
+critical path.
+
+**Privacy rule**: never broadcast one member's projection to the room. Project
+once per target session/socket because concealed hands and legal actions are
+member-specific.
+
 ---
 
 ## Checklist for Cross-Layer Features

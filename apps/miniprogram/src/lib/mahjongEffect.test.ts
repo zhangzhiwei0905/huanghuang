@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   effectPlacement,
   effectProgress,
+  effectVisualEndsAt,
   lottieResumeFrame,
   mahjongEffectKey,
   stretchLottieTiming,
@@ -50,6 +51,23 @@ describe("mahjong effects", () => {
     expect(effectProgress(cue(), Date.parse("2026-07-27T00:00:03.000Z"))).toBe(1);
   });
 
+  it.each([
+    ["PONG", 450],
+    ["EXPOSED_KONG", 700],
+    ["CONCEALED_KONG", 700],
+    ["INDICATOR_PONG_KONG", 700],
+    ["ADDED_KONG", 650],
+    ["RELEASE_WILDCARD", 800],
+    ["WIN", 1_050],
+  ] satisfies [GameEffectAction, number][])(
+    "caps %s rendering at the interaction deadline of %dms",
+    (action, durationMs) => {
+      expect(effectVisualEndsAt(cue({ action }))).toBe(
+        Date.parse("2026-07-27T00:00:00.000Z") + durationMs,
+      );
+    },
+  );
+
   it("stretches the source frame rate and resumes at the matching frame", () => {
     const data = stretchLottieTiming({ ip: 10, op: 70, fr: 60 }, 3_000);
 
@@ -60,36 +78,39 @@ describe("mahjong effects", () => {
   it("keeps win effects square in the viewport and pong close to the actor", () => {
     const viewport = { width: 844, height: 390 };
     expect(effectPlacement("WIN", null, viewport)).toEqual({
-      left: 246.5,
-      top: 19.5,
-      width: 351,
-      height: 351,
+      left: 266,
+      top: 39,
+      width: 312,
+      height: 312,
     });
     expect(
       effectPlacement("PONG", { left: 700, top: 120, width: 100, height: 60 }, viewport),
     ).toEqual({
-      left: 544,
-      top: 64,
-      width: 172,
-      height: 172,
+      left: 567,
+      top: 76,
+      width: 148,
+      height: 148,
     });
   });
 
-  it("uses a compact text-only pong animation without runtime tile layers", () => {
+  it("uses a compact collision-badge pong animation without runtime tile layers", () => {
     const data = loadMahjongAnimationData("peng", { suit: "WAN", rank: 1 }, 2_000);
 
-    expect(data.ip).toBe(18);
-    expect(data.fr).toBe(30);
-    expect(data.meta?.presentation).toBe("compact-text-only");
+    expect(data.ip).toBe(0);
+    expect(data.op).toBe(27);
+    expect(data.fr).toBe(13.5);
+    expect(data.meta?.presentation).toBe("collision-badge");
     expect(data.layers?.map((layer) => layer.nm)).toEqual([
       "碰 · 动作章",
-      "彩屑 1",
-      "彩屑 3",
-      "彩屑 5",
-      "彩屑 7",
-      "彩屑 9",
-      "冲击波 11",
-      "冲击波 12",
+      "粉屑 1",
+      "粉屑 2",
+      "粉屑 3",
+      "粉屑 4",
+      "粉屑 5",
+      "粉屑 6",
+      "冲击环",
+      "对撞弧 左",
+      "对撞弧 右",
     ]);
     expect(data.layers?.some((layer) => layer.meta?.tileSlot !== undefined)).toBe(false);
   });
