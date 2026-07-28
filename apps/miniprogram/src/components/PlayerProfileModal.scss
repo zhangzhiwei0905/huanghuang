@@ -1,0 +1,192 @@
+.profile-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3vmin;
+  background: rgb(20 24 22 / 62%);
+  animation: profile-fade 200ms ease-out backwards;
+}
+
+@keyframes profile-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.profile-modal {
+  width: min(72vw, 62vmin);
+  box-sizing: border-box;
+  border: 1px solid #d8d4c4;
+  border-radius: 2vmin;
+  padding: 3vmin 3vmin 2.4vmin;
+  background: linear-gradient(175deg, #fdfcf6 0%, #f0ecdd 100%);
+  color: var(--ink, #272925);
+  box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 30%);
+  animation: profile-rise 260ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+@keyframes profile-rise {
+  from {
+    opacity: 0;
+    transform: translateY(2.4vmin) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.profile-modal__header {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.8vmin;
+}
+
+.profile-avatar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8vmin;
+}
+
+.profile-avatar__image,
+.profile-avatar__fallback {
+  width: 18vmin;
+  height: 18vmin;
+  min-width: 72px;
+  min-height: 72px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 0.6vmin solid #fff;
+  background: #e9e4d4;
+  box-shadow: 0 0.4vmin 1.6vmin rgb(0 0 0 / 18%);
+}
+
+.profile-avatar__fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted, #5f625b);
+  font-size: 7vmin;
+  font-weight: 700;
+}
+
+.profile-avatar.is-tappable .profile-avatar__image {
+  cursor: pointer;
+}
+
+.profile-avatar.is-tappable:active .profile-avatar__image {
+  transform: scale(0.97);
+}
+
+.profile-avatar__image {
+  transition: transform 120ms ease-out;
+}
+
+.profile-avatar__hint {
+  color: var(--muted, #5f625b);
+  font-size: 1.7vmin;
+  letter-spacing: 0.04em;
+}
+
+.profile-modal__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1vmin;
+  margin-bottom: 1.8vmin;
+}
+
+.profile-modal__name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 3.4vmin;
+  font-weight: 700;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-modal__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8vmin;
+}
+
+.profile-modal__chip {
+  border-radius: 999px;
+  padding: 0.3vmin 1.2vmin;
+  background: rgb(47 106 76 / 12%);
+  color: var(--accent, #2f6a4c);
+  font-size: 1.8vmin;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.profile-modal__score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4vmin;
+  margin-bottom: 2vmin;
+  border-top: 1px solid var(--line, #cde0d3);
+  padding-top: 1.8vmin;
+}
+
+.profile-modal__score-label {
+  color: var(--muted, #5f625b);
+  font-size: 1.9vmin;
+  letter-spacing: 0.12em;
+}
+
+.profile-modal__score-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 6vmin;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.profile-modal__actions {
+  display: flex;
+  justify-content: center;
+}
+
+/* Full-screen avatar zoom layer — sits above the modal backdrop so a tap on
+   the dimmed area around the big image closes the zoom (not the modal). */
+.profile-zoom {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2.4vmin;
+  padding: 6vmin;
+  box-sizing: border-box;
+  background: rgb(0 0 0 / 88%);
+  animation: profile-fade 160ms ease-out backwards;
+}
+
+.profile-zoom__image {
+  width: min(86vw, 86vh);
+  height: min(86vw, 86vh);
+  border-radius: 1.2vmin;
+}
+
+.profile-zoom__hint {
+  color: rgb(255 255 255 / 70%);
+  font-size: 2vmin;
+  letter-spacing: 0.08em;
+}

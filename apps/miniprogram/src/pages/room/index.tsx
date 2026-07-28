@@ -16,6 +16,7 @@ import { API_BASE } from "../../config";
 import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
 import { MahjongEffectOverlay } from "../../components/MahjongEffectOverlay";
+import { PlayerProfileModal } from "../../components/PlayerProfileModal";
 import { RoundSettlementModal } from "../../components/RoundSettlementModal";
 import { TingHintCard } from "../../components/TingHintCard";
 import { useRoom, type ConnectionStatus } from "../../hooks/useRoom";
@@ -71,6 +72,17 @@ const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
   reconnecting: "重连中",
 };
 
+/** Unified player snapshot feeding PlayerProfileModal from either a lobby or in-round seat. */
+type ProfileTarget = {
+  nickname: string;
+  avatarUrl: string | null;
+  score: number;
+  controller: "HUMAN" | "BOT" | "TRUSTEE" | null;
+  connected: boolean;
+  isSelf: boolean;
+  isOwner: boolean;
+};
+
 function SeatAvatar({
   avatarUrl,
   nickname,
@@ -105,6 +117,7 @@ function LobbySeat({
   onToggleReady,
   canManageBots,
   onRemoveBot,
+  onShowProfile,
 }: {
   seat: LobbySeatProjection;
   positionClass: (typeof POSITION_CLASS)[number];
@@ -112,6 +125,7 @@ function LobbySeat({
   onToggleReady: () => void;
   canManageBots: boolean;
   onRemoveBot: () => void;
+  onShowProfile: () => void;
 }) {
   const displayName = seat.occupied ? (seat.nickname ?? "玩家") : "等待加入";
   const status = !seat.occupied
@@ -139,7 +153,12 @@ function LobbySeat({
         />
         <View className="lobby-seat__copy">
           <View className="lobby-seat__name-row">
-            <Text className="lobby-seat__name">{displayName}</Text>
+            <Text
+              className={`lobby-seat__name${seat.occupied ? " is-clickable" : ""}`}
+              onClick={seat.occupied ? onShowProfile : undefined}
+            >
+              {displayName}
+            </Text>
             {seat.isOwner ? <Text className="lobby-seat__owner">房主</Text> : null}
             {seat.isSelf ? <Text className="lobby-seat__self-tag">我</Text> : null}
           </View>
@@ -325,6 +344,7 @@ export default function RoomPage() {
   const [gameAudioEnabled, setGameAudioEnabled] = useState(getStoredGameAudioEnabled);
   const [quickMessageOpen, setQuickMessageOpen] = useState(false);
   const [roundStartCountdown, setRoundStartCountdown] = useState<number | null>(null);
+  const [profileTarget, setProfileTarget] = useState<ProfileTarget | null>(null);
   const previousStageRef = useRef<RoomStage | null>(null);
   const previousRoomIdRef = useRef<string | null>(null);
   const room = roomCtrl.room;
@@ -712,6 +732,18 @@ export default function RoomPage() {
                   onToggleReady={() => void roomCtrl.ready()}
                   canManageBots={room.isOwner}
                   onRemoveBot={() => void roomCtrl.removeBot(seat.seat)}
+                  onShowProfile={() => {
+                    if (!seat.occupied) return;
+                    setProfileTarget({
+                      nickname: seat.nickname ?? "玩家",
+                      avatarUrl: seat.avatarUrl,
+                      score: seat.score,
+                      controller: seat.controller,
+                      connected: seat.connected,
+                      isSelf: seat.isSelf,
+                      isOwner: seat.isOwner,
+                    });
+                  }}
                 />
               );
             })}
@@ -812,7 +844,22 @@ export default function RoomPage() {
                           variant="player"
                         />
                         <View className="player-station__copy">
-                          <Text className="player-station__name">{player.nickname}</Text>
+                          <Text
+                            className="player-station__name is-clickable"
+                            onClick={() =>
+                              setProfileTarget({
+                                nickname: player.nickname,
+                                avatarUrl: player.avatarUrl,
+                                score: player.score,
+                                controller: player.controller,
+                                connected: player.connected,
+                                isSelf: seat === room.selfSeat,
+                                isOwner: false,
+                              })
+                            }
+                          >
+                            {player.nickname}
+                          </Text>
                           <View className="player-station__stats">
                             <Text className="player-station__stat player-station__stat--score">
                               积分 {player.score}
@@ -1082,6 +1129,18 @@ export default function RoomPage() {
         )}
       </View>
       {roundStartCountdown !== null ? <RoundStartOverlay countdown={roundStartCountdown} /> : null}
+      {profileTarget !== null ? (
+        <PlayerProfileModal
+          nickname={profileTarget.nickname}
+          avatarUrl={profileTarget.avatarUrl}
+          score={profileTarget.score}
+          controller={profileTarget.controller}
+          connected={profileTarget.connected}
+          isSelf={profileTarget.isSelf}
+          isOwner={profileTarget.isOwner}
+          onClose={() => setProfileTarget(null)}
+        />
+      ) : null}
     </View>
   );
 }
