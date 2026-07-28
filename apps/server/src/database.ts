@@ -522,6 +522,15 @@ export class GameDatabase {
    * competitive profile whose rank starts at the configured level). The rank
    * is only written when the profile is brand new, so a server restart never
    * clobbers a rank the bot earned through real settlement.
+   *
+   * `highest_major_index` MUST satisfy `>= min(floor(rankLevel/5), 7)` or
+   * `competitiveRankStateSchema` rejects the profile and crashes competitive
+   * settlement. The original seeding wrote only `rank_level`, leaving
+   * `highest_major_index` at its 0 default — for any bot seeded above 黑铁 that
+   * violated the invariant and took the server down on the first settlement.
+   * The brand-new branch now sets both, and the existing-profile branch
+   * self-heals the invariant (raising `highest_major_index` to the minimum
+   * valid value, never lowering it, to preserve historical-best semantics).
    */
   ensureRankedBotSession(bot: {
     id: string;
@@ -551,10 +560,24 @@ export class GameDatabase {
       this.connection
         .prepare(
           `UPDATE competitive_profiles
-           SET rank_level = ?, updated_at = ?
+           SET rank_level = ?, highest_major_index = ?, updated_at = ?
            WHERE session_id = ?`,
         )
-        .run(bot.rankLevel, now, bot.id);
+        .run(bot.rankLevel, Math.min(Math.floor(bot.rankLevel / 5), 7), now, bot.id);
+    } else {
+      const existing = this.getCompetitiveProfile(bot.id);
+      if (existing !== null) {
+        const minValidHighest = Math.min(Math.floor(existing.rankLevel / 5), 7);
+        if (existing.highestMajorIndex < minValidHighest) {
+          this.connection
+            .prepare(
+              `UPDATE competitive_profiles
+               SET highest_major_index = ?, updated_at = ?
+               WHERE session_id = ?`,
+            )
+            .run(minValidHighest, now, bot.id);
+        }
+      }
     }
     const profile = this.getCompetitiveProfile(bot.id);
     if (profile === null) throw new Error(`Unable to ensure ranked bot profile for ${bot.id}`);

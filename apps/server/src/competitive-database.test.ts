@@ -8,6 +8,7 @@ import {
   type CompetitivePlayerSettlementInput,
   type CreateCompetitiveMatchInput,
 } from "./database.js";
+import { competitiveRankStateSchema } from "@huanghuang/protocol";
 
 const PLAYER_IDS = ["player-0", "player-1", "player-2", "player-3"] as const;
 const ENQUEUED_AT = "2026-07-28T10:00:00.000Z";
@@ -597,5 +598,43 @@ describe("GameDatabase competitive persistence", () => {
       PLAYER_IDS[2],
       PLAYER_IDS[3],
     ]);
+  });
+
+  it("seeds a ranked bot with a highestMajorIndex that satisfies the rank-state invariant", () => {
+    const database = createDatabase();
+    // A bot seeded above 黑铁 (rankLevel 17 = 黄金Ⅲ) must not leave
+    // highest_major_index at its 0 default — competitiveTerminalSettlement
+    // parses the profile through competitiveRankStateSchema, which rejects
+    // highestMajorIndex < floor(rankLevel/5) and would crash the server.
+    database.ensureRankedBotSession({
+      id: "bot-dushen",
+      nickname: "赌神",
+      avatarUrl: null,
+      rankLevel: 17,
+    });
+    const profile = database.getCompetitiveProfile("bot-dushen");
+    expect(profile).not.toBeNull();
+    expect(profile?.rankLevel).toBe(17);
+    expect(profile?.highestMajorIndex).toBe(3); // floor(17/5)
+    // The exact guard competitiveTerminalSettlement runs:
+    expect(() => competitiveRankStateSchema.parse(profile)).not.toThrow();
+
+    // Re-seeding an existing bot must not clobber earned rank, but must still
+    // self-heal a stale highest_major_index that violates the invariant.
+    database
+      .connection.prepare(
+        "UPDATE competitive_profiles SET highest_major_index = 0 WHERE session_id = ?",
+      )
+      .run("bot-dushen");
+    database.ensureRankedBotSession({
+      id: "bot-dushen",
+      nickname: "赌神",
+      avatarUrl: null,
+      rankLevel: 17,
+    });
+    const healed = database.getCompetitiveProfile("bot-dushen");
+    expect(healed?.rankLevel).toBe(17); // earned rank preserved
+    expect(healed?.highestMajorIndex).toBe(3); // invariant restored
+    expect(() => competitiveRankStateSchema.parse(healed)).not.toThrow();
   });
 });
