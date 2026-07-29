@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
+- **Total Sessions**: 29
 - **Last Active**: 2026-07-29
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1097 | Active |
+| `journal-1.md` | ~1131 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 29 | 2026-07-29 | 修复胡牌音效并补齐机器人竞技档案 | `cf0685e`, `a090b2e` | `miniprogram` |
 | 28 | 2026-07-29 | 修复排位重复开页与实时连接重连 | `f4a16b7` | `miniprogram` |
 | 27 | 2026-07-29 | 组队排位与段位体验上线 | `0fd10e6` | `miniprogram` |
 | 26 | 2026-07-27 | 麻将小程序 UX 优化实施、回退与 dist 陈旧产物排查 | `74c859a` | `miniprogram` |

@@ -1095,3 +1095,37 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: 修复胡牌音效并补齐机器人竞技档案
+
+**Date**: 2026-07-29
+**Task**: 修复胡牌音效并补齐机器人竞技档案
+**Branch**: `miniprogram`
+
+### Summary
+
+修复小程序音频并发预热与半成品缓存导致的胡牌音效截断，改为单次预热、版本化目录及临时下载成功后保存；让拥有真实 session 的排位机器人复用真人公开竞技档案投影，展示实时段位和五类成就，普通机器人保持无档案。通过 426 项测试、全仓质量门禁和小程序生产构建，部署线上 1.0.2 / cf0685e，并保留数据备份与回滚容器。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cf0685e` | (see git log) |
+| `a090b2e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
