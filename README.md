@@ -73,9 +73,12 @@ docker compose -f deploy/compose.yaml config
 ```bash
 cp deploy/.env.example deploy/.env
 # 修改 deploy/.env 中的 DOMAIN
+export APP_REVISION=$(git rev-parse --short HEAD)
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
 docker compose -f deploy/compose.yaml ps
 ```
+
+不导出 `APP_REVISION` 时该构建参数默认为 `unknown`，`GET /api/version` 也会相应返回 `unknown`——务必在每次部署前执行 `export`，才能通过该接口确认线上实际运行的版本。
 
 Caddy 自动申请和续期 HTTPS 证书。应用数据位于 Compose 项目的 `game_data` 命名卷（当前线上为 `huanghuang_game_data`）；更新应用前应备份此卷。
 

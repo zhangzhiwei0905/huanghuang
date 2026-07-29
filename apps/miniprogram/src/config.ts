@@ -6,3 +6,9 @@ export const API_BASE: string =
 
 export const SESSION_TOKEN_STORAGE_KEY = "huanghuang_session_token";
 export const SESSION_TOKEN_HEADER = "X-Session-Token";
+
+/** Frontend build revision (git short sha). Injected at build via TARO_APP_REVISION. */
+export const APP_REVISION: string =
+  typeof TARO_APP_REVISION === "string" && TARO_APP_REVISION.length > 0
+    ? TARO_APP_REVISION
+    : "unknown";

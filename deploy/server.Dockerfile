@@ -39,6 +39,7 @@ COPY tsconfig.base.json eslint.config.js vitest.config.ts ./
 ARG APP_REVISION=unknown
 RUN --mount=type=cache,id=huanghuang-build-cache,target=/root/.cache,sharing=locked \
     echo "Building revision ${APP_REVISION}" && pnpm build
+RUN date -u +%Y-%m-%dT%H:%M:%SZ > /app/BUILD_TIME
 
 FROM ${NODE_IMAGE} AS runtime
 WORKDIR /app
@@ -50,7 +51,9 @@ COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/packages ./packages
+COPY --from=build /app/BUILD_TIME ./BUILD_TIME
 ARG APP_REVISION=unknown
+ENV APP_REVISION=${APP_REVISION}
 LABEL org.opencontainers.image.revision=${APP_REVISION}
 EXPOSE 3000
 CMD ["node", "apps/server/dist/index.js"]

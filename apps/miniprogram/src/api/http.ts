@@ -115,6 +115,14 @@ export const competitiveApi = {
   },
 };
 
+export type VersionInfo = { revision: string; builtAt: string };
+
+export const versionApi = {
+  get(): Promise<VersionInfo> {
+    return request("/api/version");
+  },
+};
+
 export const roomApi = {
   create(
     nickname: string,

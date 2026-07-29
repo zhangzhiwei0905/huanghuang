@@ -140,6 +140,41 @@ acknowledge(result);
 
 `RoomService.execute` reuses a stored result when `(session_id, request_id)` was already processed, so retries with the **same** `requestId` are safe. A newer request against a stale `expectedVersion` is rejected with `VERSION_CONFLICT`.
 
+## Deployment revision endpoint
+
+`GET /api/version` returns `{ revision, builtAt }` so the client (and a
+human comparing `curl` output against `git log`) can confirm which build is
+actually running — deployment here is entirely manual
+(`docker compose ... up -d --build`, no CI/CD), so this is the only way to
+know whether a given production instance has picked up recent changes.
+
+- `revision` comes from `process.env.APP_REVISION`, which only exists at
+  runtime because `deploy/server.Dockerfile`'s runtime stage re-declares
+  `ARG APP_REVISION` (Docker ARGs never carry across a new `FROM` stage
+  without re-declaring them) and adds `ENV APP_REVISION=${APP_REVISION}`
+  right after it — before this, the ARG only fed the OCI
+  `image.revision` LABEL, which is invisible to the running process.
+- `builtAt` is a file (`/app/BUILD_TIME`), written once via `date -u` in
+  the Dockerfile's build stage and copied into the runtime stage, read
+  once at server module load (`apps/server/src/index.ts`, cached in a
+  top-level const) — never re-read per request.
+- Both fields degrade to `"unknown"` rather than throwing when the env var
+  or file is missing (e.g. running `pnpm dev` locally with no Docker
+  build behind it). See `apps/server/src/version.ts`'s `readRevision`/
+  `readBuildTime` for the exact fallback logic.
+- The default documented deploy command in `README.md` must `export
+  APP_REVISION=$(git rev-parse --short HEAD)` before invoking
+  `docker compose ... up -d --build` — `deploy/compose.yaml`'s build arg
+  (`APP_REVISION: ${APP_REVISION:-unknown}`) only reads it from the
+  invoking shell's environment, it does not compute it. Forgetting this
+  export is silent: the deploy still succeeds, it just tags/reports
+  `"unknown"` forever.
+- The miniprogram build mirrors this on the frontend side: `TARO_APP_REVISION`
+  is injected via `defineConstants` in `apps/miniprogram/config/index.ts`
+  using `execSync("git rev-parse --short HEAD")` at build time (never at
+  runtime, never shipped as a live git call), same fail-to-`"unknown"`
+  convention if `.git` isn't available in the build environment.
+
 ## Engine invariants
 
 Pure engine functions return structured evaluations or throw only for violated internal invariants. For example, settlement functions throw if output is not zero-sum. Callers must not convert that invariant failure into an accepted command; treat it as infrastructure / programming error.

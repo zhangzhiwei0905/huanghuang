@@ -1,7 +1,18 @@
+import { execSync } from "node:child_process";
 import path from "node:path";
 import type { UserConfigExport } from "@tarojs/cli";
 
 const DEFAULT_API_BASE = "https://huanghuang.amazingzz.xyz";
+
+// Some CI/CD sandboxes build from a source snapshot without a .git directory
+// — fall back to "unknown" rather than failing the build.
+function resolveGitRevision(): string {
+  try {
+    return execSync("git rev-parse --short HEAD").toString().trim();
+  } catch {
+    return "unknown";
+  }
+}
 
 const config: UserConfigExport<"webpack5"> = {
   projectName: "huanghuang",
@@ -20,6 +31,8 @@ const config: UserConfigExport<"webpack5"> = {
     // Experience/release builds must be upload-safe by default. Local server
     // work remains opt-in via TARO_APP_API_BASE=http://127.0.0.1:3000.
     TARO_APP_API_BASE: JSON.stringify(process.env.TARO_APP_API_BASE ?? DEFAULT_API_BASE),
+    // Lets the "关于" modal show which build is actually running on device.
+    TARO_APP_REVISION: JSON.stringify(resolveGitRevision()),
   },
   copy: {
     patterns: [],

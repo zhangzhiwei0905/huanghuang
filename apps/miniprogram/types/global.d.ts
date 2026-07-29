@@ -1,4 +1,5 @@
 declare const TARO_APP_API_BASE: string;
+declare const TARO_APP_REVISION: string;
 
 declare module "*.png" {
   const src: string;

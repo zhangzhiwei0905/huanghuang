@@ -19,17 +19,14 @@ import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Server } from "socket.io";
 import { AvatarUploadError, decodeAvatarData, MAX_AVATAR_BASE64_LENGTH } from "./avatar-upload.js";
-import {
-  RANKED_BOTS,
-  matchmakingBotsEnabled,
-  rankedBotSession,
-} from "./competitive-bots.js";
+import { RANKED_BOTS, matchmakingBotsEnabled, rankedBotSession } from "./competitive-bots.js";
 import { GameDatabase } from "./database.js";
 import { MatchmakingService } from "./matchmaking-service.js";
 import { RoomPresence } from "./room-presence.js";
 import { RoomService } from "./room-service.js";
 import { SessionService, SESSION_TOKEN_HEADER } from "./session-service.js";
 import { SessionPresence } from "./session-presence.js";
+import { readBuildTime, readRevision } from "./version.js";
 
 const app = Fastify({ logger: true });
 await app.register(cookie);
@@ -182,6 +179,14 @@ if (existsSync(webRoot)) {
 
 app.get("/health/live", () => ({ status: "ok" }));
 app.get("/health/ready", () => ({ status: "ready" }));
+
+// Read once at startup and cache — never re-read the file per-request.
+const cachedBuiltAt = readBuildTime(join(process.cwd(), "BUILD_TIME"));
+
+app.get("/api/version", () => ({
+  revision: readRevision(),
+  builtAt: cachedBuiltAt,
+}));
 
 /** Issue or refresh an anonymous session without joining a room (mini-program entry). */
 app.post("/api/session", (request, reply) => {

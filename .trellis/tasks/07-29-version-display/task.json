@@ -1,7 +1,7 @@
 {
-  "id": "five-track-optimizations",
-  "name": "five-track-optimizations",
-  "title": "晃晃五项优化",
+  "id": "version-display",
+  "name": "version-display",
+  "title": "Version display: backend /api/version + miniprogram about entry",
   "description": "",
   "status": "in_progress",
   "dev_type": null,
@@ -18,13 +18,7 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "07-29-audio-playback-fix",
-    "07-29-ranked-match-stuck-fix",
-    "07-29-wildcard-achievement-and-audit",
-    "07-29-ranked-bots-expansion",
-    "07-29-dfx-database-capacity"
-  ],
+  "children": [],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

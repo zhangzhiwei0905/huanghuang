@@ -17,9 +17,11 @@ import {
   getStoredMatchmakingAllowBots,
   roomApi,
   setStoredMatchmakingAllowBots,
+  versionApi,
   type MatchmakingResponse,
+  type VersionInfo,
 } from "../../api/http";
-import { API_BASE } from "../../config";
+import { API_BASE, APP_REVISION } from "../../config";
 import {
   clearStoredSessionToken,
   type Identity,
@@ -200,6 +202,41 @@ function LoginGate({
   );
 }
 
+function AboutModal({
+  backend,
+  backendError,
+  onClose,
+}: {
+  backend: VersionInfo | null;
+  backendError: boolean;
+  onClose: () => void;
+}) {
+  const backendLabel = (() => {
+    if (backend !== null) return `${backend.revision} · ${backend.builtAt}`;
+    if (backendError) return "获取失败";
+    return "加载中…";
+  })();
+
+  return (
+    <View className="mp-about" onClick={onClose}>
+      <View className="mp-about__panel" catchMove onClick={(event) => event.stopPropagation()}>
+        <Text className="mp-about__title">关于</Text>
+        <View className="mp-about__row">
+          <Text className="mp-about__label">前端版本</Text>
+          <Text className="mp-about__value">{APP_REVISION}</Text>
+        </View>
+        <View className="mp-about__row">
+          <Text className="mp-about__label">后端版本</Text>
+          <Text className="mp-about__value">{backendLabel}</Text>
+        </View>
+        <Button className="mp-btn mp-about__close" hoverClass="is-pressed" onClick={onClose}>
+          关闭
+        </Button>
+      </View>
+    </View>
+  );
+}
+
 function requestFailureDetail(cause: unknown): string {
   if (cause instanceof Error) return cause.message;
   if (typeof cause === "object" && cause !== null && "errMsg" in cause) {
@@ -242,6 +279,19 @@ export default function IndexPage() {
   const matchedRoomOpeningRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [backendVersion, setBackendVersion] = useState<VersionInfo | null>(null);
+  const [backendVersionError, setBackendVersionError] = useState(false);
+
+  useEffect(() => {
+    // Prefetched once on page load (mirrors the competitiveApi.profile()
+    // pattern below) so the "关于" modal opens instantly instead of showing a
+    // loading flash every time.
+    versionApi
+      .get()
+      .then((info) => setBackendVersion(info))
+      .catch(() => setBackendVersionError(true));
+  }, []);
 
   useEffect(() => {
     resolveIdentity()
@@ -504,6 +554,16 @@ export default function IndexPage() {
             />
           </View>
         ) : null}
+        <Text className="mp-about-entry" onClick={() => setAboutOpen(true)}>
+          关于
+        </Text>
+        {aboutOpen ? (
+          <AboutModal
+            backend={backendVersion}
+            backendError={backendVersionError}
+            onClose={() => setAboutOpen(false)}
+          />
+        ) : null}
       </View>
     );
   }
@@ -747,6 +807,16 @@ export default function IndexPage() {
             </Button>
           </View>
         </View>
+      ) : null}
+      <Text className="mp-about-entry" onClick={() => setAboutOpen(true)}>
+        关于
+      </Text>
+      {aboutOpen ? (
+        <AboutModal
+          backend={backendVersion}
+          backendError={backendVersionError}
+          onClose={() => setAboutOpen(false)}
+        />
       ) : null}
     </View>
   );
