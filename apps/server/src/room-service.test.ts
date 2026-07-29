@@ -1664,7 +1664,7 @@ describe("RoomService", () => {
     expect(room).toMatchObject({
       baseScore: 2,
       turnTimeoutSeconds: 20,
-      botDifficulty: "HIGH",
+      botDifficulty: "LOW",
       mode: "MATCH",
       stage: "PLAYING",
       competitiveMatch: { ruleVersion: 1 },
@@ -2026,7 +2026,9 @@ describe("RoomService", () => {
       enqueuedAt: new Date(0).toISOString(),
     });
     for (const bot of RANKED_BOTS) database.ensureRankedBotSession(bot);
-    const botSessions = RANKED_BOTS.map((bot) => rankedBotSession(bot));
+    // Only three bot seats are needed to fill a 1-human table; the roster
+    // has grown to ten preset bots, but this test just needs any three.
+    const botSessions = RANKED_BOTS.slice(0, 3).map((bot) => rankedBotSession(bot));
 
     const service = new RoomService(database);
     const room = service.createCompetitiveMatchWithBots([humanSession], [entry], botSessions);

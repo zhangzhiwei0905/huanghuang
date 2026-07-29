@@ -11,6 +11,7 @@ services:
       DATABASE_PATH: /data/huanghuang.sqlite
       WECHAT_APP_ID: ${WECHAT_APP_ID:-}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+      MATCHMAKING_BOTS_ENABLED: "true"
     restart: unless-stopped
     volumes:
       - game_data:/data

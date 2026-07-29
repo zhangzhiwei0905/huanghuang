@@ -205,9 +205,12 @@ export class MatchmakingService {
 
       // Experience-phase bot matching: allowBots players wait a short window
       // so friends can land in the same match, then the table is filled with
-      // bots. Only one bot match can run at a time because the bots are
-      // shared, so the active-match guard on the bots is what serializes it.
-      if (this.botOptions.enabled && this.botOptions.bots.length === 3) {
+      // bots. Multiple bot matches can run concurrently: each pass filters the
+      // shared bot pool down to the currently-idle subset and only proceeds
+      // if enough of them are free to fill the table, so several tables can
+      // draw disjoint bots from the pool at once instead of the whole pool
+      // being blocked by any single busy bot.
+      if (this.botOptions.enabled && this.botOptions.bots.length >= 3) {
         const botEntries = this.database
           .listMatchmakingEntries()
           .filter(
@@ -241,17 +244,18 @@ export class MatchmakingService {
               changedSessionIds.push(entry.sessionId);
             }
           }
-          if (
-            validEntries.length > 0 &&
-            !this.botOptions.bots.some((bot) => this.database.hasActiveCompetitiveMatch(bot.id))
-          ) {
+          if (validEntries.length > 0) {
             const humanCount = Math.min(validEntries.length, 3);
+            const neededBotCount = 4 - humanCount;
+            const idleBots = this.botOptions.bots.filter(
+              (bot) => !this.database.hasActiveCompetitiveMatch(bot.id),
+            );
             const humans = validEntries.slice(0, humanCount).flatMap((entry) => {
               const session = sessionsById.get(entry.sessionId);
               return session !== undefined ? [{ session, entry }] : [];
             });
-            if (humans.length === humanCount) {
-              const chosenBots = this.botOptions.bots.slice(0, 4 - humanCount);
+            if (humans.length === humanCount && idleBots.length >= neededBotCount) {
+              const chosenBots = idleBots.slice(0, neededBotCount);
               try {
                 const match = this.botOptions.createRoom(humans, chosenBots, now);
                 const sessionIds = humans.map((human) => human.session.id);

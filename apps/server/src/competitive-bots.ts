@@ -29,6 +29,13 @@ export const RANKED_BOTS: readonly RankedBot[] = [
   { id: "bot-dushen", nickname: "赌神", rankLevel: 17, avatarUrl: null },
   { id: "bot-duxia", nickname: "赌侠", rankLevel: 13, avatarUrl: null },
   { id: "bot-dusheng", nickname: "赌圣", rankLevel: 9, avatarUrl: null },
+  { id: "bot-dalinwa", nickname: "大力娃", rankLevel: 0, avatarUrl: null },
+  { id: "bot-qianliyan", nickname: "千里眼", rankLevel: 0, avatarUrl: null },
+  { id: "bot-tiewa", nickname: "铁娃", rankLevel: 0, avatarUrl: null },
+  { id: "bot-huowa", nickname: "火娃", rankLevel: 0, avatarUrl: null },
+  { id: "bot-shuiwa", nickname: "水娃", rankLevel: 0, avatarUrl: null },
+  { id: "bot-yinshenwa", nickname: "隐身娃", rankLevel: 0, avatarUrl: null },
+  { id: "bot-huluwa", nickname: "葫芦娃", rankLevel: 0, avatarUrl: null },
 ];
 
 export const matchmakingBotsEnabled: boolean =
