@@ -104,6 +104,7 @@ export class MatchmakingService {
           enqueuedAt: entry.enqueuedAt,
           disconnectedAt: entry.disconnectedAt,
           rankLevelSnapshot: entry.rankLevelSnapshot,
+          ...(entry.partyId === null ? {} : { partyRoomId: entry.partyId }),
         };
   }
 
@@ -128,6 +129,31 @@ export class MatchmakingService {
     });
     this.allowBotsBySessionId.set(session.id, effectiveAllowBots);
     return this.getState(session.id);
+  }
+
+  enqueueParty(
+    sessions: readonly AnonymousSession[],
+    partyRoomId: string,
+    now = Date.now(),
+  ): MatchmakingState {
+    if (
+      sessions.length < 2 ||
+      sessions.length > 4 ||
+      new Set(sessions.map((session) => session.id)).size !== sessions.length
+    ) {
+      throw new Error("TEAM_MATCH_PARTY_SIZE");
+    }
+    for (const session of sessions) {
+      this.assertWechatLinked(session);
+      this.heartbeatAtBySessionId.set(session.id, now);
+    }
+    const players = sessions.map((session) => ({
+      sessionId: session.id,
+      rankLevelSnapshot: this.database.ensureCompetitiveProfile(session.id).rankLevel,
+    }));
+    this.database.enqueueMatchmakingParty(partyRoomId, players, new Date(now).toISOString());
+    for (const session of sessions) this.allowBotsBySessionId.set(session.id, false);
+    return this.getState(sessions[0]?.id ?? "");
   }
 
   continueMatchmaking(
@@ -163,9 +189,25 @@ export class MatchmakingService {
     if (this.database.getCurrentCompetitiveMatch(sessionId) !== null) {
       return this.getState(sessionId);
     }
-    this.database.cancelMatchmakingEntry(sessionId);
-    this.allowBotsBySessionId.delete(sessionId);
+    const entry = this.database.getMatchmakingEntry(sessionId);
+    const partyId = entry?.partyId ?? null;
+    const cancelledSessionIds =
+      partyId === null ? [sessionId] : this.database.cancelMatchmakingParty(partyId);
+    if (partyId === null) {
+      this.database.cancelMatchmakingEntry(sessionId);
+    }
+    for (const cancelledSessionId of cancelledSessionIds) {
+      this.allowBotsBySessionId.delete(cancelledSessionId);
+    }
     return { status: "IDLE" };
+  }
+
+  cancelParty(partyRoomId: string): string[] {
+    const cancelledSessionIds = this.database.cancelMatchmakingParty(partyRoomId);
+    for (const sessionId of cancelledSessionIds) {
+      this.allowBotsBySessionId.delete(sessionId);
+    }
+    return cancelledSessionIds;
   }
 
   setConnected(sessionId: string, connected: boolean, now = Date.now()): MatchmakingState {
@@ -285,6 +327,9 @@ export class MatchmakingService {
           rankLevel: entry.rankLevelSnapshot,
           enqueuedAt: entry.enqueuedAt,
           recentOpponentSessionIds: this.database.getRecentCompetitiveOpponentIds(entry.sessionId),
+          ...(entry.partyId === null || entry.partySize === null
+            ? {}
+            : { partyId: entry.partyId, partySize: entry.partySize }),
         }));
         const group = selectMatchmakingGroup(candidates, now);
         if (group === null) break;

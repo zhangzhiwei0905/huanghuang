@@ -424,6 +424,59 @@ describe("GameDatabase competitive persistence", () => {
     expect(database.cancelMatchmakingEntry(PLAYER_IDS[1])).toBe(false);
   });
 
+  it("enqueues and cancels a party atomically, expiring the whole party with one member", () => {
+    const database = createDatabase();
+    createSessions(database);
+
+    const entries = database.enqueueMatchmakingParty(
+      "team-room-1",
+      PLAYER_IDS.slice(0, 3).map((sessionId, rankLevelSnapshot) => ({
+        sessionId,
+        rankLevelSnapshot,
+      })),
+      ENQUEUED_AT,
+    );
+    expect(entries).toHaveLength(3);
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          partyId: "team-room-1",
+          partySize: 3,
+          allowBots: false,
+        }),
+      ]),
+    );
+    expect(() =>
+      database.enqueueMatchmakingParty(
+        "team-room-2",
+        [PLAYER_IDS[2], PLAYER_IDS[3]].map((sessionId) => ({
+          sessionId,
+          rankLevelSnapshot: 0,
+        })),
+        ENQUEUED_AT,
+      ),
+    ).toThrow("already queued");
+    expect(database.listMatchmakingPartyEntries("team-room-2")).toEqual([]);
+
+    database.markMatchmakingEntryDisconnected(PLAYER_IDS[1], ENQUEUED_AT);
+    expect(database.expireDisconnectedMatchmakingEntries(ENQUEUED_AT)).toEqual(
+      expect.arrayContaining(PLAYER_IDS.slice(0, 3)),
+    );
+    expect(database.listMatchmakingPartyEntries("team-room-1")).toEqual([]);
+
+    database.enqueueMatchmakingParty(
+      "team-room-3",
+      PLAYER_IDS.slice(0, 2).map((sessionId) => ({
+        sessionId,
+        rankLevelSnapshot: 0,
+      })),
+      ENQUEUED_AT,
+    );
+    expect(database.cancelMatchmakingParty("team-room-3")).toEqual(
+      [...PLAYER_IDS.slice(0, 2)].sort(),
+    );
+  });
+
   it("moves every apparently online queue entry into restart grace", () => {
     const database = createDatabase();
     createSessions(database);

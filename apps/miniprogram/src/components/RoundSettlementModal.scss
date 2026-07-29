@@ -254,8 +254,9 @@
 
 .settlement-rank__main > view {
   display: flex;
-  align-items: baseline;
-  gap: 1vmin;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4vmin;
 }
 
 .settlement-rank__label,
@@ -264,9 +265,15 @@
   font-size: 1.7vmin;
 }
 
-.settlement-rank__value {
-  color: var(--ink, #272925);
-  font-size: 2.3vmin;
+.settlement-rank__badges {
+  display: flex;
+  align-items: center;
+  gap: 1.2vmin;
+}
+
+.settlement-rank__arrow {
+  color: var(--muted, #5f625b);
+  font-size: 2.8vmin;
   font-weight: 800;
 }
 

@@ -1,0 +1,48 @@
+.rank-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35vmin;
+  flex: none;
+}
+
+.rank-badge__image {
+  display: block;
+  width: 9.6vmin;
+  height: 10.8vmin;
+  min-width: 42px;
+  min-height: 47px;
+  filter: drop-shadow(0 0.45vmin 0.65vmin rgb(8 16 14 / 35%));
+}
+
+.rank-badge__label {
+  color: var(--ink, #272925);
+  font-size: clamp(10px, 1.75vmin, 13px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rank-badge--compact .rank-badge__image {
+  width: 6.8vmin;
+  height: 7.6vmin;
+  min-width: 30px;
+  min-height: 34px;
+}
+
+.rank-badge--compact .rank-badge__label {
+  font-size: clamp(9px, 1.45vmin, 11px);
+}
+
+.rank-badge--large .rank-badge__image {
+  width: 16vmin;
+  height: 18vmin;
+  min-width: 74px;
+  min-height: 83px;
+}
+
+.rank-badge--large .rank-badge__label {
+  font-size: clamp(14px, 2.5vmin, 20px);
+}

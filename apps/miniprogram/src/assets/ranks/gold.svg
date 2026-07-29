@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 180">
+  <defs>
+    <linearGradient id="a" x1="19" y1="12" x2="141" y2="168"><stop stop-color="#fff3a8"/><stop offset=".25" stop-color="#ffc84f"/><stop offset=".58" stop-color="#d97b15"/><stop offset="1" stop-color="#6a2d08"/></linearGradient>
+    <radialGradient id="b"><stop stop-color="#fffbd0"/><stop offset=".48" stop-color="#ffc82e"/><stop offset="1" stop-color="#a64a09"/></radialGradient>
+  </defs>
+  <path fill="#6b2d08" d="M80 1 96 17l25-9 12 22 26 7-5 27 6 22-16 16 5 28-24 8-11 27-28-7-26 14-16-23-29-2-2-28L0 98l11-24-8-27 24-11L36 9l27 7z"/>
+  <path fill="url(#a)" stroke="#fff3a0" stroke-width="4" d="m80 9 17 16 22-8 10 20 23 6-5 23 6 20-15 14 4 24-21 7-9 24-25-6-23 12-14-20-25-2-2-24-12-18 10-21-7-23 21-10 8-23 23 6z"/>
+  <path fill="#7d370b" stroke="#ffd75c" stroke-width="4" d="m80 31 41 25-11 66-30 22-30-22-11-66z"/>
+  <circle cx="80" cy="84" r="29" fill="url(#b)" stroke="#fff4a9" stroke-width="4"/>
+  <path fill="#a84d08" d="m80 58 8 17 19 3-14 13 4 19-17-9-17 9 4-19-14-13 19-3z"/>
+  <path fill="#fff7b5" d="M80 14l6 9-6 9-6-9zm-51 31 10 4-4 10-10-4zm102 0 4 10-10 4-4-10zM25 112l10 3-4 11-10-5zm110 0 4 9-10 5-4-11z"/>
+</svg>

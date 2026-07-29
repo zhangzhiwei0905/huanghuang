@@ -3,6 +3,8 @@ export type MatchmakingCandidate = {
   rankLevel: number;
   enqueuedAt: string;
   recentOpponentSessionIds?: readonly string[];
+  partyId?: string;
+  partySize?: number;
 };
 
 export type MatchmakingGroup = readonly [
@@ -30,10 +32,36 @@ function mutuallyCompatible(
   right: MatchmakingCandidate,
   now: number,
 ): boolean {
+  if (left.partyId !== undefined && left.partyId === right.partyId) return true;
   const distance = Math.abs(left.rankLevel - right.rankLevel);
   return (
     distance <= matchmakingRange(waitMs(left, now)) &&
     distance <= matchmakingRange(waitMs(right, now))
+  );
+}
+
+function containsCompleteParties(group: readonly MatchmakingCandidate[]): boolean {
+  const grouped = new Map<string, MatchmakingCandidate[]>();
+  for (const candidate of group) {
+    if (candidate.partyId === undefined) {
+      if (candidate.partySize !== undefined) return false;
+      continue;
+    }
+    if (
+      candidate.partySize === undefined ||
+      candidate.partySize < 2 ||
+      candidate.partySize > MATCH_SIZE
+    ) {
+      return false;
+    }
+    const members = grouped.get(candidate.partyId) ?? [];
+    members.push(candidate);
+    grouped.set(candidate.partyId, members);
+  }
+  return [...grouped.values()].every(
+    (members) =>
+      members.length === members[0]?.partySize &&
+      members.every((member) => member.partySize === members.length),
   );
 }
 
@@ -130,12 +158,15 @@ export function selectMatchmakingGroup(
           ? []
           : [[anchor, second, third, fourth]];
       })
-      .filter((group) =>
-        group.every((left, leftIndex) =>
-          group.every(
-            (right, rightIndex) => leftIndex === rightIndex || mutuallyCompatible(left, right, now),
+      .filter(
+        (group) =>
+          containsCompleteParties(group) &&
+          group.every((left, leftIndex) =>
+            group.every(
+              (right, rightIndex) =>
+                leftIndex === rightIndex || mutuallyCompatible(left, right, now),
+            ),
           ),
-        ),
       )
       .sort(compareGroups);
     const selected = groups[0];

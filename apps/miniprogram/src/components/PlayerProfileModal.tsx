@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
 import type { PublicCompetitiveProfile } from "@huanghuang/protocol";
 import { API_BASE } from "../config";
+import { RankBadge } from "./RankBadge";
 import "./PlayerProfileModal.scss";
 
 export type PlayerProfileModalProps = {
@@ -85,9 +86,7 @@ export function PlayerProfileModal({
               <>
                 <View className="profile-modal__rank">
                   <Text className="profile-modal__rank-label">当前段位</Text>
-                  <Text className="profile-modal__rank-value">
-                    {competitiveProfile.rankDisplay.displayName}
-                  </Text>
+                  <RankBadge rank={competitiveProfile.rankDisplay} size="large" />
                 </View>
                 <View className="profile-modal__achievements">
                   <View>
@@ -116,7 +115,7 @@ export function PlayerProfileModal({
           </View>
 
           <View className="profile-modal__score">
-            <Text className="profile-modal__score-label">本局牌桌分</Text>
+            <Text className="profile-modal__score-label">牌桌积分</Text>
             <Text className="profile-modal__score-value">{score}</Text>
           </View>
 

@@ -8,6 +8,8 @@ export default tseslint.config(
       "**/coverage/**",
       "**/node_modules/**",
       ".trellis/**",
+      // Nested Claude worktrees are separate checkouts with their own dependency graph.
+      ".claude/worktrees/**",
       // Taro mini-program uses its own toolchain; avoid root projectService on webpack configs.
       "apps/miniprogram/**",
     ],
@@ -30,20 +32,20 @@ export default tseslint.config(
       },
     },
     rules: {
-      "@typescript-eslint/consistent-type-imports": ["error", { "prefer": "type-imports" }],
+      "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
       "@typescript-eslint/consistent-type-definitions": "off",
       "@typescript-eslint/no-confusing-void-expression": "off",
       "@typescript-eslint/restrict-template-expressions": [
         "error",
-        { "allowNumber": true, "allowBoolean": true }
-      ]
-    }
+        { allowNumber: true, allowBoolean: true },
+      ],
+    },
   },
   {
     files: ["**/*.test.ts", "**/*.test.tsx"],
     rules: {
-      "@typescript-eslint/no-non-null-assertion": "off"
-    }
+      "@typescript-eslint/no-non-null-assertion": "off",
+    },
   },
   {
     // One-off Node build/tooling scripts (e.g. scripts/trim-audio.mjs) run
@@ -55,5 +57,5 @@ export default tseslint.config(
         process: "readonly",
       },
     },
-  }
+  },
 );

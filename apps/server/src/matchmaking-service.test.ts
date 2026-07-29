@@ -147,6 +147,36 @@ describe("MatchmakingService", () => {
     });
   });
 
+  it("keeps a three-player party together and fills its last seat with solo queue", () => {
+    const { database, onlineIds, players, service } = setup();
+    for (const session of players.slice(0, 4)) onlineIds.add(session.id);
+
+    expect(service.enqueueParty(players.slice(0, 3), "team-room-1", NOW)).toMatchObject({
+      status: "QUEUED",
+      partyRoomId: "team-room-1",
+    });
+    service.enqueue(players[3], NOW);
+
+    expect(service.tick(NOW).matches).toEqual([
+      {
+        matchId: "match-1",
+        roomId: "room-1",
+        sessionIds: players.slice(0, 4).map((session) => session.id),
+      },
+    ]);
+    expect(database.listMatchmakingEntries()).toEqual([]);
+  });
+
+  it("cancels every party member when one member cancels", () => {
+    const { database, players, service } = setup();
+    service.enqueueParty(players.slice(0, 3), "team-room-1", NOW);
+
+    expect(service.cancel(players[1].id)).toEqual({ status: "IDLE" });
+    expect(database.listMatchmakingPartyEntries("team-room-1")).toEqual([]);
+    expect(service.getState(players[0].id)).toEqual({ status: "IDLE" });
+    expect(service.getState(players[2].id)).toEqual({ status: "IDLE" });
+  });
+
   it("propagates infrastructure failures from competitive room creation", () => {
     const { onlineIds, players, service } = setup();
     for (const session of players.slice(0, 4)) {

@@ -115,10 +115,17 @@
 }
 
 .mp-home__menu {
-  display: flex;
+  width: min(86vw, 720px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
   gap: 2.4vmin;
   margin-top: 1vmin;
+}
+
+.mp-home__menu .mp-btn {
+  width: 100%;
+  min-width: 0;
 }
 
 .mp-login-entry__button {
@@ -148,6 +155,14 @@
 
 .mp-home__menu .mp-btn:nth-child(3) {
   animation-delay: 320ms;
+}
+
+.mp-home__menu .mp-btn:nth-child(4) {
+  animation-delay: 400ms;
+}
+
+.mp-home__menu .mp-btn:nth-child(5) {
+  animation-delay: 480ms;
 }
 
 @keyframes home-rise {
@@ -192,6 +207,15 @@
   box-shadow:
     0 0.7vmin 0 #1f4834,
     0 1.2vmin 2vmin rgb(0 0 0 / 18%);
+}
+
+.mp-btn--rank-team {
+  border-color: #263f55 !important;
+  background: linear-gradient(180deg, #456d86 0%, #28485f 100%) !important;
+  color: #fff !important;
+  box-shadow:
+    0 0.7vmin 0 rgb(24 48 64 / 78%),
+    0 1.2vmin 2vmin rgb(0 0 0 / 18%) !important;
 }
 
 /* Physical press: the button sinks onto its base edge. */
@@ -455,6 +479,12 @@
   align-items: center;
   gap: 1vmin;
   padding: 0;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.mp-account__identity.is-pressed {
+  transform: scale(0.97);
 }
 
 .mp-account__avatar {

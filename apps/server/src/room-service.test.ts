@@ -102,6 +102,97 @@ describe("RoomService", () => {
     });
   });
 
+  it("projects a linked player's permanent rank in ordinary friend rooms", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const linkedOwner: AnonymousSession = {
+      id: "linked-friend-owner",
+      nickname: "有段位的房主",
+      wechatOpenId: "linked-friend-openid",
+      avatarUrl: "/avatars/linked-friend-owner.png",
+    };
+    database.createSession(linkedOwner, "linked-friend-token");
+    database.ensureCompetitiveProfile(linkedOwner.id);
+    const service = new RoomService(database);
+    const room = service.createRoom(linkedOwner, 2, "FRIEND");
+
+    expect(service.project(room, linkedOwner.id).lobbySeats[0]?.competitiveProfile).toMatchObject({
+      rankDisplay: { displayName: "黑铁Ⅴ" },
+      achievements: {
+        exposedKong: 0,
+        indicatorPongKong: 0,
+        addedKong: 0,
+        concealedKong: 0,
+        releaseWildcard: 0,
+      },
+    });
+  });
+
+  it("keeps a team-ranked room waiting until the owner queues 2-4 prepared players", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const sessions: AnonymousSession[] = [0, 1, 2].map((index) => ({
+      id: `team-player-${index}`,
+      nickname: `组队玩家${index}`,
+      wechatOpenId: `team-openid-${index}`,
+      avatarUrl: null,
+    }));
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `team-token-${index}`);
+      database.ensureCompetitiveProfile(session.id);
+    }
+    const service = new RoomService(database);
+    const first = sessions[0];
+    const second = sessions[1];
+    const third = sessions[2];
+    if (first === undefined || second === undefined || third === undefined) {
+      throw new Error("Missing team fixture");
+    }
+    const room = service.createRoom(first, 10, "TEAM_MATCH", 30, "HIGH");
+    expect(room).toMatchObject({
+      mode: "TEAM_MATCH",
+      stage: "WAITING",
+      baseScore: 2,
+      turnTimeoutSeconds: 20,
+      botDifficulty: "LOW",
+    });
+    expect(service.prepareTeamMatch(first.id, room.code)).toBe("TEAM_SIZE_INVALID");
+    expect(service.joinRoom(second, room.code)).toBe(room);
+    expect(service.joinRoom(third, room.code)).toBe(room);
+    expect(service.prepareTeamMatch(first.id, room.code)).toBe("NOT_ALL_READY");
+
+    for (const session of sessions) {
+      expect(service.setReady(session.id, room.code, true)).toBe(room);
+    }
+    expect(room.stage).toBe("WAITING");
+    expect(service.prepareTeamMatch(second.id, room.code)).toBe("FORBIDDEN");
+    expect(service.prepareTeamMatch(first.id, room.code)).toMatchObject({
+      room,
+      sessions,
+    });
+
+    database.enqueueMatchmakingParty(
+      room.id,
+      sessions.map((session) => ({ sessionId: session.id, rankLevelSnapshot: 0 })),
+      "2026-07-28T10:00:00.000Z",
+    );
+    service.touchTeamMatch(room.code);
+    expect(service.project(room, first.id).teamMatchmaking).toEqual({
+      status: "QUEUED",
+      enqueuedAt: "2026-07-28T10:00:00.000Z",
+      memberCount: 3,
+    });
+    expect(service.joinRoom({ ...owner, id: "late-player" }, room.code)).toBe(
+      "WECHAT_LINK_REQUIRED",
+    );
+    expect(service.setReady(first.id, room.code, false)).toBe("ACTION_NOT_AVAILABLE");
+
+    database.cancelMatchmakingParty(room.id);
+    expect(service.reconcileTeamMatchQueues()).toEqual([room]);
+    expect(room.readySessionIds).toEqual([]);
+    expect(service.project(room, first.id).teamMatchmaking).toEqual({ status: "IDLE" });
+  });
+
   it("scans the complete four-digit code space for collisions and reports exhaustion", () => {
     const service = createService();
     const seedRoom = service.createRoom(owner, 2, "FRIEND");
@@ -507,7 +598,7 @@ describe("RoomService", () => {
     const projection = service.project(room, owner.id);
     const hints = projection.tingHints.find((hint) => hint.discardTileId === discarded.id);
 
-    expect(projection.schemaVersion).toBe(9);
+    expect(projection.schemaVersion).toBe(10);
     expect(hints?.waits).toContainEqual({
       tileKind: { suit: "TONG", rank: 1 },
       winType: "HARD",
@@ -1804,7 +1895,7 @@ describe("RoomService", () => {
     );
   });
 
-  it("projects v9 competitive profiles, public multipliers, and only the requesting settlement", () => {
+  it("projects v10 competitive profiles, public multipliers, and only the requesting settlement", () => {
     const { database, room, service } = createCompetitiveFixture();
     const round = activeRound(room);
     round.players[0].personalMultiplier = 2;
@@ -1846,7 +1937,7 @@ describe("RoomService", () => {
     const winnerProjection = service.project(room, seatZeroSessionId);
     const loserProjection = service.project(room, seatOneSessionId);
 
-    expect(winnerProjection.schemaVersion).toBe(9);
+    expect(winnerProjection.schemaVersion).toBe(10);
     expect(winnerProjection.competitiveMatch).toEqual(room.competitiveMatch);
     expect(winnerProjection.players.every((player) => player.competitiveProfile !== null)).toBe(
       true,

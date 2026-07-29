@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 180">
+  <defs>
+    <linearGradient id="a" x1="8" y1="9" x2="152" y2="169"><stop stop-color="#fff0ff"/><stop offset=".2" stop-color="#e779ff"/><stop offset=".48" stop-color="#9645e8"/><stop offset=".72" stop-color="#4925a5"/><stop offset="1" stop-color="#1e124d"/></linearGradient>
+    <radialGradient id="b"><stop stop-color="#fff"/><stop offset=".28" stop-color="#ffc8ff"/><stop offset=".62" stop-color="#c45dff"/><stop offset="1" stop-color="#5530bd"/></radialGradient>
+  </defs>
+  <path fill="#25104f" d="m80 0 13 14 25-12 17 20 25 1 1 27 12 19-11 20 11 25-18 15-5 29-27 1-16 22-27-12-27 12-16-22-27-1-5-29-18-15 11-25L-13 69-1 50 0 23l25-1L42 2l25 12z"/>
+  <path fill="url(#a)" stroke="#ffd4ff" stroke-width="4" d="m80 8 14 15 22-11 14 18 23 1v22l11 17-10 17 10 22-16 13-4 25-24 1-14 19-26-11-26 11-14-19-24-1-4-25-16-13 10-22L-4 70 7 53V31l23-1 14-18 22 11z"/>
+  <path fill="#43208d" stroke="#ee91ff" stroke-width="4" d="m80 27 44 28-14 70-30 22-30-22-14-70z"/>
+  <circle cx="80" cy="84" r="32" fill="url(#b)" stroke="#fff0ff" stroke-width="4"/>
+  <path fill="#fff" d="m80 52 8 22 23 1-18 14 6 23-19-13-19 13 6-23-18-14 23-1z"/>
+  <path fill="#fff1ff" d="m80 9 7 12-7 12-7-12zM23 31l13 4-4 13-13-4zm114 0 4 13-13 4-4-13zM12 101l14 3-4 14-13-8zm136 0 3 9-13 8-4-14z"/>
+</svg>

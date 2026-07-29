@@ -9,6 +9,7 @@ import {
   matchmakingStateSchema,
   publicCompetitiveProfileSchema,
   selfCompetitiveProfileSchema,
+  teamMatchmakingProjectionSchema,
 } from "./competitive.js";
 
 const rankDisplay = {
@@ -107,12 +108,14 @@ describe("competitive protocol", () => {
         enqueuedAt: "2026-07-28T10:00:00.000Z",
         disconnectedAt: null,
         rankLevelSnapshot: 12,
+        partyRoomId: "team-room-1",
       }),
     ).toEqual({
       status: "QUEUED",
       enqueuedAt: "2026-07-28T10:00:00.000Z",
       disconnectedAt: null,
       rankLevelSnapshot: 12,
+      partyRoomId: "team-room-1",
     });
     expect(
       matchmakingStateSchema.parse({ status: "MATCHED", matchId: "match-1", roomId: "room-1" }),
@@ -123,6 +126,25 @@ describe("competitive protocol", () => {
         enqueuedAt: "not-a-date",
         disconnectedAt: null,
         rankLevelSnapshot: 12,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      teamMatchmakingProjectionSchema.parse({
+        status: "QUEUED",
+        enqueuedAt: "2026-07-28T10:00:00.000Z",
+        memberCount: 3,
+      }),
+    ).toEqual({
+      status: "QUEUED",
+      enqueuedAt: "2026-07-28T10:00:00.000Z",
+      memberCount: 3,
+    });
+    expect(
+      teamMatchmakingProjectionSchema.safeParse({
+        status: "QUEUED",
+        enqueuedAt: "2026-07-28T10:00:00.000Z",
+        memberCount: 1,
       }).success,
     ).toBe(false);
   });

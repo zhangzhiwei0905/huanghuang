@@ -19,11 +19,13 @@ export function normalizeRoomProjection(projection: RoomProjection): RoomProject
   const legacy = projection as RoomProjection & {
     effectCue?: RoomProjection["effectCue"];
     competitiveMatch?: RoomProjection["competitiveMatch"];
+    teamMatchmaking?: RoomProjection["teamMatchmaking"];
   };
   if (
-    projection.schemaVersion === 9 &&
+    projection.schemaVersion === 10 &&
     legacy.effectCue !== undefined &&
-    legacy.competitiveMatch !== undefined
+    legacy.competitiveMatch !== undefined &&
+    legacy.teamMatchmaking !== undefined
   ) {
     return projection;
   }
@@ -44,9 +46,10 @@ export function normalizeRoomProjection(projection: RoomProjection): RoomProject
 
   return {
     ...projection,
-    schemaVersion: 9,
+    schemaVersion: 10,
     effectCue: legacy.effectCue ?? null,
     competitiveMatch: legacy.competitiveMatch ?? null,
+    teamMatchmaking: legacy.teamMatchmaking ?? null,
     ...(players === undefined ? {} : { players }),
     ...(lobbySeats === undefined ? {} : { lobbySeats }),
     ...(roundSettlement == null

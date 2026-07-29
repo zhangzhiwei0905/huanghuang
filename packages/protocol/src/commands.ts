@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { baseScoreSchema } from "./game.js";
 
-export const roomModeSchema = z.enum(["FRIEND", "BOT", "MATCH"]);
-export const creatableRoomModeSchema = z.enum(["FRIEND", "BOT"]);
+export const roomModeSchema = z.enum(["FRIEND", "BOT", "TEAM_MATCH", "MATCH"]);
+export const creatableRoomModeSchema = z.enum(["FRIEND", "BOT", "TEAM_MATCH"]);
 export const botDifficultySchema = z.enum(["LOW", "HIGH"]);
 export type BotDifficulty = z.infer<typeof botDifficultySchema>;
 export const BOT_DIFFICULTY_OPTIONS: readonly BotDifficulty[] = ["LOW", "HIGH"];

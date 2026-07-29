@@ -22,6 +22,8 @@ import {
   type VersionInfo,
 } from "../../api/http";
 import { API_BASE, APP_BUILT_AT, APP_VERSION } from "../../config";
+import { PlayerProfileModal } from "../../components/PlayerProfileModal";
+import { RankBadge } from "../../components/RankBadge";
 import {
   clearStoredSessionToken,
   type Identity,
@@ -282,6 +284,7 @@ export default function IndexPage() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [backendVersion, setBackendVersion] = useState<VersionInfo | null>(null);
   const [backendVersionError, setBackendVersionError] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     // Prefetched once on page load (mirrors the competitiveApi.profile()
@@ -310,7 +313,23 @@ export default function IndexPage() {
     setMatchmaking(response.state);
     setMatchmakingNow(Date.now());
     if (response.botsEnabled) setBotsEnabled(true);
-    if (response.state.status !== "MATCHED" || response.room === null) return;
+    const isQueuedPartyRoom =
+      response.state.status === "QUEUED" &&
+      response.state.partyRoomId !== undefined &&
+      response.room?.mode === "TEAM_MATCH";
+    if ((response.state.status !== "MATCHED" && !isQueuedPartyRoom) || response.room === null) {
+      return;
+    }
+    if (isQueuedPartyRoom) {
+      if (matchedRoomOpeningRef.current) return;
+      matchedRoomOpeningRef.current = true;
+      Taro.setStorageSync("huanghuang_open_room", response.room);
+      void Taro.navigateTo({ url: "/pages/room/index" }).finally(() => {
+        matchedRoomOpeningRef.current = false;
+      });
+      return;
+    }
+    if (response.state.status !== "MATCHED") return;
     const trusteeMatchId = Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
     const deliberatelyTrustee =
       typeof trusteeMatchId === "string" && trusteeMatchId === response.state.matchId;
@@ -459,6 +478,21 @@ export default function IndexPage() {
     }
   }
 
+  async function startTeamRanked() {
+    if (identity === null || matchmakingBusy) return;
+    setMatchmakingBusy(true);
+    setMatchmakingError(null);
+    try {
+      const room = await roomApi.create(identity.nickname, 2, "TEAM_MATCH", 20, "LOW");
+      Taro.setStorageSync("huanghuang_open_room", room);
+      await Taro.navigateTo({ url: "/pages/room/index" });
+    } catch (cause) {
+      setMatchmakingError(describeSubmitError(cause));
+    } finally {
+      setMatchmakingBusy(false);
+    }
+  }
+
   async function cancelMatchmaking() {
     if (matchmakingBusy) return;
     setMatchmakingBusy(true);
@@ -578,7 +612,11 @@ export default function IndexPage() {
       <Image className="mp-home__bg" src={tableBackground} mode="aspectFill" />
       <View className="mp-home__overlay" />
       <View className="mp-account">
-        <View className="mp-account__identity">
+        <View
+          className="mp-account__identity"
+          hoverClass="is-pressed"
+          onClick={() => setProfileOpen(true)}
+        >
           <View className="mp-account__avatar">
             {identity.avatarUrl !== null ? (
               <Image
@@ -592,10 +630,10 @@ export default function IndexPage() {
           </View>
           <View className="mp-account__text">
             <Text className="mp-account__nickname">{identity.nickname}</Text>
-            {competitiveProfile !== null ? (
-              <Text className="mp-account__rank">{competitiveProfile.rankDisplay.displayName}</Text>
-            ) : null}
           </View>
+          {competitiveProfile !== null ? (
+            <RankBadge rank={competitiveProfile.rankDisplay} size="compact" />
+          ) : null}
         </View>
         <Button
           hoverClass="is-pressed"
@@ -611,22 +649,35 @@ export default function IndexPage() {
         <View className="mp-home__stage">
           <HomeBrand />
           <View className="mp-home__menu">
-            <Button
-              hoverClass="is-pressed"
-              className="mp-btn mp-btn--primary"
-              disabled={busy || matchmakingBusy || competitiveProfile === null}
-              onClick={() =>
-                void (matchmaking.status === "MATCHED"
-                  ? returnToCompetitiveMatch()
-                  : startMatchmaking())
-              }
-            >
-              {matchmakingBusy
-                ? "正在处理…"
-                : matchmaking.status === "MATCHED"
-                  ? "返回对局"
-                  : "排位赛"}
-            </Button>
+            {matchmaking.status === "MATCHED" ? (
+              <Button
+                hoverClass="is-pressed"
+                className="mp-btn mp-btn--primary"
+                disabled={busy || matchmakingBusy}
+                onClick={() => void returnToCompetitiveMatch()}
+              >
+                {matchmakingBusy ? "正在处理…" : "返回排位对局"}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  hoverClass="is-pressed"
+                  className="mp-btn mp-btn--primary"
+                  disabled={busy || matchmakingBusy || competitiveProfile === null}
+                  onClick={() => void startMatchmaking()}
+                >
+                  {matchmakingBusy ? "正在处理…" : "单人排位"}
+                </Button>
+                <Button
+                  hoverClass="is-pressed"
+                  className="mp-btn mp-btn--rank-team"
+                  disabled={busy || matchmakingBusy || competitiveProfile === null}
+                  onClick={() => void startTeamRanked()}
+                >
+                  组队排位
+                </Button>
+              </>
+            )}
             <Button
               hoverClass="is-pressed"
               className="mp-btn"
@@ -770,9 +821,11 @@ export default function IndexPage() {
             <View className="mp-matchmaking__status">
               <View>
                 <Text className="mp-matchmaking__label">当前段位</Text>
-                <Text className="mp-matchmaking__value">
-                  {competitiveProfile?.rankDisplay.displayName ?? "黑铁Ⅴ"}
-                </Text>
+                {competitiveProfile !== null ? (
+                  <RankBadge rank={competitiveProfile.rankDisplay} size="compact" />
+                ) : (
+                  <Text className="mp-matchmaking__value">黑铁Ⅴ</Text>
+                )}
               </View>
               <View>
                 <Text className="mp-matchmaking__label">等待时间</Text>
@@ -816,6 +869,17 @@ export default function IndexPage() {
           backend={backendVersion}
           backendError={backendVersionError}
           onClose={() => setAboutOpen(false)}
+        />
+      ) : null}
+      {profileOpen ? (
+        <PlayerProfileModal
+          nickname={identity.nickname}
+          avatarUrl={identity.avatarUrl}
+          score={0}
+          connected
+          isSelf
+          competitiveProfile={competitiveProfile}
+          onClose={() => setProfileOpen(false)}
         />
       ) : null}
     </View>

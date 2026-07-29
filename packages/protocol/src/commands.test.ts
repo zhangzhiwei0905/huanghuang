@@ -62,6 +62,10 @@ describe("room interaction schemas", () => {
 
   it("decodes MATCH room projections without allowing clients to create MATCH rooms", () => {
     expect(roomModeSchema.parse("MATCH")).toBe("MATCH");
+    expect(roomModeSchema.parse("TEAM_MATCH")).toBe("TEAM_MATCH");
+    expect(
+      createRoomSchema.safeParse({ nickname: "玩家", baseScore: 2, mode: "TEAM_MATCH" }).success,
+    ).toBe(true);
     expect(
       createRoomSchema.safeParse({ nickname: "玩家", baseScore: 2, mode: "MATCH" }).success,
     ).toBe(false);

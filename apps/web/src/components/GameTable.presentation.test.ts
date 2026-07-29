@@ -60,7 +60,7 @@ function player(seat: Seat): PlayerProjection {
 function resultRoom(): RoomProjection {
   const players = ([0, 1, 2, 3] as const).map(player);
   return {
-    schemaVersion: 9,
+    schemaVersion: 10,
     roomId: "room-1",
     roomCode: "123456",
     version: 12,
@@ -69,6 +69,7 @@ function resultRoom(): RoomProjection {
     botDifficulty: "HIGH",
     mode: "FRIEND",
     competitiveMatch: null,
+    teamMatchmaking: null,
     stage: "ROUND_RESULT",
     roundId: "round-1",
     roundStartedAt: "2026-07-17T00:00:00.000Z",

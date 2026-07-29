@@ -15,11 +15,7 @@ export type AnonymousSession = {
 };
 
 export type CompetitiveAchievementAction =
-  | "EXPOSED_KONG"
-  | "INDICATOR_PONG_KONG"
-  | "ADDED_KONG"
-  | "CONCEALED_KONG"
-  | "RELEASE_WILDCARD";
+  "EXPOSED_KONG" | "INDICATOR_PONG_KONG" | "ADDED_KONG" | "CONCEALED_KONG" | "RELEASE_WILDCARD";
 
 export type CompetitiveProfileRow = {
   sessionId: string;
@@ -62,6 +58,8 @@ export type MatchmakingEntryRow = {
   // server restart (MatchmakingService keeps an in-memory cache on top of
   // this column to avoid a DB round trip on every scheduler tick).
   allowBots: boolean;
+  partyId: string | null;
+  partySize: number | null;
 };
 
 export type UpsertMatchmakingEntryInput = {
@@ -69,6 +67,8 @@ export type UpsertMatchmakingEntryInput = {
   rankLevelSnapshot: number;
   enqueuedAt?: string;
   allowBots?: boolean;
+  partyId?: string | null;
+  partySize?: number | null;
 };
 
 // SQLite has no boolean type; the raw row shape read straight off the
@@ -371,6 +371,8 @@ export class GameDatabase {
       "ALTER TABLE anonymous_sessions ADD COLUMN wechat_open_id TEXT",
       "ALTER TABLE anonymous_sessions ADD COLUMN avatar_url TEXT",
       "ALTER TABLE matchmaking_entries ADD COLUMN allow_bots INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE matchmaking_entries ADD COLUMN party_id TEXT",
+      "ALTER TABLE matchmaking_entries ADD COLUMN party_size INTEGER CHECK (party_size BETWEEN 2 AND 4)",
       "ALTER TABLE competitive_profiles ADD COLUMN release_wildcard_count INTEGER NOT NULL DEFAULT 0 CHECK (release_wildcard_count >= 0)",
     ]) {
       try {
@@ -385,6 +387,9 @@ export class GameDatabase {
     this.connection.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_anonymous_sessions_open_id ON anonymous_sessions (wechat_open_id)",
     );
+    this.connection.exec(
+      "CREATE INDEX IF NOT EXISTS idx_matchmaking_entries_party ON matchmaking_entries (party_id) WHERE party_id IS NOT NULL",
+    );
     // Unlike the additive columns above, a CHECK constraint baked into
     // competitive_action_events by an earlier CREATE TABLE (run against a
     // pre-existing database file) can't be widened with ALTER TABLE — SQLite
@@ -396,7 +401,9 @@ export class GameDatabase {
 
   private migrateCompetitiveActionEventsCheckConstraint(): void {
     const existing = this.connection
-      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'competitive_action_events'")
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'competitive_action_events'",
+      )
       .get() as { sql: string } | undefined;
     if (existing === undefined || existing.sql.includes("RELEASE_WILDCARD")) return;
     const rebuild = this.connection.transaction(() => {
@@ -425,7 +432,8 @@ export class GameDatabase {
           ON competitive_action_events (match_id, round_id, round_version);
       `);
     });
-    const foreignKeysWereOn = (this.connection.pragma("foreign_keys", { simple: true }) as number) === 1;
+    const foreignKeysWereOn =
+      (this.connection.pragma("foreign_keys", { simple: true }) as number) === 1;
     if (foreignKeysWereOn) this.connection.pragma("foreign_keys = OFF");
     try {
       rebuild();
@@ -465,7 +473,9 @@ export class GameDatabase {
     enqueued_at AS enqueuedAt,
     disconnected_at AS disconnectedAt,
     version,
-    allow_bots AS allowBots`;
+    allow_bots AS allowBots,
+    party_id AS partyId,
+    party_size AS partySize`;
 
   private static readonly COMPETITIVE_MATCH_COLUMNS = `
     id,
@@ -761,29 +771,70 @@ export class GameDatabase {
       }
       const enqueuedAt = input.enqueuedAt ?? new Date().toISOString();
       const allowBots = input.allowBots === true ? 1 : 0;
+      const partyId = input.partyId ?? null;
+      const partySize = input.partySize ?? null;
+      if ((partyId === null) !== (partySize === null)) {
+        throw new Error("Matchmaking party id and size must be supplied together");
+      }
       this.connection
         .prepare(
           `INSERT INTO matchmaking_entries
-           (session_id, rank_level_snapshot, enqueued_at, disconnected_at, version, allow_bots)
-           VALUES (?, ?, ?, NULL, 1, ?)
+           (session_id, rank_level_snapshot, enqueued_at, disconnected_at, version, allow_bots,
+            party_id, party_size)
+           VALUES (?, ?, ?, NULL, 1, ?, ?, ?)
            ON CONFLICT(session_id) DO UPDATE SET
              rank_level_snapshot = excluded.rank_level_snapshot,
              disconnected_at = NULL,
              allow_bots = excluded.allow_bots,
+             party_id = excluded.party_id,
+             party_size = excluded.party_size,
              version = CASE
                WHEN matchmaking_entries.disconnected_at IS NULL
                  AND matchmaking_entries.rank_level_snapshot = excluded.rank_level_snapshot
                  AND matchmaking_entries.allow_bots = excluded.allow_bots
+                 AND matchmaking_entries.party_id IS excluded.party_id
+                 AND matchmaking_entries.party_size IS excluded.party_size
                THEN matchmaking_entries.version
                ELSE matchmaking_entries.version + 1
              END`,
         )
-        .run(input.sessionId, input.rankLevelSnapshot, enqueuedAt, allowBots);
+        .run(input.sessionId, input.rankLevelSnapshot, enqueuedAt, allowBots, partyId, partySize);
       const entry = this.getMatchmakingEntry(input.sessionId);
       if (entry === null) {
         throw new Error(`Unable to upsert matchmaking entry for ${input.sessionId}`);
       }
       return entry;
+    })();
+  }
+
+  enqueueMatchmakingParty(
+    partyId: string,
+    players: readonly { sessionId: string; rankLevelSnapshot: number }[],
+    enqueuedAt = new Date().toISOString(),
+  ): MatchmakingEntryRow[] {
+    if (
+      partyId.length === 0 ||
+      players.length < 2 ||
+      players.length > 4 ||
+      new Set(players.map((player) => player.sessionId)).size !== players.length
+    ) {
+      throw new Error("A matchmaking party requires 2-4 unique sessions");
+    }
+    return this.connection.transaction(() => {
+      for (const player of players) {
+        if (this.getMatchmakingEntry(player.sessionId) !== null) {
+          throw new Error(`Session ${player.sessionId} is already queued`);
+        }
+      }
+      return players.map((player) =>
+        this.upsertMatchmakingEntry({
+          ...player,
+          enqueuedAt,
+          allowBots: false,
+          partyId,
+          partySize: players.length,
+        }),
+      );
     })();
   }
 
@@ -819,6 +870,34 @@ export class GameDatabase {
       this.connection.prepare("DELETE FROM matchmaking_entries WHERE session_id = ?").run(sessionId)
         .changes === 1
     );
+  }
+
+  listMatchmakingPartyEntries(partyId: string): MatchmakingEntryRow[] {
+    return (
+      this.connection
+        .prepare(
+          `SELECT ${GameDatabase.MATCHMAKING_ENTRY_COLUMNS}
+           FROM matchmaking_entries
+           WHERE party_id = ?
+           ORDER BY enqueued_at, session_id`,
+        )
+        .all(partyId) as MatchmakingEntryRowRaw[]
+    ).map((row) => GameDatabase.toMatchmakingEntryRow(row));
+  }
+
+  cancelMatchmakingParty(partyId: string): string[] {
+    return this.connection.transaction(() => {
+      const rows = this.connection
+        .prepare(
+          `SELECT session_id AS sessionId
+           FROM matchmaking_entries
+           WHERE party_id = ?
+           ORDER BY session_id`,
+        )
+        .all(partyId) as { sessionId: string }[];
+      this.connection.prepare("DELETE FROM matchmaking_entries WHERE party_id = ?").run(partyId);
+      return rows.map((row) => row.sessionId);
+    })();
   }
 
   markAllMatchmakingEntriesDisconnected(disconnectedAt = new Date().toISOString()): number {
@@ -860,18 +939,30 @@ export class GameDatabase {
     return this.connection.transaction(() => {
       const rows = this.connection
         .prepare(
-          `SELECT session_id AS sessionId
+          `SELECT session_id AS sessionId, party_id AS partyId
            FROM matchmaking_entries
            WHERE disconnected_at IS NOT NULL AND disconnected_at <= ?
            ORDER BY disconnected_at, session_id`,
         )
-        .all(disconnectedBefore) as { sessionId: string }[];
+        .all(disconnectedBefore) as { sessionId: string; partyId: string | null }[];
       if (rows.length === 0) return [];
-      const placeholders = rows.map(() => "?").join(", ");
-      this.connection
-        .prepare(`DELETE FROM matchmaking_entries WHERE session_id IN (${placeholders})`)
-        .run(...rows.map((row) => row.sessionId));
-      return rows.map((row) => row.sessionId);
+      const expiredSessionIds = new Set(rows.map((row) => row.sessionId));
+      for (const partyId of new Set(rows.flatMap((row) => row.partyId ?? []))) {
+        for (const entry of this.listMatchmakingPartyEntries(partyId)) {
+          expiredSessionIds.add(entry.sessionId);
+        }
+        this.connection.prepare("DELETE FROM matchmaking_entries WHERE party_id = ?").run(partyId);
+      }
+      const standaloneSessionIds = rows
+        .filter((row) => row.partyId === null)
+        .map((row) => row.sessionId);
+      if (standaloneSessionIds.length > 0) {
+        const placeholders = standaloneSessionIds.map(() => "?").join(", ");
+        this.connection
+          .prepare(`DELETE FROM matchmaking_entries WHERE session_id IN (${placeholders})`)
+          .run(...standaloneSessionIds);
+      }
+      return [...expiredSessionIds];
     })();
   }
 
@@ -961,7 +1052,9 @@ export class GameDatabase {
    * four sessions, which is what prevents two simultaneous bot matches from
    * double-booking the shared bot accounts.
    */
-  createCompetitiveMatchWithBots(input: CreateCompetitiveMatchWithBotsInput): CompetitiveMatchSettlement {
+  createCompetitiveMatchWithBots(
+    input: CreateCompetitiveMatchWithBotsInput,
+  ): CompetitiveMatchSettlement {
     const allPlayers = [...input.humanPlayers, ...input.botPlayers];
     assertFourUniquePlayers(allPlayers);
     if (input.room.id !== input.match.roomId) {
@@ -972,7 +1065,9 @@ export class GameDatabase {
       input.humanPlayers.length > 3 ||
       input.botPlayers.length !== 4 - input.humanPlayers.length
     ) {
-      throw new Error("A competitive bot match needs 1-3 humans plus bots filling the rest of the table");
+      throw new Error(
+        "A competitive bot match needs 1-3 humans plus bots filling the rest of the table",
+      );
     }
     return this.connection.transaction(() => {
       const sessionIds = allPlayers.map((player) => player.sessionId);

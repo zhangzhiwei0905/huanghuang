@@ -12,12 +12,14 @@ function candidate(
   rankLevel: number,
   waitMs: number,
   recentOpponentSessionIds?: readonly string[],
+  party?: { id: string; size: number },
 ): MatchmakingCandidate {
   return {
     sessionId,
     rankLevel,
     enqueuedAt: new Date(NOW - waitMs).toISOString(),
     ...(recentOpponentSessionIds === undefined ? {} : { recentOpponentSessionIds }),
+    ...(party === undefined ? {} : { partyId: party.id, partySize: party.size }),
   };
 }
 
@@ -135,5 +137,66 @@ describe("selectMatchmakingGroup", () => {
     );
 
     expect(group).not.toBeNull();
+  });
+
+  it.each([
+    [
+      "2+1+1",
+      [
+        candidate("a", 10, 5_000, undefined, { id: "party-a", size: 2 }),
+        candidate("b", 11, 5_000, undefined, { id: "party-a", size: 2 }),
+        candidate("c", 11, 4_000),
+        candidate("d", 12, 3_000),
+      ],
+    ],
+    [
+      "2+2",
+      [
+        candidate("a", 10, 5_000, undefined, { id: "party-a", size: 2 }),
+        candidate("b", 11, 5_000, undefined, { id: "party-a", size: 2 }),
+        candidate("c", 10, 4_000, undefined, { id: "party-b", size: 2 }),
+        candidate("d", 11, 4_000, undefined, { id: "party-b", size: 2 }),
+      ],
+    ],
+    [
+      "3+1",
+      [
+        candidate("a", 10, 5_000, undefined, { id: "party-a", size: 3 }),
+        candidate("b", 10, 5_000, undefined, { id: "party-a", size: 3 }),
+        candidate("c", 11, 5_000, undefined, { id: "party-a", size: 3 }),
+        candidate("d", 12, 4_000),
+      ],
+    ],
+    [
+      "4",
+      [
+        candidate("a", 0, 5_000, undefined, { id: "party-a", size: 4 }),
+        candidate("b", 10, 5_000, undefined, { id: "party-a", size: 4 }),
+        candidate("c", 20, 5_000, undefined, { id: "party-a", size: 4 }),
+        candidate("d", 30, 5_000, undefined, { id: "party-a", size: 4 }),
+      ],
+    ],
+  ])("keeps a valid %s party composition together", (_label, candidates) => {
+    expect(selectMatchmakingGroup(candidates, NOW)?.map((item) => item.sessionId)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+  });
+
+  it("does not split a party when only part of its frozen roster is online", () => {
+    expect(
+      selectMatchmakingGroup(
+        [
+          candidate("party-a", 10, 5_000, undefined, { id: "party", size: 2 }),
+          candidate("solo-a", 10, 4_000),
+          candidate("solo-b", 10, 3_000),
+          candidate("solo-c", 10, 2_000),
+          candidate("solo-d", 10, 1_000),
+        ],
+        NOW,
+      )?.map((item) => item.sessionId),
+    ).toEqual(["solo-a", "solo-b", "solo-c", "solo-d"]);
   });
 });

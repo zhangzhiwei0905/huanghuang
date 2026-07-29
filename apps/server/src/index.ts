@@ -122,6 +122,17 @@ const sockets = new Server(app.server, {
 
 function matchmakingResponse(sessionId: string) {
   const state = matchmaking.getState(sessionId);
+  if (state.status === "QUEUED" && state.partyRoomId !== undefined) {
+    const partyRoom = rooms.getRoomById(state.partyRoomId);
+    return {
+      state,
+      botsEnabled: matchmakingBotsEnabled,
+      room:
+        partyRoom !== null && rooms.hasMember(sessionId, partyRoom.code)
+          ? rooms.project(partyRoom, sessionId)
+          : null,
+    };
+  }
   if (state.status !== "MATCHED") return { state, room: null, botsEnabled: matchmakingBotsEnabled };
   const room = rooms.getRoomById(state.roomId);
   return {
@@ -156,6 +167,14 @@ async function emitRoomProjection(roomId: string, excludedSocketId: string | nul
       excludedSocketId === null ? sockets.to(roomId) : sockets.to(roomId).except(excludedSocketId);
     target.emit("room:update", { version: room.version });
   }
+}
+
+function tickMatchmaking() {
+  const result = matchmaking.tick();
+  for (const room of rooms.reconcileTeamMatchQueues()) {
+    void emitRoomProjection(room.id);
+  }
+  return result;
 }
 
 // Mini-program clients read X-Session-Token; browsers expose it only if allowed.
@@ -348,7 +367,7 @@ app.get("/api/matchmaking/status", (request, reply) => {
     return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
   }
   matchmaking.heartbeat(session.id);
-  matchmaking.tick();
+  tickMatchmaking();
   return matchmakingResponse(session.id);
 });
 
@@ -368,7 +387,7 @@ app.post("/api/matchmaking/queue", (request, reply) => {
         parsed.data.allowBots === true,
       );
     }
-    matchmaking.tick();
+    tickMatchmaking();
     return matchmakingResponse(session.id);
   } catch (cause) {
     const code = cause instanceof Error ? cause.message : "MATCHMAKING_FAILED";
@@ -386,7 +405,15 @@ app.post("/api/matchmaking/queue", (request, reply) => {
 app.delete("/api/matchmaking/queue", (request, reply) => {
   const session = sessions.resolve(request);
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const entry = database.getMatchmakingEntry(session.id);
   matchmaking.cancel(session.id);
+  if (entry?.partyId !== null && entry?.partyId !== undefined) {
+    const partyRoom = rooms.getRoomById(entry.partyId);
+    if (partyRoom !== null) {
+      rooms.resetTeamMatch(partyRoom.code);
+      sockets.to(partyRoom.id).emit("room:update", { version: partyRoom.version });
+    }
+  }
   return matchmakingResponse(session.id);
 });
 
@@ -447,6 +474,9 @@ app.post("/api/rooms", (request, reply) => {
   const parsed = createRoomSchema.safeParse(request.body);
   if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
   const { session } = sessions.ensure(request, reply, parsed.data.nickname);
+  if (parsed.data.mode === "TEAM_MATCH" && session.wechatOpenId == null) {
+    return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+  }
   const room = rooms.createRoom(
     session,
     parsed.data.baseScore,
@@ -466,6 +496,9 @@ app.post("/api/rooms/join", (request, reply) => {
   if (room === "ROOM_FULL") return reply.code(409).send({ error: "ROOM_FULL" });
   if (room === "ROOM_NOT_JOINABLE") {
     return reply.code(409).send({ error: "ROOM_NOT_JOINABLE" });
+  }
+  if (room === "WECHAT_LINK_REQUIRED") {
+    return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
   }
   sockets.to(room.id).emit("room:update", { version: room.version });
   return rooms.project(room, session.id);
@@ -490,6 +523,65 @@ app.post<{ Params: { code: string } }>("/api/rooms/:code/ready", (request, reply
   const room = rooms.setReady(session.id, request.params.code, parsed.data.ready);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
   if (room === "ACTION_NOT_AVAILABLE") {
+    return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
+  }
+  sockets.to(room.id).emit("room:update", { version: room.version });
+  return rooms.project(room, session.id);
+});
+
+app.post<{ Params: { code: string } }>("/api/rooms/:code/team-matchmaking", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const prepared = rooms.prepareTeamMatch(session.id, request.params.code);
+  if (prepared === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (prepared === "FORBIDDEN") return reply.code(403).send({ error: "OWNER_ONLY" });
+  if (prepared === "TEAM_SIZE_INVALID") {
+    return reply.code(409).send({ error: "TEAM_SIZE_INVALID" });
+  }
+  if (prepared === "NOT_ALL_READY") {
+    return reply.code(409).send({ error: "NOT_ALL_READY" });
+  }
+  if (prepared === "WECHAT_LINK_REQUIRED") {
+    return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+  }
+  if (prepared === "ACTION_NOT_AVAILABLE") {
+    return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
+  }
+  try {
+    matchmaking.enqueueParty(prepared.sessions, prepared.room.id);
+    rooms.touchTeamMatch(prepared.room.code);
+    sockets.to(prepared.room.id).emit("room:update", { version: prepared.room.version });
+    tickMatchmaking();
+    return rooms.project(prepared.room, session.id);
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "TEAM_MATCHMAKING_FAILED";
+    if (code.includes("already queued") || code.includes("active competitive match")) {
+      return reply.code(409).send({ error: "MATCHMAKING_STATE_CONFLICT" });
+    }
+    request.log.error({ err: cause }, "failed to enqueue competitive party");
+    return reply.code(500).send({ error: "TEAM_MATCHMAKING_FAILED" });
+  }
+});
+
+app.delete<{ Params: { code: string } }>("/api/rooms/:code/team-matchmaking", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const room = rooms.getRoom(request.params.code);
+  if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (!rooms.hasMember(session.id, room.code)) {
+    return reply.code(403).send({ error: "NOT_A_MEMBER" });
+  }
+  if (
+    room.mode !== "TEAM_MATCH" ||
+    room.stage !== "WAITING" ||
+    room.teamQueueStartedAt === null ||
+    database.getCurrentCompetitiveMatch(session.id) !== null
+  ) {
+    return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
+  }
+  matchmaking.cancelParty(room.id);
+  const reset = rooms.resetTeamMatch(room.code);
+  if (reset === null || reset === "ACTION_NOT_AVAILABLE") {
     return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
   }
   sockets.to(room.id).emit("room:update", { version: room.version });
@@ -557,6 +649,10 @@ app.post<{ Params: { code: string } }>("/api/rooms/:code/continue", (request, re
 app.post<{ Params: { code: string } }>("/api/rooms/:code/dissolve", (request, reply) => {
   const session = sessions.resolve(request);
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const existing = rooms.getRoom(request.params.code);
+  if (existing?.mode === "TEAM_MATCH" && existing.ownerSessionId === session.id) {
+    matchmaking.cancelParty(existing.id);
+  }
   const room = rooms.requestDissolve(session.id, request.params.code);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
   if (room === "FORBIDDEN") return reply.code(403).send({ error: "OWNER_ONLY" });
@@ -567,6 +663,15 @@ app.post<{ Params: { code: string } }>("/api/rooms/:code/dissolve", (request, re
 app.delete<{ Params: { code: string } }>("/api/rooms/:code", (request, reply) => {
   const session = sessions.resolve(request);
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const existing = rooms.getRoom(request.params.code);
+  if (
+    existing?.mode === "TEAM_MATCH" &&
+    rooms.hasMember(session.id, existing.code) &&
+    database.listMatchmakingPartyEntries(existing.id).length > 0
+  ) {
+    matchmaking.cancelParty(existing.id);
+    rooms.resetTeamMatch(existing.code);
+  }
   const room = rooms.leaveRoom(session.id, request.params.code);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
   sockets.to(room.id).emit("room:update", { version: room.version });
@@ -685,7 +790,7 @@ const roomTimer = setInterval(() => {
 roomTimer.unref();
 
 const matchmakingTimer = setInterval(() => {
-  matchmaking.tick();
+  tickMatchmaking();
 }, 1_000);
 matchmakingTimer.unref();
 

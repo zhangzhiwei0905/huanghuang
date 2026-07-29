@@ -34,6 +34,8 @@ type RoomController = {
   leaveRoom: () => Promise<void>;
   dissolve: () => Promise<void>;
   ready: () => Promise<void>;
+  startTeamMatchmaking: () => Promise<void>;
+  cancelTeamMatchmaking: () => Promise<void>;
   updateBaseScore: (baseScore: BaseScore) => Promise<void>;
   updateBotDifficulty: (difficulty: BotDifficulty) => Promise<void>;
   addBot: () => Promise<void>;
@@ -340,6 +342,30 @@ export function useRoom(): RoomController {
     });
   }, [replaceProjection, runExclusive]);
 
+  const startTeamMatchmaking = useCallback(async () => {
+    const current = roomRef.current;
+    if (current === null) return;
+    await runExclusive(null, async () => {
+      try {
+        replaceProjection(await roomApi.startTeamMatchmaking(current.roomCode));
+      } catch (cause) {
+        setError(errorLabel(cause instanceof ApiError ? cause.code : "UNKNOWN_ERROR"));
+      }
+    });
+  }, [replaceProjection, runExclusive]);
+
+  const cancelTeamMatchmaking = useCallback(async () => {
+    const current = roomRef.current;
+    if (current === null) return;
+    await runExclusive(null, async () => {
+      try {
+        replaceProjection(await roomApi.cancelTeamMatchmaking(current.roomCode));
+      } catch (cause) {
+        setError(errorLabel(cause instanceof ApiError ? cause.code : "UNKNOWN_ERROR"));
+      }
+    });
+  }, [replaceProjection, runExclusive]);
+
   const updateBaseScore = useCallback(
     async (baseScore: BaseScore) => {
       const current = roomRef.current;
@@ -460,6 +486,8 @@ export function useRoom(): RoomController {
     leaveRoom,
     dissolve,
     ready,
+    startTeamMatchmaking,
+    cancelTeamMatchmaking,
     updateBaseScore,
     updateBotDifficulty,
     addBot,

@@ -147,9 +147,10 @@
 
 .profile-modal__rank {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 1vmin;
+  gap: 0.5vmin;
 }
 
 .profile-modal__rank-label,
@@ -159,15 +160,9 @@
   text-align: center;
 }
 
-.profile-modal__rank-value {
-  color: var(--accent, #2f6a4c);
-  font-size: 2.6vmin;
-  font-weight: 800;
-}
-
 .profile-modal__achievements {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--line, #cde0d3);

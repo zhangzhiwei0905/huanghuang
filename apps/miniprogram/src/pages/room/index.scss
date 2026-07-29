@@ -285,7 +285,11 @@
   font-size: 1.9vmin !important;
   font-weight: 600;
   color: var(--accent, #2f6a4c) !important;
-  background: linear-gradient(175deg, rgb(253 252 246 / 96%) 0%, rgb(240 236 221 / 96%) 100%) !important;
+  background: linear-gradient(
+    175deg,
+    rgb(253 252 246 / 96%) 0%,
+    rgb(240 236 221 / 96%) 100%
+  ) !important;
   border: 1px solid #d8d4c4 !important;
   border-radius: 1.8vmin 1.8vmin 1.8vmin 0.4vmin !important;
   box-shadow:
@@ -550,6 +554,24 @@
   min-width: 0;
 }
 
+.seat-rank-badge {
+  margin-left: 0.4vmin;
+}
+
+.seat-rank-badge .rank-badge__image {
+  min-width: 26px;
+  min-height: 29px;
+  width: 5.4vmin;
+  height: 6vmin;
+}
+
+.seat-rank-badge .rank-badge__label {
+  max-width: 8vmin;
+  overflow: hidden;
+  font-size: clamp(7px, 1.15vmin, 9px);
+  text-overflow: ellipsis;
+}
+
 .lobby-seat__name-row {
   display: flex;
   min-width: 0;
@@ -733,6 +755,44 @@
   padding: 0.4vmin 1.2vmin;
   color: rgb(255 214 138);
   background: rgb(255 214 138 / 16%);
+  font-size: clamp(10px, 1.8vmin, 12px);
+}
+
+.lobby-team-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.1vmin;
+}
+
+.lobby-team-button {
+  margin: 0 !important;
+  min-width: 148px !important;
+  min-height: 42px !important;
+  height: 42px !important;
+  line-height: 42px !important;
+  padding: 0 2.2vmin !important;
+  border: 1px solid rgb(189 236 221 / 48%) !important;
+  border-radius: 12px !important;
+  background: linear-gradient(180deg, #50a87a 0%, #2d7655 100%) !important;
+  color: #fff !important;
+  font-size: clamp(12px, 2.2vmin, 15px) !important;
+  font-weight: 800 !important;
+  box-shadow: 0 3px 0 #194b35;
+}
+
+.lobby-team-button--cancel {
+  border-color: rgb(244 190 178 / 55%) !important;
+  background: linear-gradient(180deg, #9b6359 0%, #704239 100%) !important;
+  box-shadow: 0 3px 0 #4c2c26;
+}
+
+.lobby-team-button[disabled] {
+  opacity: 0.56;
+  box-shadow: none;
+}
+
+.lobby-team-waiting {
+  color: rgb(255 255 255 / 66%);
   font-size: clamp(10px, 1.8vmin, 12px);
 }
 

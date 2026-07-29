@@ -4,6 +4,7 @@ import type {
   CompetitiveMultiplier,
   CompetitiveSettlementProjection,
   PublicCompetitiveProfile,
+  TeamMatchmakingProjection,
 } from "./competitive.js";
 import type { BaseScore, Meld, PersonalMultiplier, Seat, Tile, TileKind, WinType } from "./game.js";
 
@@ -125,7 +126,7 @@ export type DiscardTingProjection = {
 };
 
 export type RoomProjection = {
-  schemaVersion: 9;
+  schemaVersion: 10;
   roomId: string;
   roomCode: string;
   version: number;
@@ -134,6 +135,7 @@ export type RoomProjection = {
   botDifficulty: BotDifficulty;
   mode: RoomMode;
   competitiveMatch: CompetitiveMatchProjection | null;
+  teamMatchmaking: TeamMatchmakingProjection | null;
   stage: RoomStage;
   roundId: string | null;
   roundStartedAt: string | null;

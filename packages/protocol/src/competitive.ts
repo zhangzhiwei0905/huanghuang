@@ -120,6 +120,21 @@ export const matchmakingStateSchema = z.discriminatedUnion("status", [
     enqueuedAt: z.iso.datetime({ offset: true }),
     disconnectedAt: z.iso.datetime({ offset: true }).nullable(),
     rankLevelSnapshot: competitiveRankLevelSchema,
+    partyRoomId: z.string().min(1).optional(),
+  }),
+  z.object({
+    status: z.literal("MATCHED"),
+    matchId: z.string().min(1),
+    roomId: z.string().min(1),
+  }),
+]);
+
+export const teamMatchmakingProjectionSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("IDLE") }),
+  z.object({
+    status: z.literal("QUEUED"),
+    enqueuedAt: z.iso.datetime({ offset: true }),
+    memberCount: z.number().int().min(2).max(4),
   }),
   z.object({
     status: z.literal("MATCHED"),
@@ -143,3 +158,4 @@ export type CompetitiveMatchProjection = z.infer<typeof competitiveMatchProjecti
 export type CompetitiveSettlementProjection = z.infer<typeof competitiveSettlementProjectionSchema>;
 export type MatchmakingQueueInput = z.infer<typeof matchmakingQueueInputSchema>;
 export type MatchmakingState = z.infer<typeof matchmakingStateSchema>;
+export type TeamMatchmakingProjection = z.infer<typeof teamMatchmakingProjectionSchema>;

@@ -19,6 +19,7 @@ import { ActionDock } from "../../components/ActionDock";
 import { MahjongTile } from "../../components/MahjongTile";
 import { MahjongEffectOverlay } from "../../components/MahjongEffectOverlay";
 import { PlayerProfileModal } from "../../components/PlayerProfileModal";
+import { RankBadge } from "../../components/RankBadge";
 import { RoundSettlementModal } from "../../components/RoundSettlementModal";
 import { TingHintCard } from "../../components/TingHintCard";
 import { useRoom, type ConnectionStatus } from "../../hooks/useRoom";
@@ -194,6 +195,13 @@ function LobbySeat({
             )}
           </Text>
         </View>
+        {seat.competitiveProfile !== null ? (
+          <RankBadge
+            rank={seat.competitiveProfile.rankDisplay}
+            size="compact"
+            className="seat-rank-badge"
+          />
+        ) : null}
       </View>
       {seat.isSelf ? (
         <View className="lobby-seat__state-row">
@@ -375,9 +383,14 @@ export default function RoomPage() {
   // room state from wx storage set by the create/join flow, so a cold-start
   // deep link straight into /pages/room/index has nothing to hydrate from.
   useShareAppMessage(() => ({
-    title: room?.mode === "FRIEND" ? `晃晃麻将 · 房间 ${room.roomCode}` : "晃晃麻将 · 一起来打牌",
+    title:
+      room?.mode === "FRIEND" || room?.mode === "TEAM_MATCH"
+        ? `晃晃麻将 · 房间 ${room.roomCode}`
+        : "晃晃麻将 · 一起来打牌",
     path:
-      room?.mode === "FRIEND" ? `/pages/index/index?code=${room.roomCode}` : "/pages/index/index",
+      room?.mode === "FRIEND" || room?.mode === "TEAM_MATCH"
+        ? `/pages/index/index?code=${room.roomCode}`
+        : "/pages/index/index",
   }));
 
   const self = room === null ? null : selfPlayer(room);
@@ -431,6 +444,21 @@ export default function RoomPage() {
   );
   const lobbyOccupiedCount = room?.lobbySeats.filter((candidate) => candidate.occupied).length ?? 0;
   const lobbyReadyCount = room?.lobbySeats.filter((candidate) => candidate.ready).length ?? 0;
+  const teamQueued = room?.mode === "TEAM_MATCH" && room.teamMatchmaking?.status === "QUEUED";
+  const teamMatched = room?.mode === "TEAM_MATCH" && room.teamMatchmaking?.status === "MATCHED";
+  const teamMatchActive = teamQueued || teamMatched;
+  const teamCanStart =
+    room?.mode === "TEAM_MATCH" &&
+    lobbyOccupiedCount >= 2 &&
+    room.lobbySeats.filter((candidate) => candidate.occupied).every((candidate) => candidate.ready);
+  const [teamMatchNow, setTeamMatchNow] = useState(Date.now());
+  const teamWaitSeconds =
+    room?.teamMatchmaking?.status === "QUEUED"
+      ? Math.max(
+          0,
+          Math.floor((teamMatchNow - Date.parse(room.teamMatchmaking.enqueuedAt)) / 1_000),
+        )
+      : 0;
   const recentDiscardId = useRecentDiscardId(room);
   useGameAudio(room, roomCtrl.connectionStatus, gameAudioEnabled, roomCtrl.lastChatMessage);
   const quickMessageAvailable = room !== null && room.mode === "FRIEND" && room.stage === "PLAYING";
@@ -450,6 +478,32 @@ export default function RoomPage() {
     const timer = setInterval(() => setSecondsRemaining(deadlineSeconds(actionDeadlineAt)), 500);
     return () => clearInterval(timer);
   }, [actionDeadlineAt]);
+
+  useEffect(() => {
+    if (!teamMatchActive) return;
+    const clock = setInterval(() => setTeamMatchNow(Date.now()), 1_000);
+    let disposed = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    const poll = async () => {
+      try {
+        const response = await competitiveApi.status();
+        if (!disposed && response.state.status === "MATCHED" && response.room !== null) {
+          roomCtrl.openRoom(response.room);
+        }
+      } catch {
+        // The room socket owns the visible connection state. Retry a transient
+        // HTTP failure without replacing its more useful error banner.
+      } finally {
+        if (!disposed) pollTimer = setTimeout(() => void poll(), 1_000);
+      }
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      clearInterval(clock);
+      if (pollTimer !== null) clearTimeout(pollTimer);
+    };
+  }, [room?.roomId, roomCtrl.openRoom, teamMatchActive]);
 
   useEffect(() => {
     if (selectedTileId === null) return;
@@ -705,16 +759,27 @@ export default function RoomPage() {
               离开
             </Button>
             <View className="lobby-toolbar__room">
-              <Text className="lobby-toolbar__label">好友房</Text>
-              <Text className="lobby-toolbar__code">{room.roomCode}</Text>
-              <Text className="lobby-toolbar__divider">·</Text>
-              <Text className="lobby-toolbar__meta">底分 {room.baseScore}</Text>
-              <Text className="lobby-toolbar__divider">·</Text>
-              <Text className="lobby-toolbar__meta">出牌 {room.turnTimeoutSeconds}秒</Text>
-              <Text className="lobby-toolbar__divider">·</Text>
-              <Text className="lobby-toolbar__meta">
-                机器人{room.botDifficulty === "LOW" ? "低难度" : "高难度"}
+              <Text className="lobby-toolbar__label">
+                {room.mode === "TEAM_MATCH" ? "组队排位" : "好友房"}
               </Text>
+              <Text className="lobby-toolbar__code">{room.roomCode}</Text>
+              {room.mode === "FRIEND" ? (
+                <>
+                  <Text className="lobby-toolbar__divider">·</Text>
+                  <Text className="lobby-toolbar__meta">底分 {room.baseScore}</Text>
+                  <Text className="lobby-toolbar__divider">·</Text>
+                  <Text className="lobby-toolbar__meta">出牌 {room.turnTimeoutSeconds}秒</Text>
+                  <Text className="lobby-toolbar__divider">·</Text>
+                  <Text className="lobby-toolbar__meta">
+                    机器人{room.botDifficulty === "LOW" ? "低难度" : "高难度"}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text className="lobby-toolbar__divider">·</Text>
+                  <Text className="lobby-toolbar__meta">固定竞技规则</Text>
+                </>
+              )}
               <Text
                 className={`lobby-toolbar__connection${
                   roomCtrl.connectionStatus === "connected" ? " is-online" : ""
@@ -839,7 +904,7 @@ export default function RoomPage() {
                   key={seat.seat}
                   seat={seat}
                   positionClass={pos}
-                  busy={roomCtrl.busy}
+                  busy={roomCtrl.busy || teamMatchActive}
                   onToggleReady={() => void roomCtrl.ready()}
                   canManageBots={room.isOwner}
                   onRemoveBot={() => void roomCtrl.removeBot(seat.seat)}
@@ -862,17 +927,67 @@ export default function RoomPage() {
             <View className="lobby-center">
               <Text className="lobby-center__eyebrow">等待开局</Text>
               <Text className="lobby-center__status">
-                {lobbyOccupiedCount < 4
-                  ? `还差 ${4 - lobbyOccupiedCount} 个座位`
-                  : `${lobbyReadyCount}/4 已准备`}
+                {room.mode === "TEAM_MATCH"
+                  ? teamMatched
+                    ? "匹配成功"
+                    : teamQueued
+                      ? `匹配中 · ${teamWaitSeconds} 秒`
+                      : `${lobbyReadyCount}/${lobbyOccupiedCount} 已准备`
+                  : lobbyOccupiedCount < 4
+                    ? `还差 ${4 - lobbyOccupiedCount} 个座位`
+                    : `${lobbyReadyCount}/4 已准备`}
               </Text>
               <Text className="lobby-center__hint">
-                {lobbyOccupiedCount < 4 ? "邀请好友，或由房主添加机器人" : "所有真人准备后自动开始"}
+                {room.mode === "TEAM_MATCH"
+                  ? teamMatched
+                    ? "正在进入竞技牌桌"
+                    : teamQueued
+                      ? "正在为整队寻找合适牌友，队伍不会被拆分"
+                      : lobbyOccupiedCount < 2
+                        ? "至少邀请 1 位好友后可开始匹配"
+                        : room.isOwner
+                          ? "全员准备后，由你开始匹配"
+                          : "全员准备后，等待房主开始匹配"
+                  : lobbyOccupiedCount < 4
+                    ? "邀请好友，或由房主添加机器人"
+                    : "所有真人准备后自动开始"}
               </Text>
               {room.scoreResetPending ? (
                 <Text className="lobby-center__score-reset">开局后积分将重新计算</Text>
               ) : null}
-              {room.isOwner ? (
+              {room.mode === "TEAM_MATCH" ? (
+                <View className="lobby-team-actions">
+                  {teamMatched ? (
+                    <Button className="lobby-team-button" disabled>
+                      正在进入对局
+                    </Button>
+                  ) : teamQueued ? (
+                    <Button
+                      className="lobby-team-button lobby-team-button--cancel"
+                      hoverClass="is-pressed"
+                      disabled={roomCtrl.busy}
+                      onClick={() => void roomCtrl.cancelTeamMatchmaking()}
+                    >
+                      取消匹配
+                    </Button>
+                  ) : room.isOwner ? (
+                    <Button
+                      className="lobby-team-button"
+                      hoverClass="is-pressed"
+                      disabled={roomCtrl.busy || !teamCanStart}
+                      onClick={() => void roomCtrl.startTeamMatchmaking()}
+                    >
+                      {lobbyOccupiedCount < 2
+                        ? "至少需要 2 人"
+                        : teamCanStart
+                          ? "开始匹配"
+                          : "等待全员准备"}
+                    </Button>
+                  ) : (
+                    <Text className="lobby-team-waiting">等待房主开始匹配</Text>
+                  )}
+                </View>
+              ) : room.isOwner ? (
                 <View className="lobby-settings">
                   <View className="lobby-score-picker">
                     <Text className="lobby-score-picker__label">底分</Text>
@@ -924,7 +1039,11 @@ export default function RoomPage() {
             <View className="lobby-invite-tip">
               <Text>房号 {room.roomCode}</Text>
               <Text className="lobby-invite-tip__dot">·</Text>
-              <Text>好友在首页输入房号即可加入</Text>
+              <Text>
+                {room.mode === "TEAM_MATCH"
+                  ? "好友在首页输入房号即可加入组队"
+                  : "好友在首页输入房号即可加入"}
+              </Text>
             </View>
           </View>
         ) : (
@@ -1000,6 +1119,13 @@ export default function RoomPage() {
                             ) : null}
                           </View>
                         </View>
+                        {player.competitiveProfile !== null ? (
+                          <RankBadge
+                            rank={player.competitiveProfile.rankDisplay}
+                            size="compact"
+                            className="seat-rank-badge"
+                          />
+                        ) : null}
                       </View>
                     </View>
                     {hasPublicTiles ? (

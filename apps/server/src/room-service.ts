@@ -45,6 +45,7 @@ import type {
   RoomStage,
   RoundSettlementProjection,
   Seat,
+  TeamMatchmakingProjection,
   TileKind,
   TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
@@ -123,6 +124,7 @@ type PersistedRoomState = {
   nextRoundAt?: string | null;
   pendingEffectTransition?: PendingEffectTransition | null;
   competitiveMatch?: { matchId: string; ruleVersion: number } | null;
+  teamQueueStartedAt?: string | null;
 };
 
 export type RoomState = {
@@ -157,11 +159,21 @@ export type RoomState = {
   nextRoundAt: string | null;
   pendingEffectTransition: PendingEffectTransition | null;
   competitiveMatch: { matchId: string; ruleVersion: number } | null;
+  teamQueueStartedAt: string | null;
 };
 
-export type JoinRoomResult = RoomState | "ROOM_FULL" | "ROOM_NOT_JOINABLE" | null;
+export type JoinRoomResult =
+  RoomState | "ROOM_FULL" | "ROOM_NOT_JOINABLE" | "WECHAT_LINK_REQUIRED" | null;
 export type RoomActionResult = RoomState | "ACTION_NOT_AVAILABLE" | null;
 export type RoomSettingsResult = RoomState | "ACTION_NOT_AVAILABLE" | "FORBIDDEN" | null;
+export type TeamMatchStartResult =
+  | { room: RoomState; sessions: AnonymousSession[] }
+  | "FORBIDDEN"
+  | "ACTION_NOT_AVAILABLE"
+  | "TEAM_SIZE_INVALID"
+  | "NOT_ALL_READY"
+  | "WECHAT_LINK_REQUIRED"
+  | null;
 export type ChatMessageResult =
   ChatMessageProjection | "ACTION_NOT_AVAILABLE" | "NOT_A_MEMBER" | null;
 
@@ -534,7 +546,7 @@ export class RoomService {
         persisted.stage ??
         (round === null ? "WAITING" : round.phase === "ROUND_OVER" ? "ROUND_RESULT" : "PLAYING");
       const seats = structuredClone(persisted.seats);
-      if (mode === "FRIEND" && stage === "WAITING") {
+      if ((mode === "FRIEND" || mode === "TEAM_MATCH") && stage === "WAITING") {
         for (const seat of SEATS) {
           if (seats[seat].sessionId === null && seats[seat].controller !== "BOT") {
             seats[seat] = emptySeat(seat);
@@ -573,7 +585,7 @@ export class RoomService {
         round: stage === "WAITING" ? null : round,
         roundStartedAt: persisted.roundStartedAt ?? null,
         waitingExpiresAt:
-          mode === "FRIEND" && stage === "WAITING"
+          (mode === "FRIEND" || mode === "TEAM_MATCH") && stage === "WAITING"
             ? (persisted.waitingExpiresAt ??
               new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString())
             : null,
@@ -581,6 +593,7 @@ export class RoomService {
         nextRoundAt: persisted.nextRoundAt ?? null,
         pendingEffectTransition: stage === "WAITING" ? null : persistedTransition,
         competitiveMatch: persisted.competitiveMatch ?? null,
+        teamQueueStartedAt: persisted.teamQueueStartedAt ?? null,
       };
     }
 
@@ -652,6 +665,7 @@ export class RoomService {
         nextRoundAt: null,
         pendingEffectTransition: null,
         competitiveMatch: null,
+        teamQueueStartedAt: null,
       };
     }
 
@@ -683,6 +697,7 @@ export class RoomService {
       nextRoundAt: persisted.nextRoundAt ?? null,
       pendingEffectTransition: null,
       competitiveMatch: persisted.competitiveMatch ?? null,
+      teamQueueStartedAt: null,
     };
   }
 
@@ -1085,7 +1100,8 @@ export class RoomService {
       }
       if (room.stage === "WAITING") {
         if (
-          room.mode === "FRIEND" &&
+          (room.mode === "FRIEND" ||
+            (room.mode === "TEAM_MATCH" && room.teamQueueStartedAt === null)) &&
           room.waitingExpiresAt !== null &&
           Date.parse(room.waitingExpiresAt) <= now
         ) {
@@ -1195,20 +1211,20 @@ export class RoomService {
       id: randomUUID(),
       code: this.nextRoomCode(),
       ownerSessionId: session.id,
-      baseScore,
-      turnTimeoutSeconds,
-      botDifficulty,
+      baseScore: mode === "TEAM_MATCH" ? 2 : baseScore,
+      turnTimeoutSeconds: mode === "TEAM_MATCH" ? 20 : turnTimeoutSeconds,
+      botDifficulty: mode === "TEAM_MATCH" ? "LOW" : botDifficulty,
       status: "ACTIVE",
       version: 0,
       dissolveAfterRound: false,
       closeReason: null,
       mode,
-      stage: mode === "FRIEND" ? "WAITING" : "PLAYING",
+      stage: mode === "BOT" ? "PLAYING" : "WAITING",
       seats: {
         0: humanSeat(0, session),
-        1: mode === "FRIEND" ? emptySeat(1) : botSeat(1),
-        2: mode === "FRIEND" ? emptySeat(2) : botSeat(2),
-        3: mode === "FRIEND" ? emptySeat(3) : botSeat(3),
+        1: mode === "BOT" ? botSeat(1) : emptySeat(1),
+        2: mode === "BOT" ? botSeat(2) : emptySeat(2),
+        3: mode === "BOT" ? botSeat(3) : emptySeat(3),
       },
       readySessionIds: [],
       spectators: [],
@@ -1218,11 +1234,12 @@ export class RoomService {
       round: null,
       roundStartedAt: null,
       waitingExpiresAt:
-        mode === "FRIEND" ? new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString() : null,
+        mode === "BOT" ? null : new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString(),
       actionDeadlineAt: null,
       nextRoundAt: null,
       pendingEffectTransition: null,
       competitiveMatch: null,
+      teamQueueStartedAt: null,
     };
     if (mode === "BOT") this.startRound(room);
     this.roomsByCode.set(room.code, room);
@@ -1279,6 +1296,7 @@ export class RoomService {
       nextRoundAt: null,
       pendingEffectTransition: null,
       competitiveMatch: { matchId, ruleVersion: COMPETITIVE_RULE_VERSION },
+      teamQueueStartedAt: null,
     };
     this.startRound(room);
     const round = room.round;
@@ -1327,14 +1345,18 @@ export class RoomService {
       humanEntries.length !== humanSessions.length ||
       botSessions.length !== 4 - humanSessions.length
     ) {
-      throw new Error("A competitive bot match needs 1-3 humans plus bots filling the rest of the table");
+      throw new Error(
+        "A competitive bot match needs 1-3 humans plus bots filling the rest of the table",
+      );
     }
     const firstHuman = humanSessions[0];
     if (firstHuman === undefined) {
       throw new Error("A competitive bot match requires at least one human session");
     }
     const matchId = randomUUID();
-    const entriesBySessionId = new Map(humanEntries.map((entry) => [entry.sessionId, entry] as const));
+    const entriesBySessionId = new Map(
+      humanEntries.map((entry) => [entry.sessionId, entry] as const),
+    );
     // Shuffle the four identities into seats 0..3.
     const identities: AnonymousSession[] = [...humanSessions, ...botSessions];
     for (let index = identities.length - 1; index > 0; index -= 1) {
@@ -1405,6 +1427,7 @@ export class RoomService {
       nextRoundAt: null,
       pendingEffectTransition: null,
       competitiveMatch: { matchId, ruleVersion: COMPETITIVE_RULE_VERSION },
+      teamQueueStartedAt: null,
     };
     this.startRound(room);
     const round = room.round;
@@ -1428,7 +1451,17 @@ export class RoomService {
   joinRoom(session: AnonymousSession, code: string): JoinRoomResult {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
-    if (room.mode !== "FRIEND") return "ROOM_NOT_JOINABLE";
+    if (room.mode !== "FRIEND" && room.mode !== "TEAM_MATCH") return "ROOM_NOT_JOINABLE";
+    if (room.mode === "TEAM_MATCH") {
+      if (session.wechatOpenId == null) return "WECHAT_LINK_REQUIRED";
+      if (
+        room.teamQueueStartedAt !== null ||
+        this.database.listMatchmakingPartyEntries(room.id).length > 0 ||
+        this.currentTeamCompetitiveMatch(room) !== null
+      ) {
+        return "ROOM_NOT_JOINABLE";
+      }
+    }
     if (sessionSeat(room, session.id) !== null) return room;
     if (spectatorIndex(room, session.id) >= 0) return room;
 
@@ -1458,7 +1491,15 @@ export class RoomService {
   setReady(sessionId: string, code: string, ready: boolean): RoomActionResult {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
-    if (room.mode !== "FRIEND" || room.stage !== "WAITING") return "ACTION_NOT_AVAILABLE";
+    if (
+      (room.mode !== "FRIEND" && room.mode !== "TEAM_MATCH") ||
+      room.stage !== "WAITING" ||
+      (room.mode === "TEAM_MATCH" &&
+        (room.teamQueueStartedAt !== null ||
+          this.database.listMatchmakingPartyEntries(room.id).length > 0))
+    ) {
+      return "ACTION_NOT_AVAILABLE";
+    }
     const seat = sessionSeat(room, sessionId);
     if (seat === null) return "ACTION_NOT_AVAILABLE";
     const isReady = room.readySessionIds.includes(sessionId);
@@ -1472,6 +1513,7 @@ export class RoomService {
     );
     const occupiedSessions = humanSessionIds(room);
     if (
+      room.mode === "FRIEND" &&
       allSeatsOccupied &&
       ready &&
       occupiedSessions.every((candidate) => room.readySessionIds.includes(candidate))
@@ -1481,6 +1523,81 @@ export class RoomService {
     room.version += 1;
     this.save(room);
     return room;
+  }
+
+  prepareTeamMatch(sessionId: string, code: string): TeamMatchStartResult {
+    const room = this.roomsByCode.get(code);
+    if (room?.status !== "ACTIVE") return null;
+    if (room.mode !== "TEAM_MATCH" || room.stage !== "WAITING") {
+      return "ACTION_NOT_AVAILABLE";
+    }
+    if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
+    if (
+      room.teamQueueStartedAt !== null ||
+      this.database.listMatchmakingPartyEntries(room.id).length > 0
+    ) {
+      return "ACTION_NOT_AVAILABLE";
+    }
+    const sessionIds = humanSessionIds(room);
+    if (sessionIds.length < 2 || sessionIds.length > 4) return "TEAM_SIZE_INVALID";
+    if (!sessionIds.every((candidate) => room.readySessionIds.includes(candidate))) {
+      return "NOT_ALL_READY";
+    }
+    const sessions = this.database.findSessionsByIds(sessionIds);
+    if (sessions.length !== sessionIds.length) return "ACTION_NOT_AVAILABLE";
+    if (sessions.some((session) => session.wechatOpenId == null)) {
+      return "WECHAT_LINK_REQUIRED";
+    }
+    return { room, sessions };
+  }
+
+  resetTeamMatch(code: string): RoomActionResult {
+    const room = this.roomsByCode.get(code);
+    if (room?.status !== "ACTIVE") return null;
+    if (room.mode !== "TEAM_MATCH" || room.stage !== "WAITING") {
+      return "ACTION_NOT_AVAILABLE";
+    }
+    room.readySessionIds = [];
+    room.teamQueueStartedAt = null;
+    room.waitingExpiresAt = new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString();
+    room.version += 1;
+    this.save(room);
+    return room;
+  }
+
+  touchTeamMatch(code: string): RoomActionResult {
+    const room = this.roomsByCode.get(code);
+    if (room?.status !== "ACTIVE") return null;
+    if (room.mode !== "TEAM_MATCH" || room.stage !== "WAITING") {
+      return "ACTION_NOT_AVAILABLE";
+    }
+    room.teamQueueStartedAt =
+      this.database.listMatchmakingPartyEntries(room.id)[0]?.enqueuedAt ?? new Date().toISOString();
+    room.version += 1;
+    this.save(room);
+    return room;
+  }
+
+  reconcileTeamMatchQueues(): RoomState[] {
+    const changed: RoomState[] = [];
+    for (const room of this.roomsByCode.values()) {
+      if (
+        room.status !== "ACTIVE" ||
+        room.mode !== "TEAM_MATCH" ||
+        room.teamQueueStartedAt === null ||
+        this.database.listMatchmakingPartyEntries(room.id).length > 0 ||
+        this.currentTeamCompetitiveMatch(room) !== null
+      ) {
+        continue;
+      }
+      room.readySessionIds = [];
+      room.teamQueueStartedAt = null;
+      room.waitingExpiresAt = new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString();
+      room.version += 1;
+      this.save(room);
+      changed.push(room);
+    }
+    return changed;
   }
 
   continueBotRound(sessionId: string, code: string): RoomActionResult {
@@ -1595,7 +1712,9 @@ export class RoomService {
   requestDissolve(sessionId: string, code: string): RoomState | "FORBIDDEN" | null {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
-    if (room.mode === "MATCH" || room.ownerSessionId !== sessionId) return "FORBIDDEN";
+    if (room.mode === "MATCH" || room.mode === "TEAM_MATCH" || room.ownerSessionId !== sessionId) {
+      return "FORBIDDEN";
+    }
     this.closeRoom(room, "OWNER_DISSOLVED");
     room.version += 1;
     this.save(room);
@@ -1718,6 +1837,39 @@ export class RoomService {
     });
   }
 
+  private currentTeamCompetitiveMatch(
+    room: RoomState,
+  ): { match: { id: string; roomId: string } } | null {
+    if (room.mode !== "TEAM_MATCH") return null;
+    for (const memberSessionId of humanSessionIds(room)) {
+      const current = this.database.getCurrentCompetitiveMatch(memberSessionId);
+      if (current !== null) return current;
+    }
+    return null;
+  }
+
+  private projectTeamMatchmaking(room: RoomState): TeamMatchmakingProjection | null {
+    if (room.mode !== "TEAM_MATCH") return null;
+    const current = this.currentTeamCompetitiveMatch(room);
+    if (current !== null) {
+      return {
+        status: "MATCHED",
+        matchId: current.match.id,
+        roomId: current.match.roomId,
+      };
+    }
+    const entries = this.database.listMatchmakingPartyEntries(room.id);
+    const first = entries[0];
+    if (first !== undefined) {
+      return {
+        status: "QUEUED",
+        enqueuedAt: first.enqueuedAt,
+        memberCount: entries.length,
+      };
+    }
+    return { status: "IDLE" };
+  }
+
   project(room: RoomState, sessionId: string): RoomProjection {
     const selfSeat = sessionSeat(room, sessionId);
     const round = room.round;
@@ -1727,16 +1879,12 @@ export class RoomService {
         ? []
         : [controller.sessionId];
     });
-    const competitiveProfiles =
-      room.mode === "MATCH"
-        ? new Map(
-            this.database
-              .getPublicCompetitiveProfiles(humanSessionIds)
-              .map((profile) => [profile.sessionId, profile] as const),
-          )
-        : new Map<string, PublicCompetitiveProfileRow>();
+    const competitiveProfiles = new Map(
+      this.database
+        .getPublicCompetitiveProfiles(humanSessionIds)
+        .map((profile) => [profile.sessionId, profile] as const),
+    );
     const profileForSeat = (seat: Seat): PublicCompetitiveProfile | null => {
-      if (room.mode !== "MATCH") return null;
       const seatSessionId = room.seats[seat].sessionId;
       return seatSessionId === null
         ? null
@@ -1859,7 +2007,7 @@ export class RoomService {
         : [];
 
     return {
-      schemaVersion: 9,
+      schemaVersion: 10,
       roomId: room.id,
       roomCode: room.code,
       version: room.version,
@@ -1868,6 +2016,7 @@ export class RoomService {
       botDifficulty: room.botDifficulty,
       mode: room.mode,
       competitiveMatch: room.mode === "MATCH" ? room.competitiveMatch : null,
+      teamMatchmaking: this.projectTeamMatchmaking(room),
       stage: room.stage,
       roundId: round?.id ?? null,
       roundStartedAt: room.roundStartedAt,

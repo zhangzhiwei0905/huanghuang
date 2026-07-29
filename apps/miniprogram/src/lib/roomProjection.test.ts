@@ -10,18 +10,20 @@ describe("normalizeRoomProjection", () => {
     } as unknown as RoomProjection;
 
     expect(normalizeRoomProjection(legacyProjection)).toEqual({
-      schemaVersion: 9,
+      schemaVersion: 10,
       roomId: "legacy-room",
       effectCue: null,
       competitiveMatch: null,
+      teamMatchmaking: null,
     });
   });
 
-  it("preserves a current projection that already defines v9 fields", () => {
+  it("preserves a current projection that already defines v10 fields", () => {
     const projection = {
-      schemaVersion: 9,
+      schemaVersion: 10,
       effectCue: null,
       competitiveMatch: null,
+      teamMatchmaking: null,
     } as unknown as RoomProjection;
 
     expect(normalizeRoomProjection(projection)).toBe(projection);

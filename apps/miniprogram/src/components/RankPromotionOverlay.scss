@@ -1,0 +1,195 @@
+.rank-promotion {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 48%, rgb(107 70 182 / 58%) 0%, transparent 34%),
+    rgb(9 13 21 / 92%);
+  animation: promotion-backdrop 2.2s ease both;
+}
+
+.rank-promotion__aurora {
+  position: absolute;
+  width: 72vmin;
+  height: 72vmin;
+  border: 1px solid rgb(211 239 255 / 38%);
+  border-radius: 50%;
+  background: conic-gradient(
+    from 15deg,
+    transparent,
+    rgb(80 226 224 / 22%),
+    transparent 28%,
+    rgb(213 98 255 / 26%),
+    transparent 58%,
+    rgb(255 215 117 / 23%),
+    transparent
+  );
+  filter: blur(0.6vmin);
+  animation: promotion-spin 5s linear infinite;
+}
+
+.rank-promotion__flare {
+  position: absolute;
+  width: 95vmin;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #fff, transparent);
+  box-shadow: 0 0 2.2vmin #91e8ff;
+}
+
+.rank-promotion__flare--a {
+  transform: rotate(18deg);
+}
+
+.rank-promotion__flare--b {
+  transform: rotate(-20deg);
+}
+
+.rank-promotion__content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #fff;
+  text-align: center;
+}
+
+.rank-promotion__eyebrow {
+  color: #99f4ee;
+  font-size: clamp(9px, 1.7vmin, 12px);
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  animation: promotion-copy 480ms ease-out 100ms backwards;
+}
+
+.rank-promotion__title {
+  margin-top: 0.7vmin;
+  font-size: clamp(30px, 7vmin, 54px);
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-shadow:
+    0 0 1vmin rgb(166 235 255 / 85%),
+    0 0 3vmin rgb(130 88 255 / 75%);
+  animation: promotion-title 650ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.rank-promotion__ranks {
+  display: flex;
+  align-items: center;
+  gap: 3.2vmin;
+  margin-top: 1.4vmin;
+}
+
+.rank-promotion .rank-badge__label {
+  color: #fff;
+  text-shadow: 0 0.3vmin 0.8vmin rgb(0 0 0 / 55%);
+}
+
+.rank-promotion__ranks > .rank-badge:first-child {
+  opacity: 0.72;
+  filter: saturate(0.72);
+  animation: promotion-old-rank 800ms ease-out backwards;
+}
+
+.rank-promotion__new-rank {
+  animation: promotion-new-rank 800ms cubic-bezier(0.2, 1.35, 0.35, 1) 260ms backwards;
+}
+
+.rank-promotion__arrow {
+  display: flex;
+  align-items: center;
+  color: #fff8c8;
+  font-size: 7vmin;
+}
+
+.rank-promotion__arrow > view {
+  width: 8vmin;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #fff8c8);
+  box-shadow: 0 0 1vmin #fff8c8;
+  animation: promotion-line 520ms ease-out 320ms backwards;
+}
+
+.rank-promotion__transition {
+  margin-top: 1.2vmin;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 999px;
+  padding: 0.7vmin 2.4vmin;
+  background: rgb(5 9 17 / 38%);
+  color: #fff;
+  font-size: clamp(13px, 2.5vmin, 18px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  animation: promotion-copy 500ms ease-out 560ms backwards;
+}
+
+@keyframes promotion-backdrop {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  12%,
+  86% {
+    opacity: 1;
+  }
+}
+
+@keyframes promotion-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes promotion-title {
+  from {
+    opacity: 0;
+    transform: scale(1.45);
+    filter: blur(8px);
+  }
+}
+
+@keyframes promotion-old-rank {
+  from {
+    opacity: 0;
+    transform: translateX(8vmin) scale(1.08);
+  }
+}
+
+@keyframes promotion-new-rank {
+  from {
+    opacity: 0;
+    transform: translateX(-6vmin) scale(0.46) rotate(-8deg);
+    filter: brightness(2.5) blur(4px);
+  }
+}
+
+@keyframes promotion-line {
+  from {
+    width: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes promotion-copy {
+  from {
+    opacity: 0;
+    transform: translateY(1.8vmin);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rank-promotion,
+  .rank-promotion__aurora,
+  .rank-promotion__eyebrow,
+  .rank-promotion__title,
+  .rank-promotion__ranks > .rank-badge:first-child,
+  .rank-promotion__new-rank,
+  .rank-promotion__arrow > view,
+  .rank-promotion__transition {
+    animation: none;
+  }
+}

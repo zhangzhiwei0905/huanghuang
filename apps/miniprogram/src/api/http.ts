@@ -160,6 +160,15 @@ export const roomApi = {
       data: { ready },
     });
   },
+  startTeamMatchmaking(roomCode: string): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/team-matchmaking`, {
+      method: "POST",
+      data: {},
+    });
+  },
+  cancelTeamMatchmaking(roomCode: string): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/team-matchmaking`, { method: "DELETE" });
+  },
   updateBaseScore(roomCode: string, baseScore: BaseScore): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/settings`, {
       method: "PATCH",
