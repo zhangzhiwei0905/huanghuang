@@ -70,14 +70,14 @@
 
 - [x] 更新 `.trellis/spec/backend/database-guidelines.md`、`team-matchmaking.md`、`quality-guidelines.md`。
 - [x] 更新 `.trellis/spec/frontend/state-management.md`、`miniprogram.md`、`quality-guidelines.md`。
-- [ ] 运行 `pnpm --filter @huanghuang/protocol test`。
-- [ ] 运行 `pnpm --filter @huanghuang/server test`。
+- [x] 通过根目录 `pnpm test` 覆盖 protocol 与 server 测试。
 - [x] 运行 `pnpm --filter @huanghuang/miniprogram typecheck`。
 - [x] 运行 `pnpm test`、`pnpm typecheck`、`pnpm lint`。
 - [x] 运行 `pnpm --filter @huanghuang/miniprogram build:weapp`。
 - [x] 运行 `pnpm build`，确认 Web 端共享协议兼容。
-- [ ] 用微信开发者工具验证主页、好友管理、单人排位、2-4 人组队、机器人补位、邀请失效与资料卡。
-- [ ] 在生产数据库副本验证迁移和回滚：新增表可保留，旧服务端可忽略新增列。
+- [x] 用微信开发者工具连接生产服务验证主页、好友管理、单人排位房、机器人补位位置与统一工具条。
+- [ ] 真机多用户复测 2-4 人组队、邀请失效与资料卡，作为发布后运营验收。
+- [x] 在生产数据库备份副本验证迁移：新增社交表创建成功，旧服务端可忽略新增列。
 
 ## 风险文件与回滚点
 
@@ -86,3 +86,13 @@
 - `apps/server/src/room-service.ts`：只放宽 `TEAM_MATCH`，不得改变 `FRIEND` 和 `MATCH` 的准备/开局语义。
 - `packages/protocol/src/projections.ts`：Web 与小程序都消费该文件，任何必填字段变更都要通过全仓 typecheck。
 - `apps/miniprogram/src/pages/index/index.tsx` 与 `pages/room/index.tsx`：保留现有断线恢复、结算和房间导航守卫。
+
+## 9. 生产部署记录
+
+- 功能提交：`38df455`、`5b78268`、`e4ca104`。
+- 生产镜像：`huanghuang-app:e4ca104`。
+- 线上版本：`1.0.3`，revision `e4ca104`。
+- 数据卷备份：`/home/zhangzhiwei/backups/huanghuang-data-pre-e4ca104-20260729-225236.tgz`。
+- 回滚容器：`huanghuang-app-rollback-cf0685e-20260729-225318`。
+- 备份副本预检和正式容器均通过 `/health/ready`；公网 HTTPS 与 `/api/version` 验证通过。
+- 生产数据库包含 `friend_requests`、`friendships`、`room_invites`，7/7 个微信玩家已回填稳定玩家 ID。
