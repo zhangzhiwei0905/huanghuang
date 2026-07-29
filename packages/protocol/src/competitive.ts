@@ -39,6 +39,7 @@ export const competitiveAchievementActionSchema = z.enum([
   "INDICATOR_PONG_KONG",
   "ADDED_KONG",
   "CONCEALED_KONG",
+  "RELEASE_WILDCARD",
 ]);
 
 export const competitiveAchievementTotalsSchema = z.object({
@@ -46,6 +47,7 @@ export const competitiveAchievementTotalsSchema = z.object({
   indicatorPongKong: z.number().int().nonnegative(),
   addedKong: z.number().int().nonnegative(),
   concealedKong: z.number().int().nonnegative(),
+  releaseWildcard: z.number().int().nonnegative(),
 });
 
 export const publicCompetitiveProfileSchema = z.object({

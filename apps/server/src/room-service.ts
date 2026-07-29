@@ -293,6 +293,7 @@ function projectCompetitiveProfile(
       indicatorPongKong: profile.indicatorPongKongCount,
       addedKong: profile.addedKongCount,
       concealedKong: profile.concealedKongCount,
+      releaseWildcard: profile.releaseWildcardCount,
     },
   };
 }
@@ -337,9 +338,9 @@ function competitiveAchievementAction(
     case "INDICATOR_PONG_KONG":
     case "ADDED_KONG":
     case "CONCEALED_KONG":
+    case "RELEASE_WILDCARD":
       return action;
     case "PONG":
-    case "RELEASE_WILDCARD":
     case "WIN":
       return null;
   }

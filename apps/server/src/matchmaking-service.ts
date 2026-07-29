@@ -82,6 +82,7 @@ export class MatchmakingService {
         indicatorPongKong: profile.indicatorPongKongCount,
         addedKong: profile.addedKongCount,
         concealedKong: profile.concealedKongCount,
+        releaseWildcard: profile.releaseWildcardCount,
       },
     };
   }

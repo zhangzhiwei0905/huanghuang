@@ -91,6 +91,10 @@ export function PlayerProfileModal({
                 </View>
                 <View className="profile-modal__achievements">
                   <View>
+                    <Text>放赖</Text>
+                    <Text>{competitiveProfile.achievements.releaseWildcard}</Text>
+                  </View>
+                  <View>
                     <Text>明杠</Text>
                     <Text>{competitiveProfile.achievements.exposedKong}</Text>
                   </View>

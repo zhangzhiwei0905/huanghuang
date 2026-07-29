@@ -184,6 +184,132 @@ describe("GameDatabase competitive persistence", () => {
     ]);
   });
 
+  it("rebuilds the competitive_action_events CHECK constraint for a database predating RELEASE_WILDCARD", () => {
+    const path = createTempDatabasePath();
+    const legacy = new Database(path);
+    legacy.pragma("foreign_keys = ON");
+    legacy.exec(`
+      CREATE TABLE anonymous_sessions (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        nickname TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+      CREATE TABLE competitive_profiles (
+        session_id TEXT PRIMARY KEY,
+        rank_level INTEGER NOT NULL DEFAULT 0 CHECK (rank_level >= 0),
+        highest_major_index INTEGER NOT NULL DEFAULT 0 CHECK (highest_major_index >= 0),
+        protection_cards INTEGER NOT NULL DEFAULT 0 CHECK (protection_cards >= 0),
+        exposed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (exposed_kong_count >= 0),
+        indicator_pong_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (indicator_pong_kong_count >= 0),
+        added_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (added_kong_count >= 0),
+        concealed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (concealed_kong_count >= 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+      );
+      CREATE TABLE competitive_matches (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL UNIQUE,
+        round_id TEXT NOT NULL,
+        rule_version INTEGER NOT NULL CHECK (rule_version >= 1),
+        status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'SETTLED')),
+        result_json TEXT,
+        created_at TEXT NOT NULL,
+        settled_at TEXT
+      );
+      CREATE TABLE competitive_match_players (
+        match_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        seat INTEGER NOT NULL CHECK (seat BETWEEN 0 AND 3),
+        pre_rank_level INTEGER NOT NULL CHECK (pre_rank_level >= 0),
+        post_rank_level INTEGER CHECK (post_rank_level >= 0),
+        raw_rank_delta INTEGER,
+        final_rank_delta INTEGER,
+        protection_cards_before INTEGER CHECK (protection_cards_before >= 0),
+        protection_cards_after INTEGER CHECK (protection_cards_after >= 0),
+        protection_cards_consumed INTEGER CHECK (protection_cards_consumed >= 0),
+        protection_cards_granted INTEGER CHECK (protection_cards_granted >= 0),
+        multiplier INTEGER CHECK (multiplier IN (1, 2, 4, 8, 16, 32, 64)),
+        acknowledged_at TEXT,
+        PRIMARY KEY (match_id, session_id),
+        UNIQUE (match_id, seat),
+        FOREIGN KEY (match_id) REFERENCES competitive_matches (id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE RESTRICT
+      );
+      CREATE TABLE competitive_action_events (
+        event_key TEXT PRIMARY KEY,
+        match_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        round_id TEXT NOT NULL,
+        round_version INTEGER NOT NULL CHECK (round_version >= 0),
+        action TEXT NOT NULL CHECK (
+          action IN ('EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG')
+        ),
+        created_at TEXT NOT NULL,
+        UNIQUE (match_id, session_id, round_id, round_version, action),
+        FOREIGN KEY (match_id, session_id)
+          REFERENCES competitive_match_players (match_id, session_id) ON DELETE CASCADE
+      );
+      INSERT INTO anonymous_sessions (id, token_hash, nickname, created_at, last_seen_at)
+      VALUES ('legacy-player', 'legacy-token', '老玩家', '${ENQUEUED_AT}', '${ENQUEUED_AT}');
+      INSERT INTO competitive_profiles (session_id, created_at, updated_at)
+      VALUES ('legacy-player', '${ENQUEUED_AT}', '${ENQUEUED_AT}');
+      INSERT INTO competitive_matches (id, room_id, round_id, rule_version, status, created_at)
+      VALUES ('legacy-match', 'legacy-room', 'legacy-round', 1, 'ACTIVE', '${ENQUEUED_AT}');
+      INSERT INTO competitive_match_players (match_id, session_id, seat, pre_rank_level)
+      VALUES ('legacy-match', 'legacy-player', 0, 0);
+      INSERT INTO competitive_action_events
+        (event_key, match_id, session_id, round_id, round_version, action, created_at)
+      VALUES
+        ('legacy-event', 'legacy-match', 'legacy-player', 'legacy-round', 1, 'EXPOSED_KONG', '${ENQUEUED_AT}');
+    `);
+    expect(() =>
+      legacy
+        .prepare(
+          `INSERT INTO competitive_action_events
+           (event_key, match_id, session_id, round_id, round_version, action, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "legacy-event-blocked",
+          "legacy-match",
+          "legacy-player",
+          "legacy-round",
+          2,
+          "RELEASE_WILDCARD",
+          ENQUEUED_AT,
+        ),
+    ).toThrow(/CHECK constraint failed/);
+    legacy.close();
+
+    const database = createDatabase(path);
+    expect(
+      database.connection
+        .prepare("SELECT action FROM competitive_action_events WHERE event_key = ?")
+        .get("legacy-event"),
+    ).toEqual({ action: "EXPOSED_KONG" });
+    expect(database.getCompetitiveProfile("legacy-player")?.releaseWildcardCount).toBe(0);
+
+    expect(
+      database.saveAcceptedTransition({
+        room: roomSnapshot("legacy-room", 1),
+        stateJson: JSON.stringify({ id: "legacy-room", version: 1 }),
+        achievementEvent: {
+          eventKey: "legacy-event-release-wildcard",
+          matchId: "legacy-match",
+          sessionId: "legacy-player",
+          roundId: "legacy-round",
+          roundVersion: 2,
+          action: "RELEASE_WILDCARD",
+          createdAt: ENQUEUED_AT,
+        },
+      }),
+    ).toEqual({ achievementRecorded: true, settlementApplied: false });
+    expect(database.getCompetitiveProfile("legacy-player")?.releaseWildcardCount).toBe(1);
+  });
+
   it("creates a black-iron-V profile once and returns safe public batches", () => {
     const database = createDatabase();
     createSessions(database);
@@ -434,6 +560,52 @@ describe("GameDatabase competitive persistence", () => {
     ).toEqual({ achievementRecorded: false, settlementApplied: false });
     expect(database.getCompetitiveProfile(PLAYER_IDS[0])?.exposedKongCount).toBe(1);
     expect(database.getProcessedRequest(PLAYER_IDS[0], "request-1")).toBe(
+      JSON.stringify({ accepted: true }),
+    );
+  });
+
+  it("deduplicates RELEASE_WILDCARD achievement facts before incrementing release_wildcard_count", () => {
+    const database = createDatabase();
+    createSessions(database);
+    createQueuedMatch(database);
+    const input = {
+      room: roomSnapshot("match-room", 2),
+      stateJson: JSON.stringify({ id: "match-room", version: 2 }),
+      processedRequest: {
+        sessionId: PLAYER_IDS[0],
+        requestId: "request-release-wildcard",
+        resultJson: JSON.stringify({ accepted: true }),
+      },
+      achievementEvent: {
+        eventKey: "match-1:round-match-1:9:player-0:RELEASE_WILDCARD",
+        matchId: "match-1",
+        sessionId: PLAYER_IDS[0],
+        roundId: "round-match-1",
+        roundVersion: 9,
+        action: "RELEASE_WILDCARD" as const,
+        createdAt: "2026-07-28T10:02:00.000Z",
+      },
+    };
+
+    expect(database.saveAcceptedTransition(input)).toEqual({
+      achievementRecorded: true,
+      settlementApplied: false,
+    });
+    expect(database.saveAcceptedTransition(input)).toEqual({
+      achievementRecorded: false,
+      settlementApplied: false,
+    });
+    expect(
+      database.saveAcceptedTransition({
+        ...input,
+        achievementEvent: {
+          ...input.achievementEvent,
+          eventKey: "same-release-wildcard-fact-new-key",
+        },
+      }),
+    ).toEqual({ achievementRecorded: false, settlementApplied: false });
+    expect(database.getCompetitiveProfile(PLAYER_IDS[0])?.releaseWildcardCount).toBe(1);
+    expect(database.getProcessedRequest(PLAYER_IDS[0], "request-release-wildcard")).toBe(
       JSON.stringify({ accepted: true }),
     );
   });

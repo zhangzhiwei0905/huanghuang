@@ -23,6 +23,7 @@ const achievements = {
   indicatorPongKong: 2,
   addedKong: 3,
   concealedKong: 4,
+  releaseWildcard: 5,
 };
 
 describe("competitive protocol", () => {
@@ -35,8 +36,14 @@ describe("competitive protocol", () => {
     }
   });
 
-  it("accepts exactly the four competitive achievement actions", () => {
-    for (const action of ["EXPOSED_KONG", "INDICATOR_PONG_KONG", "ADDED_KONG", "CONCEALED_KONG"]) {
+  it("accepts exactly the five competitive achievement actions", () => {
+    for (const action of [
+      "EXPOSED_KONG",
+      "INDICATOR_PONG_KONG",
+      "ADDED_KONG",
+      "CONCEALED_KONG",
+      "RELEASE_WILDCARD",
+    ]) {
       expect(competitiveAchievementActionSchema.safeParse(action).success).toBe(true);
     }
     expect(competitiveAchievementActionSchema.safeParse("PONG").success).toBe(false);

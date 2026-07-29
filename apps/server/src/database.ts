@@ -15,7 +15,11 @@ export type AnonymousSession = {
 };
 
 export type CompetitiveAchievementAction =
-  "EXPOSED_KONG" | "INDICATOR_PONG_KONG" | "ADDED_KONG" | "CONCEALED_KONG";
+  | "EXPOSED_KONG"
+  | "INDICATOR_PONG_KONG"
+  | "ADDED_KONG"
+  | "CONCEALED_KONG"
+  | "RELEASE_WILDCARD";
 
 export type CompetitiveProfileRow = {
   sessionId: string;
@@ -26,6 +30,7 @@ export type CompetitiveProfileRow = {
   indicatorPongKongCount: number;
   addedKongCount: number;
   concealedKongCount: number;
+  releaseWildcardCount: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -38,6 +43,7 @@ export type PublicCompetitiveProfileRow = Pick<
   | "indicatorPongKongCount"
   | "addedKongCount"
   | "concealedKongCount"
+  | "releaseWildcardCount"
 >;
 
 export type MatchmakingEntryRow = {
@@ -271,6 +277,7 @@ export class GameDatabase {
         indicator_pong_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (indicator_pong_kong_count >= 0),
         added_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (added_kong_count >= 0),
         concealed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (concealed_kong_count >= 0),
+        release_wildcard_count INTEGER NOT NULL DEFAULT 0 CHECK (release_wildcard_count >= 0),
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
@@ -323,7 +330,9 @@ export class GameDatabase {
         round_id TEXT NOT NULL,
         round_version INTEGER NOT NULL CHECK (round_version >= 0),
         action TEXT NOT NULL CHECK (
-          action IN ('EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG')
+          action IN (
+            'EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG', 'RELEASE_WILDCARD'
+          )
         ),
         created_at TEXT NOT NULL,
         UNIQUE (match_id, session_id, round_id, round_version, action),
@@ -349,6 +358,7 @@ export class GameDatabase {
       "ALTER TABLE anonymous_sessions ADD COLUMN wechat_open_id TEXT",
       "ALTER TABLE anonymous_sessions ADD COLUMN avatar_url TEXT",
       "ALTER TABLE matchmaking_entries ADD COLUMN allow_bots INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE competitive_profiles ADD COLUMN release_wildcard_count INTEGER NOT NULL DEFAULT 0 CHECK (release_wildcard_count >= 0)",
     ]) {
       try {
         this.connection.exec(statement);
@@ -362,6 +372,53 @@ export class GameDatabase {
     this.connection.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_anonymous_sessions_open_id ON anonymous_sessions (wechat_open_id)",
     );
+    // Unlike the additive columns above, a CHECK constraint baked into
+    // competitive_action_events by an earlier CREATE TABLE (run against a
+    // pre-existing database file) can't be widened with ALTER TABLE — SQLite
+    // has no "ALTER CHECK CONSTRAINT". Detect that case by inspecting the
+    // persisted table definition and, if it predates RELEASE_WILDCARD,
+    // rebuild the table with the current schema and copy the rows over.
+    this.migrateCompetitiveActionEventsCheckConstraint();
+  }
+
+  private migrateCompetitiveActionEventsCheckConstraint(): void {
+    const existing = this.connection
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'competitive_action_events'")
+      .get() as { sql: string } | undefined;
+    if (existing === undefined || existing.sql.includes("RELEASE_WILDCARD")) return;
+    const rebuild = this.connection.transaction(() => {
+      this.connection.exec(`
+        ALTER TABLE competitive_action_events RENAME TO competitive_action_events_pre_release_wildcard;
+        CREATE TABLE competitive_action_events (
+          event_key TEXT PRIMARY KEY,
+          match_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          round_id TEXT NOT NULL,
+          round_version INTEGER NOT NULL CHECK (round_version >= 0),
+          action TEXT NOT NULL CHECK (
+            action IN (
+              'EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG', 'RELEASE_WILDCARD'
+            )
+          ),
+          created_at TEXT NOT NULL,
+          UNIQUE (match_id, session_id, round_id, round_version, action),
+          FOREIGN KEY (match_id, session_id)
+            REFERENCES competitive_match_players (match_id, session_id) ON DELETE CASCADE
+        );
+        INSERT INTO competitive_action_events
+          SELECT * FROM competitive_action_events_pre_release_wildcard;
+        DROP TABLE competitive_action_events_pre_release_wildcard;
+        CREATE INDEX IF NOT EXISTS idx_competitive_action_events_match
+          ON competitive_action_events (match_id, round_id, round_version);
+      `);
+    });
+    const foreignKeysWereOn = (this.connection.pragma("foreign_keys", { simple: true }) as number) === 1;
+    if (foreignKeysWereOn) this.connection.pragma("foreign_keys = OFF");
+    try {
+      rebuild();
+    } finally {
+      if (foreignKeysWereOn) this.connection.pragma("foreign_keys = ON");
+    }
   }
 
   private static readonly SESSION_COLUMNS =
@@ -376,6 +433,7 @@ export class GameDatabase {
     indicator_pong_kong_count AS indicatorPongKongCount,
     added_kong_count AS addedKongCount,
     concealed_kong_count AS concealedKongCount,
+    release_wildcard_count AS releaseWildcardCount,
     created_at AS createdAt,
     updated_at AS updatedAt`;
 
@@ -385,7 +443,8 @@ export class GameDatabase {
     exposed_kong_count AS exposedKongCount,
     indicator_pong_kong_count AS indicatorPongKongCount,
     added_kong_count AS addedKongCount,
-    concealed_kong_count AS concealedKongCount`;
+    concealed_kong_count AS concealedKongCount,
+    release_wildcard_count AS releaseWildcardCount`;
 
   private static readonly MATCHMAKING_ENTRY_COLUMNS = `
     session_id AS sessionId,
@@ -1227,6 +1286,7 @@ export class GameDatabase {
       INDICATOR_PONG_KONG: "indicator_pong_kong_count",
       ADDED_KONG: "added_kong_count",
       CONCEALED_KONG: "concealed_kong_count",
+      RELEASE_WILDCARD: "release_wildcard_count",
     };
     const updated = this.connection
       .prepare(

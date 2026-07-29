@@ -8,6 +8,7 @@ import {
 import type { Meld, Tile, TileKind } from "@huanghuang/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { RANKED_BOTS, rankedBotSession } from "./competitive-bots.js";
 import { GameDatabase, type AnonymousSession } from "./database.js";
 import {
   CLOSED_ROOM_EVICTION_MS,
@@ -1877,8 +1878,14 @@ describe("RoomService", () => {
     });
   });
 
-  it("records all four competitive achievements once from accepted authoritative effects", () => {
-    const cases = ["EXPOSED_KONG", "INDICATOR_PONG_KONG", "ADDED_KONG", "CONCEALED_KONG"] as const;
+  it("records all five competitive achievements once from accepted authoritative effects", () => {
+    const cases = [
+      "EXPOSED_KONG",
+      "INDICATOR_PONG_KONG",
+      "ADDED_KONG",
+      "CONCEALED_KONG",
+      "RELEASE_WILDCARD",
+    ] as const;
 
     for (const action of cases) {
       const { database, room, service } = createCompetitiveFixture();
@@ -1944,7 +1951,7 @@ describe("RoomService", () => {
           expectedVersion: room.version,
           payload: { meldId: "competitive-added-pong", tileId: "competitive-added-tile" },
         };
-      } else {
+      } else if (action === "CONCEALED_KONG") {
         const kind = { suit: "WAN" as const, rank: 2 as const };
         round.wildcardKind = { suit: "TONG", rank: 9 };
         const tiles = ["a", "b", "c", "d"].map((suffix) => ({
@@ -1964,6 +1971,19 @@ describe("RoomService", () => {
           expectedVersion: room.version,
           payload: kind,
         };
+      } else {
+        const wildcard = { id: "competitive-release-wildcard", ...round.wildcardKind };
+        round.players[0].hand[0] = wildcard;
+        round.phase = "TURN_DECISION";
+        round.currentSeat = 0;
+        command = {
+          type: "RELEASE_WILDCARD",
+          requestId: randomUUID(),
+          roomId: room.id,
+          roundId: round.id,
+          expectedVersion: room.version,
+          payload: { tileId: wildcard.id },
+        };
       }
 
       const first = service.execute(actorSessionId, command);
@@ -1976,9 +1996,104 @@ describe("RoomService", () => {
           INDICATOR_PONG_KONG: profile?.indicatorPongKongCount,
           ADDED_KONG: profile?.addedKongCount,
           CONCEALED_KONG: profile?.concealedKongCount,
+          RELEASE_WILDCARD: profile?.releaseWildcardCount,
         }[action],
       ).toBe(1);
     }
+  });
+
+  it("attributes an INDICATOR_PONG_KONG claim to the claiming bot's session, not the discarding human's", () => {
+    // Reproduces the user report that a human's own achievement counter went
+    // up after a BOT claimed the human's discarded indicator-matching tile.
+    // Builds a real 1-human + 3-ranked-bot MATCH room, forces a deterministic
+    // "human discards an indicator-kind tile, bot has two more of that kind"
+    // setup, drives the discard through the normal command path and lets the
+    // bot claim automatically via tick(), then inspects the raw
+    // competitive_action_events row and profile counters.
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const humanSession: AnonymousSession = {
+      id: "match-human",
+      nickname: "真人玩家",
+      avatarUrl: "/avatars/match-human.png",
+      wechatOpenId: "openid-match-human",
+    };
+    database.createSession(humanSession, "token-match-human");
+    database.ensureCompetitiveProfile(humanSession.id);
+    const entry = database.upsertMatchmakingEntry({
+      sessionId: humanSession.id,
+      rankLevelSnapshot: 0,
+      enqueuedAt: new Date(0).toISOString(),
+    });
+    for (const bot of RANKED_BOTS) database.ensureRankedBotSession(bot);
+    const botSessions = RANKED_BOTS.map((bot) => rankedBotSession(bot));
+
+    const service = new RoomService(database);
+    const room = service.createCompetitiveMatchWithBots([humanSession], [entry], botSessions);
+    const round = activeRound(room);
+
+    const seats = [0, 1, 2, 3] as const;
+    const humanSeat = seats.find((seat) => room.seats[seat].sessionId === humanSession.id);
+    if (humanSeat === undefined) throw new Error("Expected the human to be seated");
+    const botSeat = seats.find((seat) => seat !== humanSeat);
+    if (botSeat === undefined) throw new Error("Expected a bot seat");
+    const botSessionId = room.seats[botSeat].sessionId;
+    if (botSessionId === null) throw new Error("Expected the bot seat to carry a session id");
+
+    const indicatorKind = { suit: round.indicatorTile.suit, rank: round.indicatorTile.rank };
+    // Strip any incidental copies of the indicator's kind dealt by the random
+    // shuffle, then hand the human exactly one matching tile to discard and
+    // the bot exactly two, so which seat can (and does) claim is unambiguous.
+    for (const seat of seats) {
+      round.players[seat].hand = round.players[seat].hand.filter(
+        (tile) => !sameTileKind(tile, indicatorKind),
+      );
+    }
+    round.players[humanSeat].hand.push({ id: "human-indicator-match", ...indicatorKind });
+    round.players[botSeat].hand.push(
+      { id: "bot-indicator-match-a", ...indicatorKind },
+      { id: "bot-indicator-match-b", ...indicatorKind },
+    );
+    round.phase = "TURN_DECISION";
+    round.currentSeat = humanSeat;
+    round.lastDiscard = null;
+    round.pendingResponse = null;
+
+    const discardResult = service.execute(humanSession.id, {
+      type: "DISCARD_TILE",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: room.version,
+      payload: { tileId: "human-indicator-match" },
+    });
+    expect(discardResult.accepted).toBe(true);
+
+    const afterDiscard = activeRound(room);
+    expect(afterDiscard.phase).toBe("DISCARD_RESPONSE");
+    expect(afterDiscard.pendingResponse).toEqual({
+      seat: botSeat,
+      actions: ["CLAIM_INDICATOR_PONG_KONG"],
+    });
+
+    // The bot claims automatically once its response delay elapses.
+    service.tick(Date.now() + 60_000);
+
+    const matchId = room.competitiveMatch?.matchId;
+    if (matchId === undefined) throw new Error("Expected an active competitive match");
+    const events = database.connection
+      .prepare(
+        `SELECT session_id AS sessionId FROM competitive_action_events
+         WHERE match_id = ? AND action = 'INDICATOR_PONG_KONG'`,
+      )
+      .all(matchId) as { sessionId: string }[];
+    expect(events).toHaveLength(1);
+    expect(events[0]?.sessionId).toBe(botSessionId);
+
+    const botProfile = database.getCompetitiveProfile(botSessionId);
+    const humanProfile = database.getCompetitiveProfile(humanSession.id);
+    expect(botProfile?.indicatorPongKongCount).toBe(1);
+    expect(humanProfile?.indicatorPongKongCount).toBe(0);
   });
 
   it("settles a competitive win only after its effect and remains idempotent across restart", () => {
