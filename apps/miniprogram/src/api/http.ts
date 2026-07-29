@@ -115,11 +115,20 @@ export const competitiveApi = {
   },
 };
 
-export type VersionInfo = { revision: string; builtAt: string };
+export type VersionInfo = { version: string; builtAt: string; updatedAt: string; revision: string };
 
 export const versionApi = {
-  get(): Promise<VersionInfo> {
-    return request("/api/version");
+  // Frontend and backend deploy independently, so during a transition period
+  // this may hit a not-yet-redeployed backend still serving the old
+  // `{ revision, builtAt }` shape (no `version`/`updatedAt`). Treat that as a
+  // failed fetch rather than trusting the cast — otherwise the "关于" modal
+  // would render "undefined · <date>" instead of degrading to "获取失败".
+  async get(): Promise<VersionInfo> {
+    const info = await request<Partial<VersionInfo>>("/api/version");
+    if (typeof info.version !== "string" || typeof info.builtAt !== "string") {
+      throw new ApiError("VERSION_SHAPE_MISMATCH");
+    }
+    return info as VersionInfo;
   },
 };
 

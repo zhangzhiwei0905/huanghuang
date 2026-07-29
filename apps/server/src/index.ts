@@ -26,7 +26,7 @@ import { RoomPresence } from "./room-presence.js";
 import { RoomService } from "./room-service.js";
 import { SessionService, SESSION_TOKEN_HEADER } from "./session-service.js";
 import { SessionPresence } from "./session-presence.js";
-import { readBuildTime, readRevision } from "./version.js";
+import { readBuildTime, readRevision, resolveAppVersion } from "./version.js";
 
 const app = Fastify({ logger: true });
 await app.register(cookie);
@@ -182,10 +182,35 @@ app.get("/health/ready", () => ({ status: "ready" }));
 
 // Read once at startup and cache — never re-read the file per-request.
 const cachedBuiltAt = readBuildTime(join(process.cwd(), "BUILD_TIME"));
+const cachedRevision = readRevision();
+// Resolve (and, if a new deploy actually happened, persist) the displayed
+// semver once at startup rather than per-request — same reasoning as
+// cachedBuiltAt above. Set APP_VERSION_OVERRIDE for exactly one deploy to
+// force a specific version (e.g. "从 1.2.0 开始"); see resolveAppVersion's
+// doc comment in version.ts.
+const storedAppVersion = database.getAppVersion();
+const resolvedAppVersion = resolveAppVersion({
+  stored: storedAppVersion,
+  currentRevision: cachedRevision,
+  override: process.env.APP_VERSION_OVERRIDE ?? null,
+});
+const cachedAppVersion = resolvedAppVersion.version;
+const cachedAppVersionUpdatedAt = resolvedAppVersion.bumped
+  ? new Date().toISOString()
+  : (storedAppVersion?.updatedAt ?? new Date().toISOString());
+if (resolvedAppVersion.bumped) {
+  database.upsertAppVersion({
+    version: resolvedAppVersion.version,
+    lastRevision: cachedRevision,
+    updatedAt: cachedAppVersionUpdatedAt,
+  });
+}
 
 app.get("/api/version", () => ({
-  revision: readRevision(),
+  version: cachedAppVersion,
   builtAt: cachedBuiltAt,
+  updatedAt: cachedAppVersionUpdatedAt,
+  revision: cachedRevision,
 }));
 
 /** Issue or refresh an anonymous session without joining a room (mini-program entry). */

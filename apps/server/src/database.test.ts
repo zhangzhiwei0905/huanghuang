@@ -49,3 +49,68 @@ describe("GameDatabase.resumeWechatSession", () => {
     });
   });
 });
+
+describe("GameDatabase app_version", () => {
+  const databases: GameDatabase[] = [];
+
+  afterEach(() => {
+    for (const database of databases.splice(0)) {
+      database.connection.close();
+    }
+  });
+
+  function createDatabase(): GameDatabase {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    return database;
+  }
+
+  it("returns null when no row has been written yet", () => {
+    const database = createDatabase();
+
+    expect(database.getAppVersion()).toBeNull();
+  });
+
+  it("round-trips a written row", () => {
+    const database = createDatabase();
+
+    database.upsertAppVersion({
+      version: "1.0.0",
+      lastRevision: "abc1234",
+      updatedAt: "2026-07-29T00:00:00.000Z",
+    });
+
+    expect(database.getAppVersion()).toEqual({
+      version: "1.0.0",
+      lastRevision: "abc1234",
+      updatedAt: "2026-07-29T00:00:00.000Z",
+    });
+  });
+
+  it("upserting twice keeps a single row (id = 1 invariant)", () => {
+    const database = createDatabase();
+
+    database.upsertAppVersion({
+      version: "1.0.0",
+      lastRevision: "abc1234",
+      updatedAt: "2026-07-29T00:00:00.000Z",
+    });
+    database.upsertAppVersion({
+      version: "1.0.1",
+      lastRevision: "def5678",
+      updatedAt: "2026-07-29T01:00:00.000Z",
+    });
+
+    expect(database.getAppVersion()).toEqual({
+      version: "1.0.1",
+      lastRevision: "def5678",
+      updatedAt: "2026-07-29T01:00:00.000Z",
+    });
+    const rowCount = (
+      database.connection.prepare("SELECT COUNT(*) AS count FROM app_version").get() as {
+        count: number;
+      }
+    ).count;
+    expect(rowCount).toBe(1);
+  });
+});

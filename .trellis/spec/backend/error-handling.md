@@ -140,40 +140,90 @@ acknowledge(result);
 
 `RoomService.execute` reuses a stored result when `(session_id, request_id)` was already processed, so retries with the **same** `requestId` are safe. A newer request against a stale `expectedVersion` is rejected with `VERSION_CONFLICT`.
 
-## Deployment revision endpoint
+## Deployment version endpoint
 
-`GET /api/version` returns `{ revision, builtAt }` so the client (and a
-human comparing `curl` output against `git log`) can confirm which build is
-actually running — deployment here is entirely manual
-(`docker compose ... up -d --build`, no CI/CD), so this is the only way to
-know whether a given production instance has picked up recent changes.
+`GET /api/version` returns `{ version, builtAt, updatedAt, revision }` so the
+client (and a human eyeballing `curl` output) can confirm which build is
+actually running — deployment is entirely manual (no CI/CD), so this is the
+only way to know whether a given production instance has picked up recent
+changes.
 
-- `revision` comes from `process.env.APP_REVISION`, which only exists at
-  runtime because `deploy/server.Dockerfile`'s runtime stage re-declares
-  `ARG APP_REVISION` (Docker ARGs never carry across a new `FROM` stage
-  without re-declaring them) and adds `ENV APP_REVISION=${APP_REVISION}`
-  right after it — before this, the ARG only fed the OCI
-  `image.revision` LABEL, which is invisible to the running process.
-- `builtAt` is a file (`/app/BUILD_TIME`), written once via `date -u` in
-  the Dockerfile's build stage and copied into the runtime stage, read
-  once at server module load (`apps/server/src/index.ts`, cached in a
-  top-level const) — never re-read per request.
-- Both fields degrade to `"unknown"` rather than throwing when the env var
-  or file is missing (e.g. running `pnpm dev` locally with no Docker
-  build behind it). See `apps/server/src/version.ts`'s `readRevision`/
-  `readBuildTime` for the exact fallback logic.
-- The default documented deploy command in `README.md` must `export
-  APP_REVISION=$(git rev-parse --short HEAD)` before invoking
-  `docker compose ... up -d --build` — `deploy/compose.yaml`'s build arg
-  (`APP_REVISION: ${APP_REVISION:-unknown}`) only reads it from the
-  invoking shell's environment, it does not compute it. Forgetting this
-  export is silent: the deploy still succeeds, it just tags/reports
-  `"unknown"` forever.
-- The miniprogram build mirrors this on the frontend side: `TARO_APP_REVISION`
-  is injected via `defineConstants` in `apps/miniprogram/config/index.ts`
-  using `execSync("git rev-parse --short HEAD")` at build time (never at
-  runtime, never shipped as a live git call), same fail-to-`"unknown"`
-  convention if `.git` isn't available in the build environment.
+- `version` is a `MAJOR.MINOR.PATCH` string (e.g. `1.0.3`), NOT the git sha —
+  it auto-increments its patch number by exactly 1 every time the backend is
+  genuinely redeployed, regardless of what the commit changed. It is
+  persisted in a single-row `app_version` table (`apps/server/src/database.ts`,
+  `id INTEGER PRIMARY KEY CHECK (id = 1)`) inside the same SQLite file as
+  everything else, so it survives container rebuilds even though the image
+  itself is stateless (the table lives on the persistent Docker volume, not
+  in the image).
+- **Bump decision** (`apps/server/src/version.ts`'s `resolveAppVersion`,
+  computed once at server startup, never per-request): compares the current
+  build's `APP_REVISION` (see below) against the `last_revision` stored from
+  the previous startup.
+  - Different revision → genuinely new deploy → `bumpPatch(storedVersion)`.
+  - Same revision (a plain container restart / crash-restart, no rebuild) →
+    version stays unchanged. This is the load-bearing guarantee: restarting
+    the process must never bump the version on its own.
+  - No stored row yet (first-ever run) → seeds `"1.0.0"`.
+  - `APP_VERSION_OVERRIDE` env var, if set to a valid `\d+\.\d+\.\d+` string,
+    always wins over the above and forces that exact version — this is a
+    **one-time reset mechanism**: the deploy operator sets it only for the
+    single deploy where they want to force a specific starting point (e.g.
+    "start from 1.2.0"), then removes it; leaving it set would pin every
+    future deploy to that same value instead of resuming auto-increment.
+    A malformed override value is silently ignored (falls through to the
+    normal logic above) rather than accepted as garbage or crashing startup.
+- `revision` (git short sha) and `builtAt` (Docker image build timestamp)
+  work exactly as before this redesign: `revision` comes from
+  `process.env.APP_REVISION`, which only exists at runtime because
+  `deploy/server.Dockerfile`'s runtime stage re-declares `ARG APP_REVISION`
+  (Docker ARGs never carry across a new `FROM` stage without re-declaring
+  them) and adds `ENV APP_REVISION=${APP_REVISION}` right after it.
+  `builtAt` is a file (`/app/BUILD_TIME`), written once via `date -u` in the
+  Dockerfile's build stage and copied into the runtime stage. Both are kept
+  in the API response for engineering debugging even though the UI's primary
+  display is now `version` + timestamp, not the raw sha.
+- `updatedAt` is when this `version` number was last actually assigned
+  (differs from `builtAt` only in edge cases; both are frozen across a plain
+  restart with no rebuild).
+- All of `version`/`revision`/`builtAt` degrade to safe defaults
+  (`"1.0.0"`/`"unknown"`/`"unknown"`) rather than throwing when the env var
+  or file is missing (e.g. running `pnpm dev` locally with no Docker build
+  behind it).
+- The deploy command that builds the image must `export
+  APP_REVISION=$(git rev-parse --short HEAD)` first — whatever compose/build
+  invocation is actually used only reads this from the invoking shell's
+  environment, it does not compute it. Forgetting this export is silent:
+  the build still succeeds, it just never triggers a version bump because
+  `revision` stays `"unknown"` across every deploy (matches the "same
+  revision → no bump" rule above, so this failure mode is at least safe,
+  just wrong — the version number simply never moves).
+
+### Frontend version (miniprogram)
+
+There is no way to read, at build time, the version string a developer will
+type into the WeChat DevTools upload dialog when publishing a 体验版 — that
+field only exists in the DevTools UI at upload time, not in any source file.
+So the frontend's displayed version instead tracks
+`apps/miniprogram/package.json`'s `"version"` field, which the developer
+must manually edit to match whatever they're about to type into the upload
+dialog, before each build+upload. `TARO_APP_VERSION`/`TARO_APP_BUILT_AT` are
+injected via `defineConstants` in `apps/miniprogram/config/index.ts` reading
+that field (fallback `"0.0.0"` if unreadable) plus a build-time
+`new Date().toISOString()`. This manual-sync convention is documented in a
+comment directly above the reading code in that config file — don't remove
+it or "improve" it into an automatic git-sha lookup again, that was the
+exact thing the user asked to move away from.
+
+### Gotcha: frontend must not crash on an old-shape backend response
+
+Frontend and backend deploy independently. A frontend build can reach a
+backend that hasn't been redeployed yet (or vice versa), so
+`versionApi.get()` in `apps/miniprogram/src/api/http.ts` validates the
+response shape (`version`/`builtAt` are strings) and throws instead of
+blindly trusting the cast — an old backend still serving the pre-redesign
+`{ revision, builtAt }` shape must surface as the existing "获取失败"
+fallback in `AboutModal`, not render `"undefined · <timestamp>"`.
 
 ## Engine invariants
 

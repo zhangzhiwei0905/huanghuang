@@ -46,6 +46,12 @@ export type PublicCompetitiveProfileRow = Pick<
   | "releaseWildcardCount"
 >;
 
+export type AppVersionRow = {
+  version: string;
+  lastRevision: string;
+  updatedAt: string;
+};
+
 export type MatchmakingEntryRow = {
   sessionId: string;
   rankLevelSnapshot: number;
@@ -351,6 +357,13 @@ export class GameDatabase {
         ON competitive_match_players (session_id, match_id);
       CREATE INDEX IF NOT EXISTS idx_competitive_action_events_match
         ON competitive_action_events (match_id, round_id, round_version);
+
+      CREATE TABLE IF NOT EXISTS app_version (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version TEXT NOT NULL,
+        last_revision TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
     // Additive columns for WeChat login — wrapped so re-running on a database
     // that already has them (every startup after the first) doesn't throw.
@@ -1456,6 +1469,27 @@ export class GameDatabase {
       this.saveRoom(room, stateJson);
       this.saveProcessedRequest(sessionId, requestId, resultJson);
     })();
+  }
+
+  getAppVersion(): AppVersionRow | null {
+    const row = this.connection
+      .prepare("SELECT version, last_revision, updated_at FROM app_version WHERE id = 1")
+      .get() as { version: string; last_revision: string; updated_at: string } | undefined;
+    if (!row) return null;
+    return { version: row.version, lastRevision: row.last_revision, updatedAt: row.updated_at };
+  }
+
+  upsertAppVersion(row: AppVersionRow): void {
+    this.connection
+      .prepare(
+        `INSERT INTO app_version (id, version, last_revision, updated_at)
+         VALUES (1, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           version = excluded.version,
+           last_revision = excluded.last_revision,
+           updated_at = excluded.updated_at`,
+      )
+      .run(row.version, row.lastRevision, row.updatedAt);
   }
 
   close(): void {

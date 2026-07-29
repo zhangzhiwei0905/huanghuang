@@ -7,8 +7,19 @@ export const API_BASE: string =
 export const SESSION_TOKEN_STORAGE_KEY = "huanghuang_session_token";
 export const SESSION_TOKEN_HEADER = "X-Session-Token";
 
-/** Frontend build revision (git short sha). Injected at build via TARO_APP_REVISION. */
-export const APP_REVISION: string =
-  typeof TARO_APP_REVISION === "string" && TARO_APP_REVISION.length > 0
-    ? TARO_APP_REVISION
+/**
+ * Frontend build version (MAJOR.MINOR.PATCH), read from
+ * apps/miniprogram/package.json at build time. Injected via
+ * TARO_APP_VERSION — see config/index.ts for the manual-sync convention
+ * that keeps this in sync with the WeChat DevTools upload dialog.
+ */
+export const APP_VERSION: string =
+  typeof TARO_APP_VERSION === "string" && TARO_APP_VERSION.length > 0
+    ? TARO_APP_VERSION
+    : "unknown";
+
+/** Frontend build timestamp (ISO string). Injected at build via TARO_APP_BUILT_AT. */
+export const APP_BUILT_AT: string =
+  typeof TARO_APP_BUILT_AT === "string" && TARO_APP_BUILT_AT.length > 0
+    ? TARO_APP_BUILT_AT
     : "unknown";

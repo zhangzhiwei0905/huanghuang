@@ -21,7 +21,7 @@ import {
   type MatchmakingResponse,
   type VersionInfo,
 } from "../../api/http";
-import { API_BASE, APP_REVISION } from "../../config";
+import { API_BASE, APP_BUILT_AT, APP_VERSION } from "../../config";
 import {
   clearStoredSessionToken,
   type Identity,
@@ -212,7 +212,7 @@ function AboutModal({
   onClose: () => void;
 }) {
   const backendLabel = (() => {
-    if (backend !== null) return `${backend.revision} · ${backend.builtAt}`;
+    if (backend !== null) return `${backend.version} · ${backend.builtAt}`;
     if (backendError) return "获取失败";
     return "加载中…";
   })();
@@ -223,7 +223,7 @@ function AboutModal({
         <Text className="mp-about__title">关于</Text>
         <View className="mp-about__row">
           <Text className="mp-about__label">前端版本</Text>
-          <Text className="mp-about__value">{APP_REVISION}</Text>
+          <Text className="mp-about__value">{`${APP_VERSION} · ${APP_BUILT_AT}`}</Text>
         </View>
         <View className="mp-about__row">
           <Text className="mp-about__label">后端版本</Text>

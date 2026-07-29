@@ -1,16 +1,24 @@
-import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { UserConfigExport } from "@tarojs/cli";
 
 const DEFAULT_API_BASE = "https://huanghuang.amazingzz.xyz";
 
-// Some CI/CD sandboxes build from a source snapshot without a .git directory
-// — fall back to "unknown" rather than failing the build.
-function resolveGitRevision(): string {
+// There is no way to read, at build time, the version string a developer
+// types into the WeChat DevTools "上传" dialog when publishing a 体验版 —
+// that field only lives in the DevTools UI at upload time. So instead we
+// read this package's own package.json "version" field, which the
+// developer must manually keep in sync with whatever they're about to type
+// into that dialog before each build + upload. This is an intentional
+// manual-sync convention, not an oversight.
+function resolveAppVersion(): string {
   try {
-    return execSync("git rev-parse --short HEAD").toString().trim();
+    const pkg = JSON.parse(readFileSync(path.join(__dirname, "../package.json"), "utf8")) as {
+      version?: unknown;
+    };
+    return typeof pkg.version === "string" && pkg.version.length > 0 ? pkg.version : "0.0.0";
   } catch {
-    return "unknown";
+    return "0.0.0";
   }
 }
 
@@ -32,7 +40,10 @@ const config: UserConfigExport<"webpack5"> = {
     // work remains opt-in via TARO_APP_API_BASE=http://127.0.0.1:3000.
     TARO_APP_API_BASE: JSON.stringify(process.env.TARO_APP_API_BASE ?? DEFAULT_API_BASE),
     // Lets the "关于" modal show which build is actually running on device.
-    TARO_APP_REVISION: JSON.stringify(resolveGitRevision()),
+    TARO_APP_VERSION: JSON.stringify(resolveAppVersion()),
+    // Evaluated once when this build kicks off — timestamp shown alongside
+    // TARO_APP_VERSION in the "关于" modal.
+    TARO_APP_BUILT_AT: JSON.stringify(new Date().toISOString()),
   },
   copy: {
     patterns: [],
