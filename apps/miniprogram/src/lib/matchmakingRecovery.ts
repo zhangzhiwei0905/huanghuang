@@ -50,3 +50,41 @@ export function nextMatchmakingPollDelayMs(
   if (state.status === "MATCHED") return isTrusteeMatch ? 2_000 : 5_000;
   return null;
 }
+
+/**
+ * Stable key for a matchmaking response that is allowed to open a room page.
+ * Team matchmaking can expose its party room while still QUEUED, whereas
+ * single-player matchmaking opens only after MATCHED.
+ */
+export function matchmakingRoomNavigationKey(response: MatchmakingResponse): string | null {
+  if (
+    response.state.status === "QUEUED" &&
+    response.state.partyRoomId !== undefined &&
+    response.room?.mode === "TEAM_MATCH"
+  ) {
+    return `party:${response.state.partyRoomId}`;
+  }
+  if (response.state.status === "MATCHED" && response.room !== null) {
+    return `match:${response.state.matchId}`;
+  }
+  return null;
+}
+
+export function shouldOpenMatchmakingRoom({
+  pageVisible,
+  navigationInFlight,
+  navigationKey,
+  openedNavigationKey,
+}: {
+  pageVisible: boolean;
+  navigationInFlight: boolean;
+  navigationKey: string | null;
+  openedNavigationKey: string | null;
+}): boolean {
+  return (
+    pageVisible &&
+    !navigationInFlight &&
+    navigationKey !== null &&
+    navigationKey !== openedNavigationKey
+  );
+}

@@ -1,8 +1,11 @@
 import type { MatchmakingState, RoomProjection } from "@huanghuang/protocol";
 import { describe, expect, it } from "vitest";
+import type { MatchmakingResponse } from "../api/http";
 import {
+  matchmakingRoomNavigationKey,
   nextMatchmakingPollDelayMs,
   resolveReturnToCompetitiveMatch,
+  shouldOpenMatchmakingRoom,
   shouldPollMatchmakingStatus,
 } from "./matchmakingRecovery.js";
 
@@ -72,5 +75,78 @@ describe("nextMatchmakingPollDelayMs", () => {
 
   it("stops polling once idle", () => {
     expect(nextMatchmakingPollDelayMs(idleState, false)).toBeNull();
+  });
+});
+
+describe("matchmaking room navigation", () => {
+  const room = { roomId: "room-1", mode: "MATCH" } as unknown as RoomProjection;
+  const response = {
+    state: matchedState,
+    room,
+    botsEnabled: false,
+  } satisfies MatchmakingResponse;
+
+  it("builds a stable key for the matched room", () => {
+    expect(matchmakingRoomNavigationKey(response)).toBe("match:match-1");
+  });
+
+  it("builds a stable key for a queued team room", () => {
+    expect(
+      matchmakingRoomNavigationKey({
+        state: {
+          status: "QUEUED",
+          enqueuedAt: "2026-07-29T12:00:00.000Z",
+          disconnectedAt: null,
+          rankLevelSnapshot: 0,
+          partyRoomId: "party-1",
+        },
+        room: { roomId: "party-1", mode: "TEAM_MATCH" } as unknown as RoomProjection,
+        botsEnabled: false,
+      }),
+    ).toBe("party:party-1");
+  });
+
+  it("does not open a room while the home page is hidden", () => {
+    expect(
+      shouldOpenMatchmakingRoom({
+        pageVisible: false,
+        navigationInFlight: false,
+        navigationKey: "match:match-1",
+        openedNavigationKey: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not open the same matchmaking result twice in one visible visit", () => {
+    expect(
+      shouldOpenMatchmakingRoom({
+        pageVisible: true,
+        navigationInFlight: false,
+        navigationKey: "match:match-1",
+        openedNavigationKey: "match:match-1",
+      }),
+    ).toBe(false);
+  });
+
+  it("does not open another room while navigation is still in flight", () => {
+    expect(
+      shouldOpenMatchmakingRoom({
+        pageVisible: true,
+        navigationInFlight: true,
+        navigationKey: "match:match-2",
+        openedNavigationKey: "match:match-1",
+      }),
+    ).toBe(false);
+  });
+
+  it("allows a new result after the previous room key was recorded", () => {
+    expect(
+      shouldOpenMatchmakingRoom({
+        pageVisible: true,
+        navigationInFlight: false,
+        navigationKey: "match:match-2",
+        openedNavigationKey: "match:match-1",
+      }),
+    ).toBe(true);
   });
 });

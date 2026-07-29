@@ -637,7 +637,21 @@ once 预览 is confirmed clean.
 ### Competitive matchmaking presentation
 
 - The signed-in home shows the server-projected rank and places `快速开始` before practice/friend actions.
-- Queue polling is serial, never overlapping. It stops on unmount, cancel, or a non-QUEUED state; delayed responses must not overwrite a newer MATCHED state.
+- Queue polling is serial, never overlapping. It runs quickly while `QUEUED`,
+  continues at the slower reconciliation cadence while `MATCHED`, and stops
+  on unmount, cancel, or `IDLE`; delayed responses must not overwrite a newer
+  `MATCHED` state.
+- A mini-program page remains mounted in the page stack after `navigateTo`;
+  ordinary React effects and matchmaking polling can therefore keep running
+  while the home page is hidden. Separate status reconciliation from page
+  navigation: `useDidHide` marks the home invisible, `useDidShow` starts a new
+  visible visit, and only a visible visit may auto-open a room. Keep a stable
+  `match:<matchId>` / `party:<partyRoomId>` navigation key so the same response
+  can open at most once per visible visit. Reset the key when `navigateTo`
+  rejects so a later poll may retry. Without both visibility and key guards,
+  background `MATCHED` polling repeatedly pushes room pages from the right;
+  each page mounts its own `useRoom` Socket and eventually turns the visual
+  navigation loop into WebSocket failures.
 - The matching modal shows wait time and the same 10/20/40-second search-window labels owned by product requirements. It does not offer bot fallback or configuration.
 - A MATCH projection hides room code sharing, settings, chat and dissolve controls. Exiting PLAYING requires explicit confirmation that trustee play and rank settlement continue.
 - Settlement uses `winnerMultiplier`, `payerEffectiveMultiplier` and `competitiveSettlement.self`; it must not derive rank from personal multiplier, table score or `roundDelta`.

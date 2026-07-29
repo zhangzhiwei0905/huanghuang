@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, Image, Input, Picker, Text, View } from "@tarojs/components";
-import Taro, { useDidShow } from "@tarojs/taro";
+import Taro, { useDidHide, useDidShow } from "@tarojs/taro";
 import type {
   BaseScore,
   BotDifficulty,
@@ -34,8 +34,10 @@ import {
 } from "../../api/session";
 import { errorLabel } from "../../lib/errors";
 import {
+  matchmakingRoomNavigationKey,
   nextMatchmakingPollDelayMs,
   resolveReturnToCompetitiveMatch,
+  shouldOpenMatchmakingRoom,
   shouldPollMatchmakingStatus,
 } from "../../lib/matchmakingRecovery";
 import { matchmakingRangeLabel, matchmakingWaitSeconds } from "../../lib/matchmakingPresentation";
@@ -278,7 +280,9 @@ export default function IndexPage() {
   const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
   const [botsEnabled, setBotsEnabled] = useState(false);
   const [allowBots, setAllowBots] = useState(getStoredMatchmakingAllowBots());
+  const pageVisibleRef = useRef(true);
   const matchedRoomOpeningRef = useRef(false);
+  const openedMatchRoomKeyRef = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -313,34 +317,39 @@ export default function IndexPage() {
     setMatchmaking(response.state);
     setMatchmakingNow(Date.now());
     if (response.botsEnabled) setBotsEnabled(true);
-    const isQueuedPartyRoom =
-      response.state.status === "QUEUED" &&
-      response.state.partyRoomId !== undefined &&
-      response.room?.mode === "TEAM_MATCH";
-    if ((response.state.status !== "MATCHED" && !isQueuedPartyRoom) || response.room === null) {
+    const navigationKey = matchmakingRoomNavigationKey(response);
+    if (navigationKey === null || response.room === null) return;
+    if (response.state.status === "MATCHED") {
+      const trusteeMatchId = Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+      const deliberatelyTrustee =
+        typeof trusteeMatchId === "string" && trusteeMatchId === response.state.matchId;
+      if (deliberatelyTrustee && response.room.stage !== "ROUND_RESULT") return;
+      if (deliberatelyTrustee) Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+    }
+    if (
+      !shouldOpenMatchmakingRoom({
+        pageVisible: pageVisibleRef.current,
+        navigationInFlight: matchedRoomOpeningRef.current,
+        navigationKey,
+        openedNavigationKey: openedMatchRoomKeyRef.current,
+      })
+    ) {
       return;
     }
-    if (isQueuedPartyRoom) {
-      if (matchedRoomOpeningRef.current) return;
-      matchedRoomOpeningRef.current = true;
-      Taro.setStorageSync("huanghuang_open_room", response.room);
-      void Taro.navigateTo({ url: "/pages/room/index" }).finally(() => {
+    matchedRoomOpeningRef.current = true;
+    openedMatchRoomKeyRef.current = navigationKey;
+    Taro.setStorageSync("huanghuang_open_room", response.room);
+    void Taro.navigateTo({ url: "/pages/room/index" })
+      .catch((cause) => {
+        if (openedMatchRoomKeyRef.current === navigationKey) {
+          openedMatchRoomKeyRef.current = null;
+        }
+        const detail = requestFailureDetail(cause);
+        setMatchmakingError(detail.length > 0 ? `进入牌桌失败：${detail}` : "进入牌桌失败，请重试");
+      })
+      .finally(() => {
         matchedRoomOpeningRef.current = false;
       });
-      return;
-    }
-    if (response.state.status !== "MATCHED") return;
-    const trusteeMatchId = Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
-    const deliberatelyTrustee =
-      typeof trusteeMatchId === "string" && trusteeMatchId === response.state.matchId;
-    if (deliberatelyTrustee && response.room.stage !== "ROUND_RESULT") return;
-    if (deliberatelyTrustee) Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
-    if (matchedRoomOpeningRef.current) return;
-    matchedRoomOpeningRef.current = true;
-    Taro.setStorageSync("huanghuang_open_room", response.room);
-    void Taro.navigateTo({ url: "/pages/room/index" }).finally(() => {
-      matchedRoomOpeningRef.current = false;
-    });
   }
 
   useEffect(() => {
@@ -397,11 +406,20 @@ export default function IndexPage() {
   // re-fetch matchmaking status so a stale MATCHED/QUEUED snapshot from
   // before the round ended gets corrected without waiting for the next poll.
   useDidShow(() => {
+    pageVisibleRef.current = true;
+    // A genuinely new visible visit may recover the same active match once.
+    // While the room page is on top, useDidHide prevents background polling
+    // from pushing duplicate room pages onto the stack.
+    openedMatchRoomKeyRef.current = null;
     if (identity === null) return;
     competitiveApi
       .status()
       .then((response) => applyMatchmakingResponse(response))
       .catch((cause) => setMatchmakingError(describeSubmitError(cause)));
+  });
+
+  useDidHide(() => {
+    pageVisibleRef.current = false;
   });
 
   const heading = useMemo(() => {

@@ -13,6 +13,7 @@ import { getStoredSessionToken } from "../api/session";
 import { API_BASE } from "../config";
 import { errorLabel } from "../lib/errors";
 import { normalizeRoomProjection } from "../lib/roomProjection";
+import { createReconnectWatchdog } from "../lib/reconnectWatchdog";
 import {
   deriveLastSettlementFromClosedProjection,
   type LastCompetitiveSettlement,
@@ -50,6 +51,7 @@ type RoomController = {
 };
 
 const COMMAND_ACK_TIMEOUT_MS = 8000;
+const HARD_RECONNECT_DELAY_MS = 2000;
 
 const ROOM_CLOSE_NOTICES: Record<NonNullable<RoomProjection["closeReason"]>, string> = {
   OWNER_DISSOLVED: "房主已解散房间",
@@ -92,6 +94,7 @@ export function useRoom(): RoomController {
   const socketRef = useRef<Socket | null>(null);
   const mutationInFlightRef = useRef(false);
   const hasEverConnectedRef = useRef(false);
+  const hardReconnectAttemptedRef = useRef(false);
   roomRef.current = room;
 
   const clearLocalRoom = useCallback((message: string | null = null) => {
@@ -179,17 +182,30 @@ export function useRoom(): RoomController {
       auth: token !== null ? { token } : {},
     });
     let connectedTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
+    const reconnectWatchdog = createReconnectWatchdog(() => {
+      if (disposed || hardReconnectAttemptedRef.current) return;
+      hardReconnectAttemptedRef.current = true;
+      setSocketGeneration((value) => value + 1);
+    }, HARD_RECONNECT_DELAY_MS);
     socketRef.current = socket;
 
     const markConnectedAfterProjection = () => {
       if (disposed) return;
       if (connectedTimer !== null) clearTimeout(connectedTimer);
-      connectedTimer = setTimeout(() => setConnectionStatus("connected"), 0);
+      connectedTimer = setTimeout(() => {
+        connectedTimer = null;
+        setConnectionStatus("connected");
+      }, 0);
+    };
+    const cancelPendingConnected = () => {
+      if (connectedTimer === null) return;
+      clearTimeout(connectedTimer);
+      connectedTimer = null;
     };
     const subscribe = () => {
       if (disposed) return;
+      reconnectWatchdog.cancel();
       setConnectionStatus(hasEverConnectedRef.current ? "reconnecting" : "connecting");
       hasEverConnectedRef.current = true;
       const latestToken = getStoredSessionToken();
@@ -211,33 +227,30 @@ export function useRoom(): RoomController {
             markConnectedAfterProjection();
             return;
           }
+          hardReconnectAttemptedRef.current = false;
           replaceProjection(projection);
           markConnectedAfterProjection();
         },
       );
     };
-    const scheduleHardReconnect = () => {
-      if (disposed || reconnectTimer !== null) return;
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        if (!disposed) setSocketGeneration((value) => value + 1);
-      }, 2000);
-    };
     const handleDisconnect = (reason?: string) => {
       if (disposed) return;
+      cancelPendingConnected();
       setConnectionStatus("reconnecting");
       setError(
         reason === "io server disconnect"
           ? "服务器断开了实时连接，正在重连"
           : "实时连接暂时中断，正在重连",
       );
-      // Built-in reconnection handles most cases; hard recreate after auth failure / stuck state.
+      // A server-forced disconnect disables Socket.IO's automatic reconnect,
+      // so use the bounded hard-recreate watchdog for that case only.
       if (reason === "io server disconnect") {
-        scheduleHardReconnect();
+        reconnectWatchdog.schedule();
       }
     };
     const handleConnectError = (err: Error) => {
       if (disposed) return;
+      cancelPendingConnected();
       setConnectionStatus("reconnecting");
       const message = err.message || "";
       if (message.includes("UNAUTHENTICATED") || message.includes("unauthorized")) {
@@ -245,8 +258,8 @@ export function useRoom(): RoomController {
       } else {
         setError(`实时连接失败（${message || "network"}），正在重连`);
       }
-      scheduleHardReconnect();
     };
+    const handleReconnectFailed = () => reconnectWatchdog.schedule();
     const handleRoomUpdate = (update?: { projection?: RoomProjection }) => {
       if (disposed) return;
       if (update?.projection !== undefined) {
@@ -266,18 +279,20 @@ export function useRoom(): RoomController {
     socket.on("room:update", handleRoomUpdate);
     socket.on("connect_error", handleConnectError);
     socket.on("room:chat", handleChatMessage);
+    socket.io.on("reconnect_failed", handleReconnectFailed);
     socket.connect();
 
     return () => {
       disposed = true;
       if (connectedTimer !== null) clearTimeout(connectedTimer);
-      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+      reconnectWatchdog.dispose();
       socketRef.current = null;
       socket.off("connect", subscribe);
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
       socket.off("room:update", handleRoomUpdate);
       socket.off("room:chat", handleChatMessage);
+      socket.io.off("reconnect_failed", handleReconnectFailed);
       socket.disconnect();
     };
   }, [clearLocalRoom, refresh, replaceProjection, room?.roomCode, socketGeneration]);
@@ -289,6 +304,7 @@ export function useRoom(): RoomController {
       // from a previous CLOSED room no longer applies here.
       setLastSettlement(null);
       hasEverConnectedRef.current = false;
+      hardReconnectAttemptedRef.current = false;
       setConnectionStatus("connecting");
       replaceProjection(projection);
     },
