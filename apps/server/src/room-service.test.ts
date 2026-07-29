@@ -128,7 +128,7 @@ describe("RoomService", () => {
     });
   });
 
-  it("keeps a team-ranked room waiting until the owner queues 2-4 prepared players", () => {
+  it("lets the owner queue a 1-4 player ranked party while requiring invited players to prepare", () => {
     const database = new GameDatabase(":memory:");
     databases.push(database);
     const sessions: AnonymousSession[] = [0, 1, 2].map((index) => ({
@@ -156,12 +156,15 @@ describe("RoomService", () => {
       turnTimeoutSeconds: 20,
       botDifficulty: "LOW",
     });
-    expect(service.prepareTeamMatch(first.id, room.code)).toBe("TEAM_SIZE_INVALID");
+    expect(service.prepareTeamMatch(first.id, room.code)).toMatchObject({
+      room,
+      sessions: [first],
+    });
     expect(service.joinRoom(second, room.code)).toBe(room);
     expect(service.joinRoom(third, room.code)).toBe(room);
     expect(service.prepareTeamMatch(first.id, room.code)).toBe("NOT_ALL_READY");
 
-    for (const session of sessions) {
+    for (const session of [second, third]) {
       expect(service.setReady(session.id, room.code, true)).toBe(room);
     }
     expect(room.stage).toBe("WAITING");

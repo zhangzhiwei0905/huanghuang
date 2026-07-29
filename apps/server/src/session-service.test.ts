@@ -72,6 +72,7 @@ describe("SessionService", () => {
       nickname: "牌友",
       wechatOpenId: null,
       avatarUrl: null,
+      playerId: null,
     });
 
     const viaSocket = sessions.resolveSocketHandshake({

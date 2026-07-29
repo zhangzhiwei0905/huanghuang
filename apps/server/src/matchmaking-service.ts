@@ -6,19 +6,21 @@ import {
   type GameDatabase,
   type MatchmakingEntryRow,
 } from "./database.js";
-import { selectMatchmakingGroup, type MatchmakingCandidate } from "./matchmaking-algorithm.js";
+import {
+  selectBotFillGroup,
+  selectMatchmakingGroup,
+  type MatchmakingCandidate,
+} from "./matchmaking-algorithm.js";
 
 export const MATCHMAKING_DISCONNECT_GRACE_MS = 10_000;
 // Client polls status roughly every 1s over HTTP; 8s tolerates a few missed
 // beats from normal network jitter/backgrounding before treating a session
 // as offline for scheduling purposes.
 export const MATCHMAKING_HEARTBEAT_TIMEOUT_MS = 8_000;
-// Experience-phase "allow bots" players wait this long before the queue is
-// resolved with bots, so friends queueing near-simultaneously land in the
-// same match (2 humans + 2 bots, 3 humans + 1 bot) instead of each getting a
-// solo 1+3 split. After the window the earliest allowBots entry has waited,
-// every currently-queued allowBots human (up to 3) is grouped and the rest of
-// the table is filled with bots.
+// Experience-phase "allow bots" parties wait this long before bot fill. The
+// selector then aggregates complete compatible parties up to three humans and
+// fills only the remaining seats, preserving party identity and giving any
+// already-available four-human group priority.
 export const MATCHMAKING_BOT_FILL_WAIT_MS = 5_000;
 
 type CompetitiveRoomCreator = (
@@ -135,9 +137,10 @@ export class MatchmakingService {
     sessions: readonly AnonymousSession[],
     partyRoomId: string,
     now = Date.now(),
+    allowBots = false,
   ): MatchmakingState {
     if (
-      sessions.length < 2 ||
+      sessions.length < 1 ||
       sessions.length > 4 ||
       new Set(sessions.map((session) => session.id)).size !== sessions.length
     ) {
@@ -151,8 +154,16 @@ export class MatchmakingService {
       sessionId: session.id,
       rankLevelSnapshot: this.database.ensureCompetitiveProfile(session.id).rankLevel,
     }));
-    this.database.enqueueMatchmakingParty(partyRoomId, players, new Date(now).toISOString());
-    for (const session of sessions) this.allowBotsBySessionId.set(session.id, false);
+    const effectiveAllowBots = allowBots && this.botOptions.enabled;
+    this.database.enqueueMatchmakingParty(
+      partyRoomId,
+      players,
+      new Date(now).toISOString(),
+      effectiveAllowBots,
+    );
+    for (const session of sessions) {
+      this.allowBotsBySessionId.set(session.id, effectiveAllowBots);
+    }
     return this.getState(sessions[0]?.id ?? "");
   }
 
@@ -245,9 +256,10 @@ export class MatchmakingService {
       );
       const matches: MatchmakingTickResult["matches"] = [];
 
-      // Experience-phase bot matching: allowBots players wait a short window
-      // so friends can land in the same match, then the table is filled with
-      // bots. Multiple bot matches can run concurrently: each pass filters the
+      // Experience-phase bot matching: allowBots parties wait a short window
+      // so compatible humans can aggregate, then rank-compatible idle bots
+      // fill the remaining seats without splitting any party. Multiple bot
+      // matches can run concurrently: each pass filters the
       // shared bot pool down to the currently-idle subset and only proceeds
       // if enough of them are free to fill the table, so several tables can
       // draw disjoint bots from the pool at once instead of the whole pool
@@ -262,11 +274,7 @@ export class MatchmakingService {
               this.allowBotsFor(entry),
           )
           .sort((a, b) => a.enqueuedAt.localeCompare(b.enqueuedAt));
-        const earliest = botEntries[0];
-        if (
-          earliest !== undefined &&
-          now - Date.parse(earliest.enqueuedAt) >= MATCHMAKING_BOT_FILL_WAIT_MS
-        ) {
+        if (botEntries.length > 0) {
           const sessionsById = new Map(
             this.database
               .findSessionsByIds(botEntries.map((entry) => entry.sessionId))
@@ -287,17 +295,63 @@ export class MatchmakingService {
             }
           }
           if (validEntries.length > 0) {
-            const humanCount = Math.min(validEntries.length, 3);
-            const neededBotCount = 4 - humanCount;
-            const idleBots = this.botOptions.bots.filter(
-              (bot) => !this.database.hasActiveCompetitiveMatch(bot.id),
-            );
-            const humans = validEntries.slice(0, humanCount).flatMap((entry) => {
-              const session = sessionsById.get(entry.sessionId);
-              return session !== undefined ? [{ session, entry }] : [];
+            const humanCandidates: MatchmakingCandidate[] = validEntries.map((entry) => ({
+              sessionId: entry.sessionId,
+              rankLevel: entry.rankLevelSnapshot,
+              enqueuedAt: entry.enqueuedAt,
+              recentOpponentSessionIds: this.database.getRecentCompetitiveOpponentIds(
+                entry.sessionId,
+              ),
+              ...(entry.partyId === null || entry.partySize === null
+                ? {}
+                : { partyId: entry.partyId, partySize: entry.partySize }),
+            }));
+            const idleBots = this.botOptions.bots.flatMap((bot) => {
+              if (this.database.hasActiveCompetitiveMatch(bot.id)) return [];
+              const profile = this.database.getCompetitiveProfile(bot.id);
+              return profile === null
+                ? []
+                : [
+                    {
+                      sessionId: bot.id,
+                      rankLevel: profile.rankLevel,
+                      lastMatchedAt: this.database.getLastCompetitiveMatchCreatedAt(bot.id),
+                    },
+                  ];
             });
-            if (humans.length === humanCount && idleBots.length >= neededBotCount) {
-              const chosenBots = idleBots.slice(0, neededBotCount);
+            // Never consume three allowBots players plus a bot while a complete
+            // compatible four-human table is already available (including
+            // players who did not opt into bots). The normal matcher below
+            // gets first claim in that case.
+            const allHumanCandidates: MatchmakingCandidate[] = this.database
+              .listMatchmakingEntries()
+              .filter(
+                (entry) => entry.disconnectedAt === null && this.isOnline(entry.sessionId, now),
+              )
+              .map((entry) => ({
+                sessionId: entry.sessionId,
+                rankLevel: entry.rankLevelSnapshot,
+                enqueuedAt: entry.enqueuedAt,
+                ...(entry.partyId === null || entry.partySize === null
+                  ? {}
+                  : { partyId: entry.partyId, partySize: entry.partySize }),
+              }));
+            const selected =
+              selectMatchmakingGroup(allHumanCandidates, now) === null
+                ? selectBotFillGroup(humanCandidates, idleBots, now, MATCHMAKING_BOT_FILL_WAIT_MS)
+                : null;
+            if (selected !== null) {
+              const entriesById = new Map(validEntries.map((entry) => [entry.sessionId, entry]));
+              const humans = selected.humans.flatMap((candidate) => {
+                const session = sessionsById.get(candidate.sessionId);
+                const entry = entriesById.get(candidate.sessionId);
+                return session !== undefined && entry !== undefined ? [{ session, entry }] : [];
+              });
+              const botsById = new Map(this.botOptions.bots.map((bot) => [bot.id, bot]));
+              const chosenBots = selected.bots.flatMap((bot) => {
+                const session = botsById.get(bot.sessionId);
+                return session === undefined ? [] : [session];
+              });
               try {
                 const match = this.botOptions.createRoom(humans, chosenBots, now);
                 const sessionIds = humans.map((human) => human.session.id);

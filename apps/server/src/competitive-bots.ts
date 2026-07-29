@@ -7,8 +7,10 @@ import type { AnonymousSession } from "./database.js";
  * only ever matches four real humans — bots are forbidden in MATCH rooms and
  * rank/achievements are four-human-only. During the invite-only experience
  * phase there are not enough concurrent real players to fill a table, so this
- * module defines three preset bot accounts with real rank that can stand in
- * when a player opts into "allow bots".
+ * module defines ten preset bot accounts with real rank that can stand in
+ * when a player opts into "allow bots". Matchmaking applies the same expanding
+ * rank window used for humans and rotates equally eligible idle bots by their
+ * last match time, so the roster is not pinned to the first three entries.
  *
  * Bot matches settle rank AND achievements exactly like a real match (the
  * settlement code keys off session id, and these bots own real competitive

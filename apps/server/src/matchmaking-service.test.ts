@@ -267,7 +267,7 @@ describe("MatchmakingService", () => {
         id: bot.id,
         nickname: bot.nickname,
         avatarUrl: null,
-        rankLevel: 17,
+        rankLevel: 0,
       });
     }
     const onlineIds = new Set<string>(humans.map((human) => human.id));
@@ -393,7 +393,7 @@ describe("MatchmakingService", () => {
         id: bot.id,
         nickname: bot.nickname,
         avatarUrl: null,
-        rankLevel: 17,
+        rankLevel: 0,
       });
     }
 

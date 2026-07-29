@@ -14,6 +14,17 @@ export type MatchmakingGroup = readonly [
   MatchmakingCandidate,
 ];
 
+export type RankedBotCandidate = {
+  sessionId: string;
+  rankLevel: number;
+  lastMatchedAt: string | null;
+};
+
+export type BotFillGroup = {
+  humans: MatchmakingCandidate[];
+  bots: RankedBotCandidate[];
+};
+
 const MATCH_SIZE = 4;
 
 export function matchmakingRange(waitMs: number): number {
@@ -49,7 +60,7 @@ function containsCompleteParties(group: readonly MatchmakingCandidate[]): boolea
     }
     if (
       candidate.partySize === undefined ||
-      candidate.partySize < 2 ||
+      candidate.partySize < 1 ||
       candidate.partySize > MATCH_SIZE
     ) {
       return false;
@@ -173,5 +184,89 @@ export function selectMatchmakingGroup(
     if (selected !== undefined) return selected;
   }
 
+  return null;
+}
+
+export function selectBotFillGroup(
+  candidates: readonly MatchmakingCandidate[],
+  botCandidates: readonly RankedBotCandidate[],
+  now = Date.now(),
+  minimumWaitMs = 5_000,
+): BotFillGroup | null {
+  const units = new Map<string, MatchmakingCandidate[]>();
+  for (const candidate of candidates) {
+    const key = candidate.partyId ?? `solo:${candidate.sessionId}`;
+    const unit = units.get(key) ?? [];
+    unit.push(candidate);
+    units.set(key, unit);
+  }
+  const completeUnits = [...units.values()]
+    .filter(
+      (unit) =>
+        unit.length > 0 &&
+        unit.length <= 3 &&
+        unit.every((member) =>
+          member.partyId === undefined
+            ? member.partySize === undefined
+            : member.partySize === unit.length,
+        ),
+    )
+    .sort(
+      (left, right) =>
+        Math.min(...left.map((entry) => Date.parse(entry.enqueuedAt))) -
+          Math.min(...right.map((entry) => Date.parse(entry.enqueuedAt))) ||
+        (left[0]?.sessionId ?? "").localeCompare(right[0]?.sessionId ?? ""),
+    );
+
+  for (const anchor of completeUnits) {
+    const anchorEnqueuedAt = Math.min(...anchor.map((entry) => Date.parse(entry.enqueuedAt)));
+    if (now - anchorEnqueuedAt < minimumWaitMs) continue;
+    let best = anchor;
+    const remaining = completeUnits.filter((unit) => unit !== anchor);
+    for (let mask = 1; mask < 1 << Math.min(remaining.length, 12); mask += 1) {
+      const selected = [...anchor];
+      for (let index = 0; index < Math.min(remaining.length, 12); index += 1) {
+        const unit = remaining[index];
+        if ((mask & (1 << index)) !== 0 && unit !== undefined) selected.push(...unit);
+      }
+      if (
+        selected.length > 3 ||
+        !selected.every((left, leftIndex) =>
+          selected.every(
+            (right, rightIndex) => leftIndex === rightIndex || mutuallyCompatible(left, right, now),
+          ),
+        )
+      ) {
+        continue;
+      }
+      if (
+        selected.length > best.length ||
+        (selected.length === best.length &&
+          enqueueOrderKey(selected).localeCompare(enqueueOrderKey(best)) < 0)
+      ) {
+        best = selected;
+      }
+    }
+
+    const compatibleBots = botCandidates
+      .filter((bot) =>
+        best.every(
+          (human) =>
+            Math.abs(human.rankLevel - bot.rankLevel) <= matchmakingRange(waitMs(human, now)),
+        ),
+      )
+      .sort((left, right) => {
+        if (left.lastMatchedAt === null && right.lastMatchedAt !== null) return -1;
+        if (left.lastMatchedAt !== null && right.lastMatchedAt === null) return 1;
+        return (
+          (left.lastMatchedAt ?? "").localeCompare(right.lastMatchedAt ?? "") ||
+          left.sessionId.localeCompare(right.sessionId)
+        );
+      });
+    const needed = MATCH_SIZE - best.length;
+    if (compatibleBots.length >= needed) {
+      return { humans: best, bots: compatibleBots.slice(0, needed) };
+    }
+  }
   return null;
 }

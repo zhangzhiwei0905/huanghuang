@@ -76,3 +76,80 @@ The production database is mounted at `/data/huanghuang.sqlite`. For the current
 - Do not open one SQLite connection per Socket or request.
 - Do not delete a room before its close update can be read by subscribed clients; also do not retain closed room snapshots indefinitely.
 - Do not copy a live WAL database file without using the documented stop-and-copy procedure or a future SQLite online-backup implementation.
+
+## Scenario: Four-digit player identity and social persistence
+
+### 1. Scope / Trigger
+
+Any change to WeChat login, player lookup, friend requests, friendships or
+in-game room invitations triggers this contract.
+
+### 2. Signatures
+
+```ts
+ensurePlayerId(sessionId: string): string;
+findSessionByPlayerId(playerId: string): AnonymousSession | null;
+createFriendRequest(requesterSessionId: string, recipientSessionId: string): FriendRequestRow;
+updateFriendRequest(id: string, actorSessionId: string, action: "ACCEPT" | "DECLINE" | "WITHDRAW"): FriendRequestRow;
+createRoomInvite(roomId: string, inviterSessionId: string, inviteeSessionId: string, expiresAt: string): RoomInviteRow;
+```
+
+SQLite owns `anonymous_sessions.player_id`, `friend_requests`, `friendships`
+and `room_invites`. Player IDs are strings matching `^[1-9]\d{3}$`.
+
+### 3. Contracts
+
+- Every WeChat-linked session has one stable ID in `1000..9999`; backfill runs
+  at startup and new logins allocate immediately. Anonymous legacy sessions and
+  bots keep `NULL`.
+- `idx_anonymous_sessions_player_id` is unique over non-null values.
+- One unordered friendship is stored as sorted
+  `(lower_session_id, upper_session_id)`.
+- At most one pending request exists in either direction for a pair at the
+  service boundary; accepting creates the friendship in the same transaction.
+- Room invitations are durable, expire after ten minutes, and become invalid
+  when the room closes, fills, or starts matchmaking.
+
+### 4. Validation & Error Matrix
+
+| Condition | Result |
+| --- | --- |
+| Player ID absent | `PLAYER_NOT_FOUND` |
+| All 9000 IDs occupied | `PLAYER_ID_CAPACITY_EXHAUSTED` |
+| Self request | `SELF_FRIEND_REQUEST` |
+| Existing friendship | `ALREADY_FRIENDS` |
+| Wrong actor accepts/withdraws | `FORBIDDEN` |
+| Missing/handled request | `FRIEND_REQUEST_NOT_FOUND` |
+| Expired/invalid invitation | `ROOM_INVITE_NOT_AVAILABLE` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a returning openid resumes the same session and player ID.
+- Base: two players exchange one request, accept, then appear in each other's
+  friend list.
+- Bad: derive a player ID from nickname, array position or a bot identifier.
+
+### 6. Tests Required
+
+- Assert allocated IDs are four digits, unique, stable on resume and searchable.
+- Assert duplicate request merge, accept authorization, friendship ordering and
+  deletion.
+- Assert invitation TTL plus room closed/full/queued invalidation.
+- Run migration against a pre-social database and verify existing sessions and
+  matchmaking rows survive.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+const playerId = String(Math.floor(1000 + Math.random() * 9000));
+```
+
+Correct:
+
+```ts
+const playerId = database.ensurePlayerId(session.id);
+```
+
+Allocation probes the unique index and persists before returning.

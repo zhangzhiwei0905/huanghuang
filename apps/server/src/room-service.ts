@@ -1539,8 +1539,12 @@ export class RoomService {
       return "ACTION_NOT_AVAILABLE";
     }
     const sessionIds = humanSessionIds(room);
-    if (sessionIds.length < 2 || sessionIds.length > 4) return "TEAM_SIZE_INVALID";
-    if (!sessionIds.every((candidate) => room.readySessionIds.includes(candidate))) {
+    if (sessionIds.length < 1 || sessionIds.length > 4) return "TEAM_SIZE_INVALID";
+    if (
+      !sessionIds
+        .filter((candidate) => candidate !== room.ownerSessionId)
+        .every((candidate) => room.readySessionIds.includes(candidate))
+    ) {
       return "NOT_ALL_READY";
     }
     const sessions = this.database.findSessionsByIds(sessionIds);
@@ -1712,7 +1716,7 @@ export class RoomService {
   requestDissolve(sessionId: string, code: string): RoomState | "FORBIDDEN" | null {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
-    if (room.mode === "MATCH" || room.mode === "TEAM_MATCH" || room.ownerSessionId !== sessionId) {
+    if (room.mode === "MATCH" || room.ownerSessionId !== sessionId) {
       return "FORBIDDEN";
     }
     this.closeRoom(room, "OWNER_DISSOLVED");
@@ -1877,6 +1881,14 @@ export class RoomService {
       const controller = room.seats[seat];
       return controller.sessionId === null ? [] : [controller.sessionId];
     });
+    const publicIds = new Map(
+      this.database
+        .findSessionsByIds([
+          ...competitiveSessionIds,
+          ...room.spectators.map((spectator) => spectator.sessionId),
+        ])
+        .map((session) => [session.id, session.playerId ?? null] as const),
+    );
     const competitiveProfiles = new Map(
       this.database
         .getPublicCompetitiveProfiles(competitiveSessionIds)
@@ -1913,6 +1925,10 @@ export class RoomService {
             return {
               seat,
               nickname: controller.nickname,
+              playerId:
+                controller.sessionId === null
+                  ? null
+                  : (publicIds.get(controller.sessionId) ?? null),
               avatarUrl: controller.avatarUrl,
               controller: playerController,
               connected: controller.connected,
@@ -2053,6 +2069,8 @@ export class RoomService {
                 ? "BOT"
                 : "HUMAN",
           nickname: occupied ? controller.nickname : null,
+          playerId:
+            controller.sessionId === null ? null : (publicIds.get(controller.sessionId) ?? null),
           avatarUrl: occupied ? controller.avatarUrl : null,
           occupied,
           ready:
@@ -2067,6 +2085,7 @@ export class RoomService {
       }),
       spectators: room.spectators.map((spectator) => ({
         nickname: spectator.nickname,
+        playerId: publicIds.get(spectator.sessionId) ?? null,
         avatarUrl: spectator.avatarUrl,
         connected: spectator.connected,
         isSelf: spectator.sessionId === sessionId,

@@ -363,12 +363,14 @@ describe("GameDatabase competitive persistence", () => {
         nickname: "玩家2",
         wechatOpenId: `openid-${PLAYER_IDS[2]}`,
         avatarUrl: `/avatars/${PLAYER_IDS[2]}.png`,
+        playerId: null,
       },
       {
         id: PLAYER_IDS[0],
         nickname: "玩家0",
         wechatOpenId: `openid-${PLAYER_IDS[0]}`,
         avatarUrl: `/avatars/${PLAYER_IDS[0]}.png`,
+        playerId: null,
       },
     ]);
   });

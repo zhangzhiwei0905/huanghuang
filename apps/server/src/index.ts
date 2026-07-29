@@ -4,14 +4,17 @@ import fastifyStatic from "@fastify/static";
 import {
   chatMessageInputSchema,
   commandEnvelopeSchema,
+  createFriendRequestInputSchema,
   createRoomSchema,
+  createRoomInviteInputSchema,
   joinRoomSchema,
   matchmakingQueueInputSchema,
   readyRoomSchema,
   removeRoomBotSchema,
+  teamMatchmakingInputSchema,
   updateRoomSettingsSchema,
 } from "@huanghuang/protocol";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -26,6 +29,7 @@ import { RoomPresence } from "./room-presence.js";
 import { RoomService } from "./room-service.js";
 import { SessionService, SESSION_TOKEN_HEADER } from "./session-service.js";
 import { SessionPresence } from "./session-presence.js";
+import { SocialService } from "./social-service.js";
 import { readBuildTime, readRevision, resolveAppVersion } from "./version.js";
 
 const app = Fastify({ logger: true });
@@ -119,6 +123,17 @@ const sockets = new Server(app.server, {
     skipMiddlewares: false,
   },
 });
+const social = new SocialService(database, rooms, (sessionId) => presence.isConnected(sessionId));
+
+function socialChannel(sessionId: string): string {
+  return `session:${sessionId}`;
+}
+
+function notifySocial(sessionIds: readonly string[], reason: string): void {
+  for (const sessionId of new Set(sessionIds)) {
+    sockets.to(socialChannel(sessionId)).emit("social:update", { reason });
+  }
+}
 
 function matchmakingResponse(sessionId: string) {
   const state = matchmaking.getState(sessionId);
@@ -243,14 +258,18 @@ app.post("/api/session", (request, reply) => {
     const ensured = sessions.ensure(request, reply, nickname);
     return {
       sessionId: ensured.session.id,
+      playerId: ensured.session.playerId ?? null,
       nickname: ensured.session.nickname,
+      avatarUrl: ensured.session.avatarUrl ?? null,
       sessionToken: ensured.rawToken,
     };
   }
   const issued = sessions.issue(nickname, reply);
   return {
     sessionId: issued.session.id,
+    playerId: issued.session.playerId ?? null,
     nickname: issued.session.nickname,
+    avatarUrl: issued.session.avatarUrl ?? null,
     sessionToken: issued.rawToken,
   };
 });
@@ -260,6 +279,7 @@ app.get("/api/session", (request, reply) => {
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
   return {
     sessionId: session.id,
+    playerId: session.playerId ?? null,
     nickname: session.nickname,
     avatarUrl: session.avatarUrl ?? null,
     // Distinguishes a real WeChat-linked account from a pre-existing plain
@@ -335,10 +355,155 @@ app.post("/api/auth/wechat", async (request, reply) => {
   sessions.attachSessionTokenHeader(reply, token);
   return {
     sessionId: session.id,
+    playerId: session.playerId ?? null,
     nickname: session.nickname,
     avatarUrl: session.avatarUrl ?? null,
     sessionToken: token,
   };
+});
+
+function socialErrorStatus(code: string): number {
+  if (code === "PLAYER_NOT_FOUND" || code.endsWith("_NOT_FOUND")) return 404;
+  if (code === "FORBIDDEN" || code === "NOT_FRIENDS" || code === "NOT_A_MEMBER") return 403;
+  if (code === "PLAYER_ID_CAPACITY_EXHAUSTED") return 503;
+  return 409;
+}
+
+app.get("/api/social", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    return social.snapshot(session);
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "SOCIAL_FAILED";
+    return reply.code(socialErrorStatus(code)).send({ error: code });
+  }
+});
+
+app.get<{ Params: { playerId: string } }>("/api/players/:playerId", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const parsed = createFriendRequestInputSchema.safeParse({ playerId: request.params.playerId });
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
+  try {
+    return social.search(session, parsed.data.playerId);
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "SOCIAL_FAILED";
+    return reply.code(socialErrorStatus(code)).send({ error: code });
+  }
+});
+
+app.post("/api/friend-requests", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const parsed = createFriendRequestInputSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
+  try {
+    const friendRequest = social.sendFriendRequest(session, parsed.data.playerId);
+    notifySocial(
+      [friendRequest.requesterSessionId, friendRequest.recipientSessionId],
+      "FRIEND_REQUEST",
+    );
+    return reply.code(201).send(social.snapshot(session));
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "SOCIAL_FAILED";
+    return reply.code(socialErrorStatus(code)).send({ error: code });
+  }
+});
+
+function handleFriendRequestAction(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  requestId: string,
+  action: "ACCEPT" | "DECLINE" | "WITHDRAW",
+) {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    const updated = social.updateFriendRequest(session, requestId, action);
+    notifySocial(
+      [updated.requesterSessionId, updated.recipientSessionId],
+      action === "ACCEPT" ? "FRIENDSHIP" : "FRIEND_REQUEST",
+    );
+    return social.snapshot(session);
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "SOCIAL_FAILED";
+    return reply.code(socialErrorStatus(code)).send({ error: code });
+  }
+}
+
+app.post<{ Params: { id: string } }>("/api/friend-requests/:id/accept", (request, reply) =>
+  handleFriendRequestAction(request, reply, request.params.id, "ACCEPT"),
+);
+app.post<{ Params: { id: string } }>("/api/friend-requests/:id/decline", (request, reply) =>
+  handleFriendRequestAction(request, reply, request.params.id, "DECLINE"),
+);
+app.delete<{ Params: { id: string } }>("/api/friend-requests/:id", (request, reply) =>
+  handleFriendRequestAction(request, reply, request.params.id, "WITHDRAW"),
+);
+
+app.delete<{ Params: { playerId: string } }>("/api/friends/:playerId", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    const targetSessionId = social.removeFriend(session, request.params.playerId);
+    notifySocial([session.id, targetSessionId], "FRIENDSHIP");
+    return social.snapshot(session);
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "SOCIAL_FAILED";
+    return reply.code(socialErrorStatus(code)).send({ error: code });
+  }
+});
+
+app.post<{ Params: { code: string } }>("/api/rooms/:code/invites", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const parsed = createRoomInviteInputSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
+  try {
+    const invite = social.createRoomInvite(session, request.params.code, parsed.data.playerId);
+    notifySocial([invite.inviteeSessionId], "ROOM_INVITE");
+    return reply.code(201).send({ accepted: true });
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "SOCIAL_FAILED";
+    return reply.code(socialErrorStatus(code)).send({ error: code });
+  }
+});
+
+app.post<{ Params: { id: string } }>("/api/room-invites/:id/accept", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    const invite = social.getAcceptableInvite(session, request.params.id);
+    const invitedRoom = rooms.getRoomById(invite.roomId);
+    if (invitedRoom === null) throw new Error("ROOM_INVITE_NOT_AVAILABLE");
+    const joined = rooms.joinRoom(session, invitedRoom.code);
+    if (joined === null) throw new Error("ROOM_NOT_FOUND");
+    if (typeof joined === "string") throw new Error(joined);
+    social.updateRoomInvite(session, invite.id, "ACCEPTED");
+    sockets.to(joined.id).emit("room:update", { version: joined.version });
+    notifySocial([invite.inviterSessionId, invite.inviteeSessionId], "ROOM_INVITE");
+    if (Object.values(joined.seats).every((seat) => seat.controller !== "EMPTY")) {
+      notifySocial(database.expireRoomInvitesForRoom(joined.id), "ROOM_INVITE");
+    }
+    return rooms.project(joined, session.id);
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "SOCIAL_FAILED";
+    return reply.code(socialErrorStatus(code)).send({ error: code });
+  }
+});
+
+app.post<{ Params: { id: string } }>("/api/room-invites/:id/decline", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    const invite = social.updateRoomInvite(session, request.params.id, "DECLINED");
+    notifySocial([invite.inviterSessionId, invite.inviteeSessionId], "ROOM_INVITE");
+    return social.snapshot(session);
+  } catch (cause) {
+    const code = cause instanceof Error ? cause.message : "SOCIAL_FAILED";
+    return reply.code(socialErrorStatus(code)).send({ error: code });
+  }
 });
 
 /**
@@ -501,6 +666,9 @@ app.post("/api/rooms/join", (request, reply) => {
     return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
   }
   sockets.to(room.id).emit("room:update", { version: room.version });
+  if (Object.values(room.seats).every((seat) => seat.controller !== "EMPTY")) {
+    notifySocial(database.expireRoomInvitesForRoom(room.id), "ROOM_INVITE");
+  }
   return rooms.project(room, session.id);
 });
 
@@ -532,6 +700,8 @@ app.post<{ Params: { code: string } }>("/api/rooms/:code/ready", (request, reply
 app.post<{ Params: { code: string } }>("/api/rooms/:code/team-matchmaking", (request, reply) => {
   const session = sessions.resolve(request);
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const parsed = teamMatchmakingInputSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
   const prepared = rooms.prepareTeamMatch(session.id, request.params.code);
   if (prepared === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
   if (prepared === "FORBIDDEN") return reply.code(403).send({ error: "OWNER_ONLY" });
@@ -548,8 +718,14 @@ app.post<{ Params: { code: string } }>("/api/rooms/:code/team-matchmaking", (req
     return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
   }
   try {
-    matchmaking.enqueueParty(prepared.sessions, prepared.room.id);
+    matchmaking.enqueueParty(
+      prepared.sessions,
+      prepared.room.id,
+      Date.now(),
+      parsed.data.allowBots === true,
+    );
     rooms.touchTeamMatch(prepared.room.code);
+    notifySocial(database.expireRoomInvitesForRoom(prepared.room.id), "ROOM_INVITE");
     sockets.to(prepared.room.id).emit("room:update", { version: prepared.room.version });
     tickMatchmaking();
     return rooms.project(prepared.room, session.id);
@@ -656,6 +832,9 @@ app.post<{ Params: { code: string } }>("/api/rooms/:code/dissolve", (request, re
   const room = rooms.requestDissolve(session.id, request.params.code);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
   if (room === "FORBIDDEN") return reply.code(403).send({ error: "OWNER_ONLY" });
+  if (room.status === "CLOSED") {
+    notifySocial(database.expireRoomInvitesForRoom(room.id), "ROOM_INVITE");
+  }
   sockets.to(room.id).emit("room:update", { version: room.version });
   return rooms.project(room, session.id);
 });
@@ -674,6 +853,9 @@ app.delete<{ Params: { code: string } }>("/api/rooms/:code", (request, reply) =>
   }
   const room = rooms.leaveRoom(session.id, request.params.code);
   if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (room.status === "CLOSED") {
+    notifySocial(database.expireRoomInvitesForRoom(room.id), "ROOM_INVITE");
+  }
   sockets.to(room.id).emit("room:update", { version: room.version });
   return { closed: room.status === "CLOSED" };
 });
@@ -711,8 +893,13 @@ sockets.on("connection", (socket) => {
     socket.disconnect(true);
     return;
   }
+  void socket.join(socialChannel(sessionId));
   if (presence.connect(sessionId, socket.id) === "FIRST_CONNECTED") {
     matchmaking.setConnected(sessionId, true);
+    notifySocial(
+      database.listFriends(sessionId).map((friend) => friend.session.id),
+      "PRESENCE",
+    );
   }
   socket.on("room:subscribe", (roomCode: string, acknowledge: (value: unknown) => void) => {
     const room = rooms.getRoom(roomCode);
@@ -773,6 +960,10 @@ sockets.on("connection", (socket) => {
     }
     if (presence.disconnect(sessionId, socket.id) === "LAST_DISCONNECTED") {
       matchmaking.setConnected(sessionId, false);
+      notifySocial(
+        database.listFriends(sessionId).map((friend) => friend.session.id),
+        "PRESENCE",
+      );
     }
   });
 });

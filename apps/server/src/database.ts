@@ -1,17 +1,38 @@
 import Database from "better-sqlite3";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type AnonymousSession = {
   id: string;
   nickname: string;
+  playerId?: string | null;
   // Optional so pre-existing call sites constructing a plain
   // nickname-only session (bot rooms, tests, the legacy anonymous
   // /api/session flow) don't all need updating for a field that's only
   // ever populated by the WeChat login path.
   wechatOpenId?: string | null;
   avatarUrl?: string | null;
+};
+
+export type FriendRequestRow = {
+  id: string;
+  requesterSessionId: string;
+  recipientSessionId: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED" | "WITHDRAWN";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RoomInviteRow = {
+  id: string;
+  roomId: string;
+  inviterSessionId: string;
+  inviteeSessionId: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED" | "EXPIRED";
+  createdAt: string;
+  expiresAt: string;
+  updatedAt: string;
 };
 
 export type CompetitiveAchievementAction =
@@ -364,15 +385,51 @@ export class GameDatabase {
         last_revision TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS friend_requests (
+        id TEXT PRIMARY KEY,
+        requester_session_id TEXT NOT NULL,
+        recipient_session_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('PENDING', 'ACCEPTED', 'DECLINED', 'WITHDRAWN')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK (requester_session_id <> recipient_session_id),
+        FOREIGN KEY (requester_session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE,
+        FOREIGN KEY (recipient_session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS friendships (
+        lower_session_id TEXT NOT NULL,
+        upper_session_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (lower_session_id, upper_session_id),
+        CHECK (lower_session_id < upper_session_id),
+        FOREIGN KEY (lower_session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE,
+        FOREIGN KEY (upper_session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS room_invites (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL,
+        inviter_session_id TEXT NOT NULL,
+        invitee_session_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED')),
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (inviter_session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE,
+        FOREIGN KEY (invitee_session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+      );
     `);
     // Additive columns for WeChat login — wrapped so re-running on a database
     // that already has them (every startup after the first) doesn't throw.
     for (const statement of [
       "ALTER TABLE anonymous_sessions ADD COLUMN wechat_open_id TEXT",
       "ALTER TABLE anonymous_sessions ADD COLUMN avatar_url TEXT",
+      "ALTER TABLE anonymous_sessions ADD COLUMN player_id TEXT",
       "ALTER TABLE matchmaking_entries ADD COLUMN allow_bots INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE matchmaking_entries ADD COLUMN party_id TEXT",
-      "ALTER TABLE matchmaking_entries ADD COLUMN party_size INTEGER CHECK (party_size BETWEEN 2 AND 4)",
+      "ALTER TABLE matchmaking_entries ADD COLUMN party_size INTEGER CHECK (party_size BETWEEN 1 AND 4)",
       "ALTER TABLE competitive_profiles ADD COLUMN release_wildcard_count INTEGER NOT NULL DEFAULT 0 CHECK (release_wildcard_count >= 0)",
     ]) {
       try {
@@ -381,12 +438,27 @@ export class GameDatabase {
         if (!(error instanceof Error) || !error.message.includes("duplicate column")) throw error;
       }
     }
+    this.migrateMatchmakingPartySizeConstraint();
     // SQLite treats every NULL as distinct under UNIQUE, so pre-existing
     // nickname-only rows (wechat_open_id IS NULL) never collide with each
     // other or with real openids.
     this.connection.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_anonymous_sessions_open_id ON anonymous_sessions (wechat_open_id)",
     );
+    this.connection.exec(`
+      CREATE INDEX IF NOT EXISTS idx_matchmaking_entries_order
+        ON matchmaking_entries (enqueued_at, session_id);
+      CREATE INDEX IF NOT EXISTS idx_matchmaking_entries_disconnected
+        ON matchmaking_entries (disconnected_at) WHERE disconnected_at IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_anonymous_sessions_player_id
+        ON anonymous_sessions (player_id) WHERE player_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_friend_requests_pending_direction
+        ON friend_requests (requester_session_id, recipient_session_id) WHERE status = 'PENDING';
+      CREATE INDEX IF NOT EXISTS idx_friend_requests_recipient
+        ON friend_requests (recipient_session_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_room_invites_invitee
+        ON room_invites (invitee_session_id, status, expires_at);
+    `);
     this.connection.exec(
       "CREATE INDEX IF NOT EXISTS idx_matchmaking_entries_party ON matchmaking_entries (party_id) WHERE party_id IS NOT NULL",
     );
@@ -397,6 +469,21 @@ export class GameDatabase {
     // persisted table definition and, if it predates RELEASE_WILDCARD,
     // rebuild the table with the current schema and copy the rows over.
     this.migrateCompetitiveActionEventsCheckConstraint();
+    this.backfillPlayerIds();
+  }
+
+  private backfillPlayerIds(): void {
+    const rows = this.connection
+      .prepare(
+        `SELECT id FROM anonymous_sessions
+         WHERE wechat_open_id IS NOT NULL AND player_id IS NULL
+         ORDER BY created_at, id`,
+      )
+      .all() as { id: string }[];
+    const assign = this.connection.transaction(() => {
+      for (const row of rows) this.ensurePlayerId(row.id);
+    });
+    assign();
   }
 
   private migrateCompetitiveActionEventsCheckConstraint(): void {
@@ -442,8 +529,40 @@ export class GameDatabase {
     }
   }
 
+  private migrateMatchmakingPartySizeConstraint(): void {
+    const existing = this.connection
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'matchmaking_entries'",
+      )
+      .get() as { sql: string } | undefined;
+    if (existing?.sql.includes("party_size BETWEEN 2 AND 4") !== true) {
+      return;
+    }
+    this.connection.transaction(() => {
+      this.connection.exec(`
+        ALTER TABLE matchmaking_entries RENAME TO matchmaking_entries_party_size_legacy;
+        CREATE TABLE matchmaking_entries (
+          session_id TEXT PRIMARY KEY,
+          rank_level_snapshot INTEGER NOT NULL CHECK (rank_level_snapshot >= 0),
+          enqueued_at TEXT NOT NULL,
+          disconnected_at TEXT,
+          version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+          allow_bots INTEGER NOT NULL DEFAULT 0,
+          party_id TEXT,
+          party_size INTEGER CHECK (party_size BETWEEN 1 AND 4),
+          FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+        );
+        INSERT INTO matchmaking_entries
+          (session_id, rank_level_snapshot, enqueued_at, disconnected_at, version, allow_bots, party_id, party_size)
+          SELECT session_id, rank_level_snapshot, enqueued_at, disconnected_at, version, allow_bots, party_id, party_size
+          FROM matchmaking_entries_party_size_legacy;
+        DROP TABLE matchmaking_entries_party_size_legacy;
+      `);
+    })();
+  }
+
   private static readonly SESSION_COLUMNS =
-    "id, nickname, wechat_open_id AS wechatOpenId, avatar_url AS avatarUrl";
+    "id, nickname, player_id AS playerId, wechat_open_id AS wechatOpenId, avatar_url AS avatarUrl";
 
   private static readonly COMPETITIVE_PROFILE_COLUMNS = `
     session_id AS sessionId,
@@ -520,6 +639,45 @@ export class GameDatabase {
     return row ?? null;
   }
 
+  findSessionByPlayerId(playerId: string): AnonymousSession | null {
+    const row = this.connection
+      .prepare(
+        `SELECT ${GameDatabase.SESSION_COLUMNS}
+         FROM anonymous_sessions
+         WHERE player_id = ? AND wechat_open_id IS NOT NULL`,
+      )
+      .get(playerId) as AnonymousSession | undefined;
+    return row ?? null;
+  }
+
+  ensurePlayerId(sessionId: string): string {
+    const existing = this.connection
+      .prepare("SELECT player_id AS playerId FROM anonymous_sessions WHERE id = ?")
+      .get(sessionId) as { playerId: string | null } | undefined;
+    if (existing === undefined) throw new Error("PLAYER_NOT_FOUND");
+    if (existing.playerId !== null) return existing.playerId;
+
+    const start = randomInt(1000, 10_000);
+    for (let offset = 0; offset < 9_000; offset += 1) {
+      const playerId = String(1000 + ((start - 1000 + offset) % 9_000));
+      const updated = this.connection
+        .prepare(
+          `UPDATE anonymous_sessions
+           SET player_id = ?
+           WHERE id = ? AND player_id IS NULL
+             AND wechat_open_id IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM anonymous_sessions WHERE player_id = ?)`,
+        )
+        .run(playerId, sessionId, playerId);
+      if (updated.changes === 1) return playerId;
+      const current = this.connection
+        .prepare("SELECT player_id AS playerId FROM anonymous_sessions WHERE id = ?")
+        .get(sessionId) as { playerId: string | null } | undefined;
+      if (current?.playerId !== null && current?.playerId !== undefined) return current.playerId;
+    }
+    throw new Error("PLAYER_ID_CAPACITY_EXHAUSTED");
+  }
+
   findSessionsByIds(sessionIds: readonly string[]): AnonymousSession[] {
     const uniqueSessionIds = [...new Set(sessionIds)];
     if (uniqueSessionIds.length === 0) return [];
@@ -574,26 +732,29 @@ export class GameDatabase {
     params: { openId: string; nickname: string; avatarUrl: string | null },
     tokenHash: string,
   ): AnonymousSession {
-    const now = new Date().toISOString();
-    const existing = this.findSessionByOpenId(params.openId);
-    if (existing !== null) {
-      this.connection
-        .prepare(
-          `UPDATE anonymous_sessions
-           SET nickname = ?, avatar_url = ?, token_hash = ?, last_seen_at = ?
-           WHERE wechat_open_id = ?`,
-        )
-        .run(params.nickname, params.avatarUrl, tokenHash, now, params.openId);
-      return { ...existing, nickname: params.nickname, avatarUrl: params.avatarUrl };
-    }
-    const session: AnonymousSession = {
-      id: randomUUID(),
-      nickname: params.nickname,
-      wechatOpenId: params.openId,
-      avatarUrl: params.avatarUrl,
-    };
-    this.createSession(session, tokenHash);
-    return session;
+    return this.connection.transaction(() => {
+      const now = new Date().toISOString();
+      const existing = this.findSessionByOpenId(params.openId);
+      if (existing !== null) {
+        this.connection
+          .prepare(
+            `UPDATE anonymous_sessions
+             SET nickname = ?, avatar_url = ?, token_hash = ?, last_seen_at = ?
+             WHERE wechat_open_id = ?`,
+          )
+          .run(params.nickname, params.avatarUrl, tokenHash, now, params.openId);
+        const playerId = existing.playerId ?? this.ensurePlayerId(existing.id);
+        return { ...existing, nickname: params.nickname, avatarUrl: params.avatarUrl, playerId };
+      }
+      const session: AnonymousSession = {
+        id: randomUUID(),
+        nickname: params.nickname,
+        wechatOpenId: params.openId,
+        avatarUrl: params.avatarUrl,
+      };
+      this.createSession(session, tokenHash);
+      return { ...session, playerId: this.ensurePlayerId(session.id) };
+    })();
   }
 
   /**
@@ -611,7 +772,7 @@ export class GameDatabase {
          WHERE wechat_open_id = ?`,
       )
       .run(tokenHash, new Date().toISOString(), openId);
-    return existing;
+    return { ...existing, playerId: existing.playerId ?? this.ensurePlayerId(existing.id) };
   }
 
   ensureCompetitiveProfile(sessionId: string): CompetitiveProfileRow {
@@ -695,6 +856,295 @@ export class GameDatabase {
     return profile;
   }
 
+  isFriends(leftSessionId: string, rightSessionId: string): boolean {
+    const [lower, upper] = [leftSessionId, rightSessionId].sort();
+    return (
+      this.connection
+        .prepare(
+          `SELECT 1 FROM friendships
+           WHERE lower_session_id = ? AND upper_session_id = ?`,
+        )
+        .get(lower, upper) !== undefined
+    );
+  }
+
+  listFriends(sessionId: string): { session: AnonymousSession; friendsSince: string }[] {
+    return this.connection
+      .prepare(
+        `SELECT ${GameDatabase.SESSION_COLUMNS.replaceAll(
+          /\b(id|nickname|player_id|wechat_open_id|avatar_url)\b/gu,
+          "friend.$1",
+        )}, friendships.created_at AS friendsSince
+         FROM friendships
+         JOIN anonymous_sessions AS friend
+           ON friend.id = CASE
+             WHEN friendships.lower_session_id = ? THEN friendships.upper_session_id
+             ELSE friendships.lower_session_id
+           END
+         WHERE friendships.lower_session_id = ? OR friendships.upper_session_id = ?
+         ORDER BY friendships.created_at DESC`,
+      )
+      .all(sessionId, sessionId, sessionId)
+      .map((row) => {
+        const value = row as AnonymousSession & { friendsSince: string };
+        return { session: value, friendsSince: value.friendsSince };
+      });
+  }
+
+  getPendingFriendRequestBetween(
+    leftSessionId: string,
+    rightSessionId: string,
+  ): FriendRequestRow | null {
+    const row = this.connection
+      .prepare(
+        `SELECT id,
+                requester_session_id AS requesterSessionId,
+                recipient_session_id AS recipientSessionId,
+                status,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM friend_requests
+         WHERE status = 'PENDING'
+           AND ((requester_session_id = ? AND recipient_session_id = ?)
+             OR (requester_session_id = ? AND recipient_session_id = ?))
+         ORDER BY created_at
+         LIMIT 1`,
+      )
+      .get(leftSessionId, rightSessionId, rightSessionId, leftSessionId) as
+      FriendRequestRow | undefined;
+    return row ?? null;
+  }
+
+  createFriendRequest(requesterSessionId: string, recipientSessionId: string): FriendRequestRow {
+    const existing = this.getPendingFriendRequestBetween(requesterSessionId, recipientSessionId);
+    if (existing !== null) return existing;
+    const now = new Date().toISOString();
+    const row: FriendRequestRow = {
+      id: randomUUID(),
+      requesterSessionId,
+      recipientSessionId,
+      status: "PENDING",
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.connection
+      .prepare(
+        `INSERT INTO friend_requests
+         (id, requester_session_id, recipient_session_id, status, created_at, updated_at)
+         VALUES (?, ?, ?, 'PENDING', ?, ?)`,
+      )
+      .run(row.id, requesterSessionId, recipientSessionId, now, now);
+    return row;
+  }
+
+  getFriendRequest(id: string): FriendRequestRow | null {
+    const row = this.connection
+      .prepare(
+        `SELECT id,
+                requester_session_id AS requesterSessionId,
+                recipient_session_id AS recipientSessionId,
+                status,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM friend_requests WHERE id = ?`,
+      )
+      .get(id) as FriendRequestRow | undefined;
+    return row ?? null;
+  }
+
+  listPendingFriendRequests(sessionId: string): FriendRequestRow[] {
+    return this.connection
+      .prepare(
+        `SELECT id,
+                requester_session_id AS requesterSessionId,
+                recipient_session_id AS recipientSessionId,
+                status,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM friend_requests
+         WHERE status = 'PENDING'
+           AND (requester_session_id = ? OR recipient_session_id = ?)
+         ORDER BY created_at DESC`,
+      )
+      .all(sessionId, sessionId) as FriendRequestRow[];
+  }
+
+  updateFriendRequest(
+    id: string,
+    actorSessionId: string,
+    action: "ACCEPT" | "DECLINE" | "WITHDRAW",
+  ): FriendRequestRow {
+    return this.connection.transaction(() => {
+      const request = this.getFriendRequest(id);
+      if (request?.status !== "PENDING") {
+        throw new Error("FRIEND_REQUEST_NOT_FOUND");
+      }
+      if (action === "WITHDRAW") {
+        if (request.requesterSessionId !== actorSessionId) throw new Error("FORBIDDEN");
+      } else if (request.recipientSessionId !== actorSessionId) {
+        throw new Error("FORBIDDEN");
+      }
+      const nextStatus: FriendRequestRow["status"] =
+        action === "ACCEPT" ? "ACCEPTED" : action === "DECLINE" ? "DECLINED" : "WITHDRAWN";
+      const now = new Date().toISOString();
+      if (action === "ACCEPT") {
+        const [lower, upper] = [request.requesterSessionId, request.recipientSessionId].sort();
+        this.connection
+          .prepare(
+            `INSERT OR IGNORE INTO friendships
+             (lower_session_id, upper_session_id, created_at)
+             VALUES (?, ?, ?)`,
+          )
+          .run(lower, upper, now);
+        this.connection
+          .prepare(
+            `UPDATE friend_requests
+             SET status = 'DECLINED', updated_at = ?
+             WHERE status = 'PENDING'
+               AND id <> ?
+               AND ((requester_session_id = ? AND recipient_session_id = ?)
+                 OR (requester_session_id = ? AND recipient_session_id = ?))`,
+          )
+          .run(
+            now,
+            id,
+            request.requesterSessionId,
+            request.recipientSessionId,
+            request.recipientSessionId,
+            request.requesterSessionId,
+          );
+      }
+      this.connection
+        .prepare("UPDATE friend_requests SET status = ?, updated_at = ? WHERE id = ?")
+        .run(nextStatus, now, id);
+      return { ...request, status: nextStatus, updatedAt: now };
+    })();
+  }
+
+  removeFriend(leftSessionId: string, rightSessionId: string): boolean {
+    const [lower, upper] = [leftSessionId, rightSessionId].sort();
+    return (
+      this.connection
+        .prepare(
+          `DELETE FROM friendships
+           WHERE lower_session_id = ? AND upper_session_id = ?`,
+        )
+        .run(lower, upper).changes === 1
+    );
+  }
+
+  createRoomInvite(
+    roomId: string,
+    inviterSessionId: string,
+    inviteeSessionId: string,
+    expiresAt: string,
+  ): RoomInviteRow {
+    const existing = this.connection
+      .prepare(
+        `SELECT id,
+                room_id AS roomId,
+                inviter_session_id AS inviterSessionId,
+                invitee_session_id AS inviteeSessionId,
+                status,
+                created_at AS createdAt,
+                expires_at AS expiresAt,
+                updated_at AS updatedAt
+         FROM room_invites
+         WHERE room_id = ? AND inviter_session_id = ? AND invitee_session_id = ?
+           AND status = 'PENDING' AND expires_at > ?
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(roomId, inviterSessionId, inviteeSessionId, new Date().toISOString()) as
+      RoomInviteRow | undefined;
+    if (existing !== undefined) return existing;
+    const now = new Date().toISOString();
+    const row: RoomInviteRow = {
+      id: randomUUID(),
+      roomId,
+      inviterSessionId,
+      inviteeSessionId,
+      status: "PENDING",
+      createdAt: now,
+      expiresAt,
+      updatedAt: now,
+    };
+    this.connection
+      .prepare(
+        `INSERT INTO room_invites
+         (id, room_id, inviter_session_id, invitee_session_id, status, created_at, expires_at, updated_at)
+         VALUES (?, ?, ?, ?, 'PENDING', ?, ?, ?)`,
+      )
+      .run(row.id, roomId, inviterSessionId, inviteeSessionId, now, expiresAt, now);
+    return row;
+  }
+
+  getRoomInvite(id: string): RoomInviteRow | null {
+    const row = this.connection
+      .prepare(
+        `SELECT id,
+                room_id AS roomId,
+                inviter_session_id AS inviterSessionId,
+                invitee_session_id AS inviteeSessionId,
+                status,
+                created_at AS createdAt,
+                expires_at AS expiresAt,
+                updated_at AS updatedAt
+         FROM room_invites WHERE id = ?`,
+      )
+      .get(id) as RoomInviteRow | undefined;
+    return row ?? null;
+  }
+
+  listPendingRoomInvites(sessionId: string): RoomInviteRow[] {
+    return this.connection
+      .prepare(
+        `SELECT id,
+                room_id AS roomId,
+                inviter_session_id AS inviterSessionId,
+                invitee_session_id AS inviteeSessionId,
+                status,
+                created_at AS createdAt,
+                expires_at AS expiresAt,
+                updated_at AS updatedAt
+         FROM room_invites
+         WHERE invitee_session_id = ? AND status = 'PENDING'
+         ORDER BY created_at DESC`,
+      )
+      .all(sessionId) as RoomInviteRow[];
+  }
+
+  updateRoomInvite(
+    id: string,
+    inviteeSessionId: string,
+    status: "ACCEPTED" | "DECLINED" | "EXPIRED",
+  ): RoomInviteRow {
+    const invite = this.getRoomInvite(id);
+    if (invite?.status !== "PENDING" || invite.inviteeSessionId !== inviteeSessionId) {
+      throw new Error("ROOM_INVITE_NOT_AVAILABLE");
+    }
+    const now = new Date().toISOString();
+    this.connection
+      .prepare("UPDATE room_invites SET status = ?, updated_at = ? WHERE id = ?")
+      .run(status, now, id);
+    return { ...invite, status, updatedAt: now };
+  }
+
+  expireRoomInvitesForRoom(roomId: string): string[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT invitee_session_id AS sessionId
+         FROM room_invites WHERE room_id = ? AND status = 'PENDING'`,
+      )
+      .all(roomId) as { sessionId: string }[];
+    this.connection
+      .prepare(
+        `UPDATE room_invites SET status = 'EXPIRED', updated_at = ?
+         WHERE room_id = ? AND status = 'PENDING'`,
+      )
+      .run(new Date().toISOString(), roomId);
+    return rows.map((row) => row.sessionId);
+  }
+
   hasActiveCompetitiveMatch(sessionId: string): boolean {
     const row = this.connection
       .prepare(
@@ -708,6 +1158,21 @@ export class GameDatabase {
       )
       .get(sessionId);
     return row !== undefined;
+  }
+
+  getLastCompetitiveMatchCreatedAt(sessionId: string): string | null {
+    const row = this.connection
+      .prepare(
+        `SELECT competitive_matches.created_at AS createdAt
+         FROM competitive_match_players
+         JOIN competitive_matches
+           ON competitive_matches.id = competitive_match_players.match_id
+         WHERE competitive_match_players.session_id = ?
+         ORDER BY competitive_matches.created_at DESC
+         LIMIT 1`,
+      )
+      .get(sessionId) as { createdAt: string } | undefined;
+    return row?.createdAt ?? null;
   }
 
   getCompetitiveProfile(sessionId: string): CompetitiveProfileRow | null {
@@ -811,14 +1276,15 @@ export class GameDatabase {
     partyId: string,
     players: readonly { sessionId: string; rankLevelSnapshot: number }[],
     enqueuedAt = new Date().toISOString(),
+    allowBots = false,
   ): MatchmakingEntryRow[] {
     if (
       partyId.length === 0 ||
-      players.length < 2 ||
+      players.length < 1 ||
       players.length > 4 ||
       new Set(players.map((player) => player.sessionId)).size !== players.length
     ) {
-      throw new Error("A matchmaking party requires 2-4 unique sessions");
+      throw new Error("A matchmaking party requires 1-4 unique sessions");
     }
     return this.connection.transaction(() => {
       for (const player of players) {
@@ -830,7 +1296,7 @@ export class GameDatabase {
         this.upsertMatchmakingEntry({
           ...player,
           enqueuedAt,
-          allowBots: false,
+          allowBots,
           partyId,
           partySize: players.length,
         }),

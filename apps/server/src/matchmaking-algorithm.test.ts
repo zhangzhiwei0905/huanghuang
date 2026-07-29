@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   matchmakingRange,
+  selectBotFillGroup,
   selectMatchmakingGroup,
   type MatchmakingCandidate,
 } from "./matchmaking-algorithm.js";
@@ -34,6 +35,73 @@ describe("matchmakingRange", () => {
     [40_000, Number.POSITIVE_INFINITY],
   ])("maps %i milliseconds to %s levels", (waitMs, expected) => {
     expect(matchmakingRange(waitMs)).toBe(expected);
+  });
+});
+
+describe("selectBotFillGroup", () => {
+  const bots = Array.from({ length: 10 }, (_, index) => ({
+    sessionId: `bot-${index}`,
+    rankLevel: index < 7 ? 0 : 9 + (index - 7) * 4,
+    lastMatchedAt: index < 3 ? `2026-07-28T11:5${index}:00.000Z` : null,
+  }));
+
+  it("fills a solo room after five seconds with the least recently used compatible bots", () => {
+    const selected = selectBotFillGroup([candidate("human", 0, 5_001)], bots, NOW);
+
+    expect(selected?.humans.map((item) => item.sessionId)).toEqual(["human"]);
+    expect(selected?.bots.map((item) => item.sessionId)).toEqual(["bot-3", "bot-4", "bot-5"]);
+  });
+
+  it("keeps a complete party together and maximizes compatible humans before bots", () => {
+    const selected = selectBotFillGroup(
+      [
+        candidate("party-a", 0, 6_000, undefined, { id: "party", size: 2 }),
+        candidate("party-b", 1, 6_000, undefined, { id: "party", size: 2 }),
+        candidate("solo", 2, 5_500),
+      ],
+      bots,
+      NOW,
+    );
+
+    expect(selected?.humans.map((item) => item.sessionId)).toEqual(["party-a", "party-b", "solo"]);
+    expect(selected?.bots).toHaveLength(1);
+  });
+
+  it("expands bot eligibility with the same 10, 20 and 40 second rank windows", () => {
+    expect(selectBotFillGroup([candidate("human", 17, 5_001)], bots, NOW)).toBeNull();
+    expect(
+      selectBotFillGroup([candidate("human", 17, 20_001)], bots, NOW)?.bots.map(
+        (item) => item.sessionId,
+      ),
+    ).toEqual(["bot-7", "bot-8", "bot-9"]);
+    expect(selectBotFillGroup([candidate("human", 30, 40_001)], bots, NOW)?.bots).toHaveLength(3);
+  });
+
+  it("does not split an incomplete party roster", () => {
+    const selected = selectBotFillGroup(
+      [
+        candidate("party-a", 0, 6_000, undefined, { id: "party", size: 2 }),
+        candidate("solo", 0, 6_000),
+      ],
+      bots,
+      NOW,
+    );
+
+    expect(selected?.humans.map((item) => item.sessionId)).toEqual(["solo"]);
+  });
+
+  it("can reach every preset bot when rank range is fully expanded", () => {
+    for (const target of bots) {
+      const candidates = bots.map((bot) => ({
+        ...bot,
+        lastMatchedAt: bot.sessionId === target.sessionId ? null : "2026-07-28T11:59:00.000Z",
+      }));
+      const selectedIds =
+        selectBotFillGroup([candidate("human", 0, 40_001)], candidates, NOW)?.bots.map(
+          (bot) => bot.sessionId,
+        ) ?? [];
+      expect(selectedIds).toContain(target.sessionId);
+    }
   });
 });
 
