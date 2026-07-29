@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
+- **Total Sessions**: 28
 - **Last Active**: 2026-07-29
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1064 | Active |
+| `journal-1.md` | ~1097 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-07-29 | 修复排位重复开页与实时连接重连 | `f4a16b7` | `miniprogram` |
 | 27 | 2026-07-29 | 组队排位与段位体验上线 | `0fd10e6` | `miniprogram` |
 | 26 | 2026-07-27 | 麻将小程序 UX 优化实施、回退与 dist 陈旧产物排查 | `74c859a` | `miniprogram` |
 | 25 | 2026-07-27 | 来由与积分清零上线生产 | `86bff4e` | `miniprogram` |

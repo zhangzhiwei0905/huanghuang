@@ -1062,3 +1062,36 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: 修复排位重复开页与实时连接重连
+
+**Date**: 2026-07-29
+**Task**: 修复排位重复开页与实时连接重连
+**Branch**: `miniprogram`
+
+### Summary
+
+修复小程序大厅隐藏后仍因 MATCHED 轮询重复 navigateTo 牌桌的问题，以页面可见性和稳定匹配键限制每次可见访问只开一次牌桌；将普通 connect_error 交给 Socket.IO 内建退避，仅对服务端主动断开或 reconnect_failed 执行一次有界硬重建，并补充 18 项相关回归测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f4a16b7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
