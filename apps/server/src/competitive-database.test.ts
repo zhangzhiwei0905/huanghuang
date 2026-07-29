@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CompetitiveMatchCreationConflictError,
   GameDatabase,
   type CompetitivePlayerSettlementInput,
   type CreateCompetitiveMatchInput,
@@ -317,6 +318,9 @@ describe("GameDatabase competitive persistence", () => {
     queueSessions(database, PLAYER_IDS.slice(0, 3));
 
     expect(() => database.createCompetitiveMatch(createMatchInput())).toThrow(
+      CompetitiveMatchCreationConflictError,
+    );
+    expect(() => database.createCompetitiveMatch(createMatchInput())).toThrow(
       "expected four current online queue entries, deleted 3",
     );
     expect(database.getCompetitiveMatchSettlement("match-1")).toBeNull();
@@ -358,10 +362,37 @@ describe("GameDatabase competitive persistence", () => {
     database.markMatchmakingEntryDisconnected(PLAYER_IDS[0], ENQUEUED_AT);
 
     expect(() => database.createCompetitiveMatch(createMatchInput())).toThrow(
+      CompetitiveMatchCreationConflictError,
+    );
+    expect(() => database.createCompetitiveMatch(createMatchInput())).toThrow(
       "expected four current online queue entries",
     );
     expect(database.getCompetitiveMatchSettlement("match-1")).toBeNull();
     expect(database.listMatchmakingEntries()).toHaveLength(4);
+  });
+
+  it("identifies an active-match creation conflict by type, not just message text", () => {
+    const database = createDatabase();
+    createSessions(database);
+    queueSessions(database);
+    database.createCompetitiveMatch(createMatchInput());
+
+    // Re-running with the very same (now-consumed) queue snapshot collides
+    // with the active match this session is already part of.
+    let caught: unknown;
+    try {
+      database.createCompetitiveMatch(createMatchInput("match-2", "match-room-2"));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(CompetitiveMatchCreationConflictError);
+    expect((caught as Error).message).toContain("already has an active competitive match");
+
+    // An unrelated Error that merely happens to mention similar words is a
+    // different type and must not be confused with a real conflict by any
+    // caller that switched from string matching to `instanceof`.
+    const impostor = new Error("Session player-9 already has an active competitive match");
+    expect(impostor).not.toBeInstanceOf(CompetitiveMatchCreationConflictError);
   });
 
   it("deduplicates achievement facts before incrementing profile counters", () => {

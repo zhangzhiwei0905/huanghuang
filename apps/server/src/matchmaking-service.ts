@@ -1,10 +1,18 @@
 import { formatRankLevel } from "@huanghuang/game-engine";
 import type { MatchmakingState, SelfCompetitiveProfile } from "@huanghuang/protocol";
-import type { AnonymousSession, GameDatabase, MatchmakingEntryRow } from "./database.js";
+import {
+  CompetitiveMatchCreationConflictError,
+  type AnonymousSession,
+  type GameDatabase,
+  type MatchmakingEntryRow,
+} from "./database.js";
 import { selectMatchmakingGroup, type MatchmakingCandidate } from "./matchmaking-algorithm.js";
 
 export const MATCHMAKING_DISCONNECT_GRACE_MS = 10_000;
-export const MATCHMAKING_HEARTBEAT_TIMEOUT_MS = 3_000;
+// Client polls status roughly every 1s over HTTP; 8s tolerates a few missed
+// beats from normal network jitter/backgrounding before treating a session
+// as offline for scheduling purposes.
+export const MATCHMAKING_HEARTBEAT_TIMEOUT_MS = 8_000;
 // Experience-phase "allow bots" players wait this long before the queue is
 // resolved with bots, so friends queueing near-simultaneously land in the
 // same match (2 humans + 2 bots, 3 humans + 1 bot) instead of each getting a
@@ -38,9 +46,12 @@ export type MatchmakingTickResult = {
 export class MatchmakingService {
   private ticking = false;
   private readonly heartbeatAtBySessionId = new Map<string, number>();
-  // Experience-phase per-session "allow bots" preference. Acted on inside
-  // tick() the moment bots are free, so it never needs to survive a restart —
-  // a cold start simply drops pending preferences and the player re-queues.
+  // Experience-phase per-session "allow bots" preference. Persisted on the
+  // matchmaking_entries row (allow_bots column) so it survives a restart;
+  // this map is a request-scoped write-through cache in front of that column
+  // so tick() doesn't need a DB round trip per entry on every pass. A cold
+  // start simply has an empty cache, which self-heals the first time each
+  // entry is seen in listMatchmakingEntries() (see allowBotsFor()).
   private readonly allowBotsBySessionId = new Map<string, boolean>();
 
   constructor(
@@ -107,12 +118,14 @@ export class MatchmakingService {
     const current = this.database.getCurrentCompetitiveMatch(session.id);
     if (current !== null) return this.getState(session.id);
     const profile = this.database.ensureCompetitiveProfile(session.id);
+    const effectiveAllowBots = allowBots && this.botOptions.enabled;
     this.database.upsertMatchmakingEntry({
       sessionId: session.id,
       rankLevelSnapshot: profile.rankLevel,
       enqueuedAt: new Date(now).toISOString(),
+      allowBots: effectiveAllowBots,
     });
-    this.allowBotsBySessionId.set(session.id, allowBots && this.botOptions.enabled);
+    this.allowBotsBySessionId.set(session.id, effectiveAllowBots);
     return this.getState(session.id);
   }
 
@@ -124,12 +137,14 @@ export class MatchmakingService {
   ): MatchmakingState {
     this.assertWechatLinked(session);
     this.heartbeatAtBySessionId.set(session.id, now);
+    const effectiveAllowBots = allowBots && this.botOptions.enabled;
     this.database.acknowledgeAndEnqueueCompetitiveMatch(
       previousMatchId,
       session.id,
       new Date(now).toISOString(),
+      effectiveAllowBots,
     );
-    this.allowBotsBySessionId.set(session.id, allowBots && this.botOptions.enabled);
+    this.allowBotsBySessionId.set(session.id, effectiveAllowBots);
     return this.getState(session.id);
   }
 
@@ -198,7 +213,7 @@ export class MatchmakingService {
             (entry) =>
               entry.disconnectedAt === null &&
               this.isOnline(entry.sessionId, now) &&
-              this.allowBotsBySessionId.get(entry.sessionId) === true,
+              this.allowBotsFor(entry),
           )
           .sort((a, b) => a.enqueuedAt.localeCompare(b.enqueuedAt));
         const earliest = botEntries[0];
@@ -246,10 +261,7 @@ export class MatchmakingService {
                 // Lost a race for the bots (another match booked them between
                 // the guard check and the transaction). Retry next tick
                 // instead of crashing the scheduler.
-                if (
-                  !(cause instanceof Error &&
-                    cause.message.includes("already has an active competitive match"))
-                ) {
+                if (!(cause instanceof CompetitiveMatchCreationConflictError)) {
                   throw cause;
                 }
               }
@@ -301,10 +313,7 @@ export class MatchmakingService {
           // authoritative. A conflict leaves every queue row unchanged so the
           // next scheduler pass can evaluate a fresh snapshot. Infrastructure
           // and invariant failures must still reach the process error boundary.
-          if (
-            cause instanceof Error &&
-            cause.message.includes("expected four current online queue entries")
-          ) {
+          if (cause instanceof CompetitiveMatchCreationConflictError) {
             break;
           }
           throw cause;
@@ -323,6 +332,18 @@ export class MatchmakingService {
       this.isSessionOnline(sessionId) ||
       (heartbeatAt !== undefined && now - heartbeatAt <= MATCHMAKING_HEARTBEAT_TIMEOUT_MS)
     );
+  }
+
+  // Cache-first read of the allowBots preference, falling back to (and then
+  // backfilling the cache from) the DB row already fetched by the caller.
+  // This is what makes the preference survive a process restart: a cold
+  // start has an empty map, so the first tick() pass after restart reads
+  // straight from entry.allowBots and repopulates the cache from there.
+  private allowBotsFor(entry: MatchmakingEntryRow): boolean {
+    const cached = this.allowBotsBySessionId.get(entry.sessionId);
+    if (cached !== undefined) return cached;
+    this.allowBotsBySessionId.set(entry.sessionId, entry.allowBots);
+    return entry.allowBots;
   }
 
   private assertWechatLinked(session: AnonymousSession): void {

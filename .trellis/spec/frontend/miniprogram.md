@@ -644,6 +644,56 @@ once 预览 is confirmed clean.
 - `PlayerProfileModal` labels room score as `本局牌桌分`, shows public rank/four MATCH achievement totals, and represents a `null` competitive profile as no permanent record rather than four zero counters.
 - `normalizeRoomProjection` upgrades legacy projections once at the boundary with null competitive fields and authoritative effective-payment fallback. Components consume strict schema 9 values.
 
+### Pattern: ranked-match stuck-point recovery
+
+A ranked (MATCH mode) player can get dead-ended after a round if any of the
+following are wrong. Each has an extracted pure-logic helper in `src/lib/` so
+the decision can be unit-tested without a live Taro/network environment:
+
+- **Home page must apply a fetched matchmaking state even on an error path.**
+  `pages/index/index.tsx`'s `returnToCompetitiveMatch` calls
+  `resolveReturnToCompetitiveMatch` (`src/lib/matchmakingRecovery.ts`), which
+  distinguishes a `"ready"` outcome (room still exists) from a `"recovered"`
+  outcome (`status()` returned `room: null` — the match already ended
+  server-side). Both outcomes call `applyMatchmakingResponse(response)`
+  **before** any error is surfaced, so the visible `matchmaking` state always
+  reflects the latest fetch. Don't add a new call site that throws on a
+  falsy/null room without first applying the response it came with — that
+  reintroduces a permanently-stuck "返回对局" button.
+- **MATCHED status must still be polled**, not just `QUEUED`.
+  `shouldPollMatchmakingStatus`/`nextMatchmakingPollDelayMs`
+  (`matchmakingRecovery.ts`) return a longer idle interval for MATCHED
+  (reconciliation, in case the match ended without a client-visible signal)
+  and a short interval while a trustee handoff confirmation is pending. Also
+  call `Taro.useDidShow` on the home page to force a fresh `/status` fetch
+  whenever the page becomes visible again (covers `reLaunch` back from a
+  closed room, where the mount-time effect already ran once).
+- **Leaving a MATCH room during `ROUND_RESULT` must acknowledge the match
+  first**, regardless of which UI control triggers the leave.
+  `shouldAcknowledgeMatchBeforeLeaving(mode, stage)` (`src/lib/roomLeaveFlow.ts`)
+  is the single source of truth for this decision; both the settlement
+  modal's own leave action and the floating leave-fab (`pages/room/index.tsx`,
+  rendered for every non-WAITING stage) must call it. A leave path that skips
+  acknowledgement leaves the server's `hasActiveCompetitiveMatch` guard true
+  for that session, which then makes the home page's `applyMatchmakingResponse`
+  bounce the player straight back into the (already-over) room — a loop that
+  looks like "can't leave."
+- **The empty-shell room page (rendered when `room === null`) must exit via
+  `Taro.reLaunch`, never `Taro.navigateBack`.** The page is almost always
+  entered via `reLaunch` (single-entry page stack), making `navigateBack` a
+  silent no-op — a button that looks clickable but does nothing.
+- **`useRoom` must preserve the last competitive settlement across a `CLOSED`
+  transition**, not wipe it along with `room`. `replaceProjection` derives a
+  `lastSettlement` snapshot via `deriveLastSettlementFromClosedProjection`
+  (`src/lib/roomSettlement.ts`) before clearing local room state, exposing it
+  as `roomCtrl.lastSettlement` with a `clearLastSettlement()` escape hatch.
+  The empty-shell page reads this to drive `continueCompetitiveMatch`/
+  `returnFromCompetitiveMatch` (both accept an optional `matchIdOverride` for
+  exactly this no-live-room case) instead of only working when `room` happens
+  to still be non-null. Clear it on `openRoom` (entering any new room) and on
+  an explicit successful `leaveRoom()` so a stale settlement from a previous
+  match can never leak into a later one.
+
 ## Verification Commands
 
 ```bash

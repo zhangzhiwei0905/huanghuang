@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { GameDatabase, type AnonymousSession } from "./database.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { CompetitiveMatchCreationConflictError, GameDatabase, type AnonymousSession } from "./database.js";
 import {
   MATCHMAKING_BOT_FILL_WAIT_MS,
   MATCHMAKING_DISCONNECT_GRACE_MS,
@@ -20,9 +23,13 @@ function player(index: number): AnonymousSession {
 
 describe("MatchmakingService", () => {
   const databases: GameDatabase[] = [];
+  const temporaryDirectories: string[] = [];
 
   afterEach(() => {
     for (const database of databases.splice(0)) database.close();
+    for (const directory of temporaryDirectories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   function setup(onlineIds = new Set<string>()) {
@@ -153,6 +160,47 @@ describe("MatchmakingService", () => {
     expect(() => service.tick(NOW)).toThrow("DATABASE_UNAVAILABLE");
   });
 
+  it("retries next tick on a genuine match-creation conflict instead of throwing", () => {
+    const { onlineIds, players, service } = setup();
+    for (const session of players.slice(0, 4)) {
+      onlineIds.add(session.id);
+      service.enqueue(session, NOW);
+    }
+    (
+      service as unknown as {
+        createCompetitiveRoom: () => never;
+      }
+    ).createCompetitiveRoom = () => {
+      throw new CompetitiveMatchCreationConflictError(
+        "Competitive match creation expected four current online queue entries, deleted 3",
+      );
+    };
+
+    expect(service.tick(NOW)).toEqual({ changedSessionIds: [], matches: [] });
+  });
+
+  it("does not swallow an unrelated Error that merely resembles a conflict message", () => {
+    const { onlineIds, players, service } = setup();
+    for (const session of players.slice(0, 4)) {
+      onlineIds.add(session.id);
+      service.enqueue(session, NOW);
+    }
+    (
+      service as unknown as {
+        createCompetitiveRoom: () => never;
+      }
+    ).createCompetitiveRoom = () => {
+      // Same wording a conflict used to carry before this became a typed
+      // error — but it's a plain Error, so it must still reach the caller
+      // instead of being silently swallowed as a retryable race.
+      throw new Error("expected four current online queue entries, deleted 3");
+    };
+
+    expect(() => service.tick(NOW)).toThrow(
+      "expected four current online queue entries, deleted 3",
+    );
+  });
+
   it("cancels only queued state and keeps an active match recoverable", () => {
     const { onlineIds, players, service } = setup();
     for (const session of players.slice(0, 4)) {
@@ -226,8 +274,8 @@ describe("MatchmakingService", () => {
     );
 
     // Two friends queue with allowBots within the same window.
-    service.enqueue(humans[0]!, NOW, true);
-    service.enqueue(humans[1]!, NOW + 1_000, true);
+    service.enqueue(humans[0], NOW, true);
+    service.enqueue(humans[1], NOW + 1_000, true);
 
     // Before the wait window expires: no match yet — friends are still gathering.
     expect(service.tick(NOW + 2_000).matches).toEqual([]);
@@ -235,10 +283,104 @@ describe("MatchmakingService", () => {
     // After the window: both humans land in the same match, bots fill the rest.
     const result = service.tick(NOW + MATCHMAKING_BOT_FILL_WAIT_MS + 1);
     expect(result.matches).toHaveLength(1);
-    expect(result.matches[0]?.sessionIds).toEqual([humans[0]!.id, humans[1]!.id]);
+    expect(result.matches[0]?.sessionIds).toEqual([humans[0].id, humans[1].id]);
     expect(database.listMatchmakingEntries()).toEqual([]);
     for (const human of humans) {
       expect(service.getState(human.id).status).toBe("MATCHED");
     }
+  });
+
+  it("keeps a still-queued allowBots preference after a MatchmakingService restart", () => {
+    const directory = mkdtempSync(join(tmpdir(), "huanghuang-matchmaking-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "game.sqlite");
+
+    const human = player(0);
+    const botSessions: AnonymousSession[] = [
+      { id: "bot-a", nickname: "赌神", wechatOpenId: null, avatarUrl: null },
+      { id: "bot-b", nickname: "赌侠", wechatOpenId: null, avatarUrl: null },
+      { id: "bot-c", nickname: "赌圣", wechatOpenId: null, avatarUrl: null },
+    ];
+    const onlineIds = new Set<string>([human.id]);
+    let matchNumber = 0;
+
+    function buildService(db: GameDatabase, startupAt: number): MatchmakingService {
+      return new MatchmakingService(
+        db,
+        (sessionId) => onlineIds.has(sessionId),
+        () => {
+          throw new Error("human-only path should not run for a bot match");
+        },
+        startupAt,
+        {
+          enabled: true,
+          bots: botSessions,
+          createRoom: (matchedHumans, bots, now) => {
+            matchNumber += 1;
+            const matchId = `bot-match-${matchNumber}`;
+            const roomId = `bot-room-${matchNumber}`;
+            const room = { id: roomId, code: `600${matchNumber}`, status: "ACTIVE", version: 1 };
+            db.createCompetitiveMatchWithBots({
+              match: {
+                id: matchId,
+                roomId,
+                roundId: `round-${matchNumber}`,
+                ruleVersion: 1,
+                createdAt: new Date(now).toISOString(),
+              },
+              room,
+              stateJson: JSON.stringify(room),
+              humanPlayers: matchedHumans.map(({ session, entry }, seat) => ({
+                sessionId: session.id,
+                seat,
+                queueVersion: entry.version,
+              })),
+              botPlayers: bots.map((bot, offset) => ({
+                sessionId: bot.id,
+                seat: matchedHumans.length + offset,
+              })),
+            });
+            return { matchId, roomId };
+          },
+        },
+      );
+    }
+
+    let database = new GameDatabase(path);
+    databases.push(database);
+    database.createSession(human, "token-0");
+    for (const bot of botSessions) {
+      database.ensureRankedBotSession({
+        id: bot.id,
+        nickname: bot.nickname,
+        avatarUrl: null,
+        rankLevel: 17,
+      });
+    }
+
+    let service = buildService(database, NOW);
+    service.enqueue(human, NOW, true);
+    // Preference made it to the DB row, not just the in-memory cache.
+    expect(database.getMatchmakingEntry(human.id)?.allowBots).toBe(true);
+
+    // Simulate a process restart shortly after: close and reopen the same
+    // on-disk database, then construct a brand-new MatchmakingService
+    // (empty heartbeat/allowBots caches) against it.
+    database.close();
+    databases.splice(databases.indexOf(database), 1);
+    database = new GameDatabase(path);
+    databases.push(database);
+    service = buildService(database, NOW + 1_000);
+
+    // No match yet — the bot-fill wait window hasn't elapsed.
+    expect(service.tick(NOW + 2_000).matches).toEqual([]);
+
+    // Once the window elapses, the restarted service still knows this
+    // session opted into bot matches (read from the DB row, not the
+    // now-empty in-memory cache) and forms a match.
+    const result = service.tick(NOW + MATCHMAKING_BOT_FILL_WAIT_MS + 1);
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0]?.sessionIds).toEqual([human.id]);
+    expect(service.getState(human.id).status).toBe("MATCHED");
   });
 });

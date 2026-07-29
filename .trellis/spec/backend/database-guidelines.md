@@ -44,6 +44,30 @@ connection.pragma("busy_timeout = 5000");
 
 The production database is mounted at `/data/huanghuang.sqlite`. For the current personal-use deployment, stop the app before copying the file from the `game_data` volume. Restart only after the copy completes. Restore while stopped and remove stale `-wal` and `-shm` siblings.
 
+## Matchmaking preference persistence
+
+- `matchmaking_entries.allow_bots` is the durable source of truth for a
+  queued player's "allow bots" preference, added via the standard incremental
+  `ALTER TABLE ... ADD COLUMN` try/catch pattern. `MatchmakingService` keeps an
+  in-memory `Map<sessionId, boolean>` purely as a request-scoped cache — every
+  write path (`enqueue()`, `continueMatchmaking()`) writes through to both the
+  DB row and the cache in the same call, and `allowBotsFor(entry)` reads the
+  cache first but falls back to (and backfills from) the DB row already
+  fetched by the current `tick()`. This means a server restart self-heals the
+  preference from the DB on the next tick instead of silently reverting every
+  still-queued player to "no bots." Do not reintroduce an in-memory-only
+  preference for anything that must survive a restart while its queue entry
+  does.
+- Match-creation concurrency conflicts (a benign race where another tick's
+  transaction already consumed the four expected queue rows, or a targeted
+  bot is already in an active match) throw `CompetitiveMatchCreationConflictError`
+  (`database.ts`), not a plain `Error` with a matching message string. Callers
+  that need to distinguish "safe to retry next tick" from "genuine bug" must
+  use `instanceof CompetitiveMatchCreationConflictError`, never
+  `error.message.includes(...)` — a message rewording must not silently turn
+  a benign race into an unhandled crash (or the reverse: silently swallow a
+  real bug because its message happened to match).
+
 ## Forbidden patterns
 
 - Do not persist private hands in logs or client projections.

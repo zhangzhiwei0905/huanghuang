@@ -46,13 +46,23 @@ export type MatchmakingEntryRow = {
   enqueuedAt: string;
   disconnectedAt: string | null;
   version: number;
+  // Experience-phase "allow bots" preference, persisted so it survives a
+  // server restart (MatchmakingService keeps an in-memory cache on top of
+  // this column to avoid a DB round trip on every scheduler tick).
+  allowBots: boolean;
 };
 
 export type UpsertMatchmakingEntryInput = {
   sessionId: string;
   rankLevelSnapshot: number;
   enqueuedAt?: string;
+  allowBots?: boolean;
 };
+
+// SQLite has no boolean type; the raw row shape read straight off the
+// connection carries allow_bots as 0/1 before it's normalized to a boolean
+// for MatchmakingEntryRow consumers.
+type MatchmakingEntryRowRaw = Omit<MatchmakingEntryRow, "allowBots"> & { allowBots: 0 | 1 };
 
 export type CompetitiveMatchStatus = "ACTIVE" | "SETTLED";
 
@@ -168,6 +178,23 @@ export type SaveAcceptedTransitionResult = {
   achievementRecorded: boolean;
   settlementApplied: boolean;
 };
+
+/**
+ * Thrown when a competitive match-creation transaction loses a race — either
+ * a targeted session already has an active match, or the optimistic queue
+ * row delete didn't consume the expected number of current/online entries
+ * (a concurrent enqueue/disconnect/cancel changed the row's version out from
+ * under the in-flight match build). Callers that build rooms from the
+ * matchmaking queue treat this as "retry next tick" rather than a fatal
+ * error; anything else (infrastructure failures, invariant violations)
+ * should still surface as a plain `Error` and reach the process boundary.
+ */
+export class CompetitiveMatchCreationConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompetitiveMatchCreationConflictError";
+  }
+}
 
 function assertFourUniquePlayers(players: readonly { sessionId: string; seat?: number }[]): void {
   if (players.length !== 4 || new Set(players.map((player) => player.sessionId)).size !== 4) {
@@ -321,6 +348,7 @@ export class GameDatabase {
     for (const statement of [
       "ALTER TABLE anonymous_sessions ADD COLUMN wechat_open_id TEXT",
       "ALTER TABLE anonymous_sessions ADD COLUMN avatar_url TEXT",
+      "ALTER TABLE matchmaking_entries ADD COLUMN allow_bots INTEGER NOT NULL DEFAULT 0",
     ]) {
       try {
         this.connection.exec(statement);
@@ -364,7 +392,8 @@ export class GameDatabase {
     rank_level_snapshot AS rankLevelSnapshot,
     enqueued_at AS enqueuedAt,
     disconnected_at AS disconnectedAt,
-    version`;
+    version,
+    allow_bots AS allowBots`;
 
   private static readonly COMPETITIVE_MATCH_COLUMNS = `
     id,
@@ -659,22 +688,25 @@ export class GameDatabase {
         throw new Error(`Session ${input.sessionId} already has an active competitive match`);
       }
       const enqueuedAt = input.enqueuedAt ?? new Date().toISOString();
+      const allowBots = input.allowBots === true ? 1 : 0;
       this.connection
         .prepare(
           `INSERT INTO matchmaking_entries
-           (session_id, rank_level_snapshot, enqueued_at, disconnected_at, version)
-           VALUES (?, ?, ?, NULL, 1)
+           (session_id, rank_level_snapshot, enqueued_at, disconnected_at, version, allow_bots)
+           VALUES (?, ?, ?, NULL, 1, ?)
            ON CONFLICT(session_id) DO UPDATE SET
              rank_level_snapshot = excluded.rank_level_snapshot,
              disconnected_at = NULL,
+             allow_bots = excluded.allow_bots,
              version = CASE
                WHEN matchmaking_entries.disconnected_at IS NULL
                  AND matchmaking_entries.rank_level_snapshot = excluded.rank_level_snapshot
+                 AND matchmaking_entries.allow_bots = excluded.allow_bots
                THEN matchmaking_entries.version
                ELSE matchmaking_entries.version + 1
              END`,
         )
-        .run(input.sessionId, input.rankLevelSnapshot, enqueuedAt);
+        .run(input.sessionId, input.rankLevelSnapshot, enqueuedAt, allowBots);
       const entry = this.getMatchmakingEntry(input.sessionId);
       if (entry === null) {
         throw new Error(`Unable to upsert matchmaking entry for ${input.sessionId}`);
@@ -690,18 +722,24 @@ export class GameDatabase {
          FROM matchmaking_entries
          WHERE session_id = ?`,
       )
-      .get(sessionId) as MatchmakingEntryRow | undefined;
-    return row ?? null;
+      .get(sessionId) as MatchmakingEntryRowRaw | undefined;
+    return row === undefined ? null : GameDatabase.toMatchmakingEntryRow(row);
   }
 
   listMatchmakingEntries(): MatchmakingEntryRow[] {
-    return this.connection
-      .prepare(
-        `SELECT ${GameDatabase.MATCHMAKING_ENTRY_COLUMNS}
-         FROM matchmaking_entries
-         ORDER BY enqueued_at, session_id`,
-      )
-      .all() as MatchmakingEntryRow[];
+    return (
+      this.connection
+        .prepare(
+          `SELECT ${GameDatabase.MATCHMAKING_ENTRY_COLUMNS}
+           FROM matchmaking_entries
+           ORDER BY enqueued_at, session_id`,
+        )
+        .all() as MatchmakingEntryRowRaw[]
+    ).map((row) => GameDatabase.toMatchmakingEntryRow(row));
+  }
+
+  private static toMatchmakingEntryRow(row: MatchmakingEntryRowRaw): MatchmakingEntryRow {
+    return { ...row, allowBots: row.allowBots === 1 };
   }
 
   cancelMatchmakingEntry(sessionId: string): boolean {
@@ -785,7 +823,9 @@ export class GameDatabase {
         )
         .get(...sessionIds) as { sessionId: string } | undefined;
       if (activeMatch !== undefined) {
-        throw new Error(`Session ${activeMatch.sessionId} already has an active competitive match`);
+        throw new CompetitiveMatchCreationConflictError(
+          `Session ${activeMatch.sessionId} already has an active competitive match`,
+        );
       }
 
       const profiles = new Map(
@@ -830,7 +870,7 @@ export class GameDatabase {
         0,
       );
       if (deleted !== 4) {
-        throw new Error(
+        throw new CompetitiveMatchCreationConflictError(
           `Competitive match creation expected four current online queue entries, deleted ${deleted}`,
         );
       }
@@ -877,7 +917,9 @@ export class GameDatabase {
         )
         .get(...sessionIds) as { sessionId: string } | undefined;
       if (activeMatch !== undefined) {
-        throw new Error(`Session ${activeMatch.sessionId} already has an active competitive match`);
+        throw new CompetitiveMatchCreationConflictError(
+          `Session ${activeMatch.sessionId} already has an active competitive match`,
+        );
       }
 
       const profiles = new Map(
@@ -922,7 +964,7 @@ export class GameDatabase {
         deleted += deleteQueuedPlayer.run(human.sessionId, human.queueVersion).changes;
       }
       if (deleted !== input.humanPlayers.length) {
-        throw new Error(
+        throw new CompetitiveMatchCreationConflictError(
           `Competitive bot match creation expected ${input.humanPlayers.length} current online queue entries, deleted ${deleted}`,
         );
       }
@@ -1083,6 +1125,7 @@ export class GameDatabase {
     matchId: string,
     sessionId: string,
     enqueuedAt = new Date().toISOString(),
+    allowBots = false,
   ): MatchmakingEntryRow {
     return this.connection.transaction(() => {
       const player = this.acknowledgeCompetitiveMatchResult(matchId, sessionId, enqueuedAt);
@@ -1094,6 +1137,7 @@ export class GameDatabase {
         sessionId,
         rankLevelSnapshot: profile.rankLevel,
         enqueuedAt,
+        allowBots,
       });
     })();
   }
