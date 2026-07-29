@@ -41,3 +41,13 @@
 - 协议/数据库阶段：新增列为可空，可回退代码。
 - 服务端阶段：组队入口未接 UI 前不影响现有单排。
 - 小程序阶段：可单独隐藏组队入口或退回纯文字段位，不影响竞技结算。
+
+## 6. 生产部署记录
+
+- [x] 功能提交：`0fd10e6`
+- [x] 生产镜像：`huanghuang-app:0fd10e6`
+- [x] 公网 `/health/ready`、`/api/version` 与首页验证通过
+- [x] 线上版本：`1.0.1`，revision `0fd10e6`
+- [x] 回滚容器：`huanghuang-app-rollback-295c905-20260729-201634`
+- [x] 数据卷备份：
+      `/home/zhangzhiwei/backups/huanghuang-data-pre-0fd10e6-20260729-201634.tgz`
