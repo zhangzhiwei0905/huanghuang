@@ -57,6 +57,10 @@ export const readyRoomSchema = z.object({
   ready: z.boolean(),
 });
 
+export const teamMatchmakingInputSchema = z.object({
+  allowBots: z.boolean().optional(),
+});
+
 export const updateRoomSettingsSchema = z
   .object({
     baseScore: baseScoreSchema.optional(),
@@ -79,6 +83,7 @@ export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
 export type RoomMode = z.infer<typeof roomModeSchema>;
 export type ReadyRoomInput = z.infer<typeof readyRoomSchema>;
+export type TeamMatchmakingInput = z.infer<typeof teamMatchmakingInputSchema>;
 export type UpdateRoomSettingsInput = z.infer<typeof updateRoomSettingsSchema>;
 export type RemoveRoomBotInput = z.infer<typeof removeRoomBotSchema>;
 export type ChatMessageInput = z.infer<typeof chatMessageInputSchema>;

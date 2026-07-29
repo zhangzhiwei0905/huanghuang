@@ -134,7 +134,7 @@ export const teamMatchmakingProjectionSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("QUEUED"),
     enqueuedAt: z.iso.datetime({ offset: true }),
-    memberCount: z.number().int().min(2).max(4),
+    memberCount: z.number().int().min(1).max(4),
   }),
   z.object({
     status: z.literal("MATCHED"),

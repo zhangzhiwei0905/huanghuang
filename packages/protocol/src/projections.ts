@@ -7,12 +7,14 @@ import type {
   TeamMatchmakingProjection,
 } from "./competitive.js";
 import type { BaseScore, Meld, PersonalMultiplier, Seat, Tile, TileKind, WinType } from "./game.js";
+import type { PlayerId } from "./social.js";
 
 export type PlayerController = "HUMAN" | "BOT" | "TRUSTEE";
 
 export type PlayerProjection = {
   seat: Seat;
   nickname: string;
+  playerId?: PlayerId | null;
   avatarUrl: string | null;
   controller: PlayerController;
   connected: boolean;
@@ -43,6 +45,7 @@ export type LobbySeatProjection = {
   seat: Seat;
   controller: "HUMAN" | "BOT" | null;
   nickname: string | null;
+  playerId?: PlayerId | null;
   avatarUrl: string | null;
   occupied: boolean;
   ready: boolean;
@@ -55,6 +58,7 @@ export type LobbySeatProjection = {
 
 export type SpectatorProjection = {
   nickname: string;
+  playerId?: PlayerId | null;
   avatarUrl: string | null;
   connected: boolean;
   isSelf: boolean;

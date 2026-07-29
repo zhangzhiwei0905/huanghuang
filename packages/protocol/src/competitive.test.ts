@@ -146,6 +146,13 @@ describe("competitive protocol", () => {
         enqueuedAt: "2026-07-28T10:00:00.000Z",
         memberCount: 1,
       }).success,
+    ).toBe(true);
+    expect(
+      teamMatchmakingProjectionSchema.safeParse({
+        status: "QUEUED",
+        enqueuedAt: "2026-07-28T10:00:00.000Z",
+        memberCount: 0,
+      }).success,
     ).toBe(false);
   });
 
