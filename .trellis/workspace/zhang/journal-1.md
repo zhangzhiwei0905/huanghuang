@@ -1129,3 +1129,39 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: 好友组队、机器人补位与小程序大厅重设计上线
+
+**Date**: 2026-07-29
+**Task**: 好友组队、机器人补位与小程序大厅重设计上线
+**Branch**: `miniprogram`
+
+### Summary
+
+实现四位玩家 ID、好友申请与管理、在线状态和游戏内房间邀请；统一单人/组队排位房，支持按段位聚合与公平轮换的机器人补位；重设计小程序主页、好友茶馆抽屉和等待房工具条。434 项测试、类型检查、lint、小程序构建与微信开发者工具横屏验收通过；生产部署为 1.0.3/e4ca104，完成数据卷备份、备份副本迁移预检、公网健康与数据库回填核验。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `38df455` | (see git log) |
+| `5b78268` | (see git log) |
+| `e4ca104` | (see git log) |
+| `4a455f5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
