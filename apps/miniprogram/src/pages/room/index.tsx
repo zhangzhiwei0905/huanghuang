@@ -34,6 +34,10 @@ import {
 } from "../../lib/actionEligibility";
 import { decideTilePress } from "../../lib/handInteraction";
 import {
+  shouldAcknowledgeMatchBeforeLeaving,
+  shouldConfirmTrusteeHandoffBeforeLeaving,
+} from "../../lib/roomLeaveFlow";
+import {
   createGameAudioTracker,
   updateGameAudioTracker,
   voiceMessageAudioFileName,
@@ -554,8 +558,11 @@ export default function RoomPage() {
     await roomCtrl.send(action);
   }
 
-  async function continueCompetitiveMatch() {
-    const matchId = room?.competitiveMatch?.matchId;
+  async function continueCompetitiveMatch(matchIdOverride?: string) {
+    // Accepts an explicit matchId so the empty-shell page (room === null,
+    // relying on roomCtrl.lastSettlement) can still drive this action once
+    // `room.competitiveMatch` itself is gone.
+    const matchId = matchIdOverride ?? room?.competitiveMatch?.matchId;
     if (matchId === undefined) return;
     try {
       Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
@@ -563,6 +570,7 @@ export default function RoomPage() {
         previousMatchId: matchId,
         allowBots: getStoredMatchmakingAllowBots(),
       });
+      roomCtrl.clearLastSettlement();
       if (response.room !== null) {
         Taro.setStorageSync("huanghuang_open_room", response.room);
         await Taro.reLaunch({ url: "/pages/room/index" });
@@ -574,12 +582,13 @@ export default function RoomPage() {
     }
   }
 
-  async function returnFromCompetitiveMatch() {
-    const matchId = room?.competitiveMatch?.matchId;
+  async function returnFromCompetitiveMatch(matchIdOverride?: string) {
+    const matchId = matchIdOverride ?? room?.competitiveMatch?.matchId;
     if (matchId === undefined) return;
     try {
       Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
       await competitiveApi.acknowledge(matchId);
+      roomCtrl.clearLastSettlement();
       await Taro.reLaunch({ url: "/pages/index/index" });
     } catch {
       await Taro.showToast({ title: "返回大厅失败，请重试", icon: "none" });
@@ -588,7 +597,7 @@ export default function RoomPage() {
 
   async function leaveCurrentRoom() {
     if (room === null) return;
-    if (room.mode === "MATCH" && room.stage === "PLAYING") {
+    if (shouldConfirmTrusteeHandoffBeforeLeaving(room.mode, room.stage)) {
       const result = await Taro.showModal({
         title: "退出竞技对局？",
         content: "退出后本局将由系统托管，仍会正常结算段位。",
@@ -598,6 +607,19 @@ export default function RoomPage() {
       if (!result.confirm) return;
       const matchId = room.competitiveMatch?.matchId;
       if (matchId !== undefined) Taro.setStorageSync(TRUSTEE_MATCH_STORAGE_KEY, matchId);
+    }
+    if (shouldAcknowledgeMatchBeforeLeaving(room.mode, room.stage)) {
+      const matchId = room.competitiveMatch?.matchId;
+      if (matchId !== undefined) {
+        try {
+          Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+          await competitiveApi.acknowledge(matchId);
+        } catch {
+          // Best-effort: proceed with the local leave regardless — the home
+          // page's polling/useDidShow re-sync will reconcile a stale MATCHED
+          // state instead of leaving the player stuck here.
+        }
+      }
     }
     await roomCtrl.leaveRoom();
     if (room.mode === "MATCH") {
@@ -623,19 +645,42 @@ export default function RoomPage() {
   }
 
   if (room === null) {
+    // A single-entry page stack (reLaunch into this page is the normal path,
+    // e.g. from the home page's MATCHED flow) makes navigateBack a no-op —
+    // always land back on the home page explicitly instead.
+    const pendingMatchId = roomCtrl.lastSettlement?.competitiveMatch.matchId;
     return (
       <View className="game-shell empty-shell">
         <Image className="game-shell__bg" src={tableBackground} mode="aspectFill" />
         <View className="game-shell__overlay" />
         <View className="game-shell__content empty-shell-content">
           <Text className="empty-title">{roomCtrl.notice ?? "尚未进入房间"}</Text>
-          <Button
-            className="btn-accent"
-            hoverClass="is-pressed"
-            onClick={() => void Taro.navigateBack()}
-          >
-            返回大厅
-          </Button>
+          {pendingMatchId !== undefined ? (
+            <>
+              <Button
+                className="btn-accent"
+                hoverClass="is-pressed"
+                onClick={() => void continueCompetitiveMatch(pendingMatchId)}
+              >
+                继续匹配
+              </Button>
+              <Button
+                className="btn-accent"
+                hoverClass="is-pressed"
+                onClick={() => void returnFromCompetitiveMatch(pendingMatchId)}
+              >
+                回主页
+              </Button>
+            </>
+          ) : (
+            <Button
+              className="btn-accent"
+              hoverClass="is-pressed"
+              onClick={() => void Taro.reLaunch({ url: "/pages/index/index" })}
+            >
+              返回大厅
+            </Button>
+          )}
         </View>
       </View>
     );

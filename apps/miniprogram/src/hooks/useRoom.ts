@@ -13,8 +13,14 @@ import { getStoredSessionToken } from "../api/session";
 import { API_BASE } from "../config";
 import { errorLabel } from "../lib/errors";
 import { normalizeRoomProjection } from "../lib/roomProjection";
+import {
+  deriveLastSettlementFromClosedProjection,
+  type LastCompetitiveSettlement,
+} from "../lib/roomSettlement";
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting";
+
+export type { LastCompetitiveSettlement } from "../lib/roomSettlement";
 
 type RoomController = {
   room: RoomProjection | null;
@@ -23,6 +29,7 @@ type RoomController = {
   pendingAction: CommandEnvelope["type"] | null;
   error: string | null;
   notice: string | null;
+  lastSettlement: LastCompetitiveSettlement | null;
   openRoom: (projection: RoomProjection) => void;
   leaveRoom: () => Promise<void>;
   dissolve: () => Promise<void>;
@@ -35,6 +42,7 @@ type RoomController = {
   send: (type: CommandEnvelope["type"], payload?: Record<string, unknown>) => Promise<void>;
   refresh: () => Promise<void>;
   clearNotice: () => void;
+  clearLastSettlement: () => void;
   lastChatMessage: ChatMessageProjection | null;
   sendVoiceMessage: (message: string) => void;
 };
@@ -76,6 +84,7 @@ export function useRoom(): RoomController {
   const [socketGeneration, setSocketGeneration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [lastSettlement, setLastSettlement] = useState<LastCompetitiveSettlement | null>(null);
   const [lastChatMessage, setLastChatMessage] = useState<ChatMessageProjection | null>(null);
   const roomRef = useRef(room);
   const socketRef = useRef<Socket | null>(null);
@@ -94,6 +103,11 @@ export function useRoom(): RoomController {
     (next: RoomProjection) => {
       const normalized = normalizeRoomProjection(next);
       if (normalized.status === "CLOSED") {
+        // Capture the settlement snapshot before clearLocalRoom wipes `room`
+        // — see deriveLastSettlementFromClosedProjection for why the server
+        // still has this data on a CLOSED projection.
+        const settlement = deriveLastSettlementFromClosedProjection(normalized);
+        if (settlement !== null) setLastSettlement(settlement);
         clearLocalRoom(
           normalized.closeReason === null
             ? "房间已关闭，请重新创建或加入房间"
@@ -269,6 +283,9 @@ export function useRoom(): RoomController {
   const openRoom = useCallback(
     (projection: RoomProjection) => {
       setNotice(null);
+      // Entering a (possibly new) room context — any settlement preserved
+      // from a previous CLOSED room no longer applies here.
+      setLastSettlement(null);
       hasEverConnectedRef.current = false;
       setConnectionStatus("connecting");
       replaceProjection(projection);
@@ -283,6 +300,7 @@ export function useRoom(): RoomController {
       try {
         await roomApi.leave(current.roomCode);
         clearLocalRoom();
+        setLastSettlement(null);
       } catch (cause) {
         // Room already gone server-side (closed/evicted between page load and
         // this click) isn't really a failure from the player's perspective —
@@ -290,6 +308,7 @@ export function useRoom(): RoomController {
         // act on.
         if (cause instanceof ApiError && cause.code === "ROOM_NOT_FOUND") {
           clearLocalRoom();
+          setLastSettlement(null);
           return;
         }
         setError(errorLabel(cause instanceof ApiError ? cause.code : "UNKNOWN_ERROR"));
@@ -436,6 +455,7 @@ export function useRoom(): RoomController {
     pendingAction,
     error,
     notice,
+    lastSettlement,
     openRoom,
     leaveRoom,
     dissolve,
@@ -448,6 +468,7 @@ export function useRoom(): RoomController {
     send,
     refresh,
     clearNotice: () => setNotice(null),
+    clearLastSettlement: () => setLastSettlement(null),
     lastChatMessage,
     sendVoiceMessage,
   };

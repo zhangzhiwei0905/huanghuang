@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, Image, Input, Picker, Text, View } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import Taro, { useDidShow } from "@tarojs/taro";
 import type {
   BaseScore,
   BotDifficulty,
@@ -29,6 +29,11 @@ import {
   wechatLogin,
 } from "../../api/session";
 import { errorLabel } from "../../lib/errors";
+import {
+  nextMatchmakingPollDelayMs,
+  resolveReturnToCompetitiveMatch,
+  shouldPollMatchmakingStatus,
+} from "../../lib/matchmakingRecovery";
 import { matchmakingRangeLabel, matchmakingWaitSeconds } from "../../lib/matchmakingPresentation";
 import "./index.scss";
 
@@ -287,12 +292,11 @@ export default function IndexPage() {
   }, [identity]);
 
   useEffect(() => {
-    const trusteeMatchId = Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
-    const pollingTrusteeMatch =
-      matchmaking.status === "MATCHED" &&
-      typeof trusteeMatchId === "string" &&
-      trusteeMatchId === matchmaking.matchId;
-    if (matchmaking.status !== "QUEUED" && !pollingTrusteeMatch) return;
+    // MATCHED is included here (not just QUEUED) so a stuck "返回对局" button
+    // — matchmaking.status staying MATCHED while the server-side room is
+    // actually gone/stale — gets periodically re-checked instead of only
+    // ever refreshing on a manual button tap.
+    if (!shouldPollMatchmakingStatus(matchmaking.status)) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const poll = async () => {
@@ -304,9 +308,8 @@ export default function IndexPage() {
         const stillTrustee =
           response.state.status === "MATCHED" &&
           Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY) === response.state.matchId;
-        if (response.state.status === "QUEUED" || stillTrustee) {
-          timer = setTimeout(() => void poll(), stillTrustee ? 2_000 : 1_000);
-        }
+        const delay = nextMatchmakingPollDelayMs(response.state, stillTrustee);
+        if (delay !== null) timer = setTimeout(() => void poll(), delay);
       } catch (cause) {
         if (disposed) return;
         setMatchmakingError(describeSubmitError(cause));
@@ -319,6 +322,18 @@ export default function IndexPage() {
       if (timer !== null) clearTimeout(timer);
     };
   }, [matchmaking.status]);
+
+  // Navigating back from the room page (empty-shell reLaunch, or the OS
+  // resuming this page from the background) doesn't remount the component —
+  // re-fetch matchmaking status so a stale MATCHED/QUEUED snapshot from
+  // before the round ended gets corrected without waiting for the next poll.
+  useDidShow(() => {
+    if (identity === null) return;
+    competitiveApi
+      .status()
+      .then((response) => applyMatchmakingResponse(response))
+      .catch((cause) => setMatchmakingError(describeSubmitError(cause)));
+  });
 
   const heading = useMemo(() => {
     if (mode === "CREATE") return "创建好友房";
@@ -360,9 +375,19 @@ export default function IndexPage() {
     setMatchmakingBusy(true);
     try {
       const response = await competitiveApi.status();
-      if (response.room === null) throw new Error("MATCH_ROOM_NOT_AVAILABLE");
+      const outcome = resolveReturnToCompetitiveMatch(response);
+      if (outcome.kind === "recovered") {
+        // The room lookup came back empty — previously this just threw and
+        // discarded the response, leaving `matchmaking` frozen at MATCHED
+        // forever (the button stuck showing "返回对局", every retry
+        // re-failing the same way). Apply what the server actually told us
+        // so the UI can recover (e.g. once the match is resolved server-side,
+        // polling/useDidShow will eventually pick up the follow-up state).
+        applyMatchmakingResponse(response);
+        throw new Error("MATCH_ROOM_NOT_AVAILABLE");
+      }
       Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
-      Taro.setStorageSync("huanghuang_open_room", response.room);
+      Taro.setStorageSync("huanghuang_open_room", outcome.room);
       await Taro.navigateTo({ url: "/pages/room/index" });
     } catch (cause) {
       setMatchmakingError(describeSubmitError(cause));
