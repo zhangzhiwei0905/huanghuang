@@ -3,6 +3,7 @@ import { API_BASE, SESSION_TOKEN_HEADER, SESSION_TOKEN_STORAGE_KEY } from "../co
 
 export type SessionIssueResponse = {
   sessionId: string;
+  playerId: string | null;
   nickname: string;
   avatarUrl: string | null;
   sessionToken: string | null;
@@ -10,6 +11,7 @@ export type SessionIssueResponse = {
 
 export type Identity = {
   nickname: string;
+  playerId: string;
   avatarUrl: string | null;
 };
 
@@ -82,6 +84,7 @@ export async function issueSession(nickname: string): Promise<SessionIssueRespon
 
   return {
     sessionId: data.sessionId,
+    playerId: data.playerId,
     nickname: data.nickname,
     avatarUrl: data.avatarUrl,
     sessionToken,
@@ -100,6 +103,7 @@ export async function resolveIdentity(): Promise<Identity | null> {
   if (response.statusCode !== 200) return null;
   const data = response.data as {
     nickname: string;
+    playerId: string | null;
     avatarUrl: string | null;
     wechatLinked: boolean;
   };
@@ -107,8 +111,8 @@ export async function resolveIdentity(): Promise<Identity | null> {
   // still carry a valid plain anonymous session token — that must not
   // count as "already logged in" here, or it silently skips the login
   // gate forever with its old nickname and no avatar.
-  if (!data.wechatLinked) return null;
-  return { nickname: data.nickname, avatarUrl: data.avatarUrl };
+  if (!data.wechatLinked || data.playerId === null) return null;
+  return { nickname: data.nickname, playerId: data.playerId, avatarUrl: data.avatarUrl };
 }
 
 /** Exchange a fresh wx.login() code (+ optional uploaded avatar) for a persistent WeChat identity. */
@@ -127,7 +131,8 @@ export async function wechatLogin(nickname: string, avatarUrl: string | null): P
   if (data.sessionToken !== null) {
     setStoredSessionToken(data.sessionToken);
   }
-  return { nickname: data.nickname, avatarUrl: data.avatarUrl };
+  if (data.playerId === null) throw new Error("PLAYER_ID_NOT_ASSIGNED");
+  return { nickname: data.nickname, playerId: data.playerId, avatarUrl: data.avatarUrl };
 }
 
 /**
@@ -159,7 +164,8 @@ export async function resumeWechatIdentity(): Promise<Identity | null> {
   if (data.sessionToken !== null) {
     setStoredSessionToken(data.sessionToken);
   }
-  return { nickname: data.nickname, avatarUrl: data.avatarUrl };
+  if (data.playerId === null) throw new Error("PLAYER_ID_NOT_ASSIGNED");
+  return { nickname: data.nickname, playerId: data.playerId, avatarUrl: data.avatarUrl };
 }
 
 function readFileAsBase64(filePath: string): Promise<string> {

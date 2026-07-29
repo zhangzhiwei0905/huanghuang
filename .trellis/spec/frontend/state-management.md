@@ -257,6 +257,82 @@ function enterWaiting(room: RoomState, now: number): void {
 
 Only lifecycle entry creates the deadline; UI timers merely display it.
 
+## Scenario: Private social snapshot refresh
+
+### 1. Scope / Trigger
+
+Changes to mini-program friends, presence, player search or room invitations
+must keep the social snapshot server-owned and private to the authenticated
+session.
+
+### 2. Signatures
+
+```ts
+type SocialController = {
+  snapshot: SocialSnapshot | null;
+  refresh(): Promise<void>;
+  search(playerId: string): Promise<PlayerSearchResult | null>;
+  sendRequest(playerId: string): Promise<void>;
+  invite(roomCode: string, playerId: string): Promise<void>;
+};
+```
+
+REST owns mutations and full snapshots. Socket `social:update` carries only a
+refresh hint on `session:<sessionId>`.
+
+### 3. Contracts
+
+- `useSocial(enabled)` has at most one refresh in flight and one authenticated
+  Socket; cleanup disconnects it and ignores late responses.
+- Presence, request and invitation events never broadcast a full friend list.
+- A mutation returns an authoritative snapshot when available; otherwise the
+  private Socket hint triggers a serialized refresh.
+- Friend requests and room invites remain visible after relaunch until acted
+  upon or expired by the server.
+- `playerId` is display/search identity, while `sessionId` stays private.
+
+### 4. Validation & Error Matrix
+
+| Condition | UI result |
+| --- | --- |
+| Social snapshot loading | Stable loading state, no fake empty list |
+| Unknown four-digit ID | `PLAYER_NOT_FOUND` copy |
+| Duplicate outgoing request | Existing pending state, no duplicate row |
+| Incoming request already exists | Offer accept rather than another request |
+| Friend offline | Disable room invite |
+| Invitation expires or room fills | Remove after refresh and surface invalid if tapped |
+
+### 5. Good/Base/Bad Cases
+
+- Good: one `social:update` after presence change refreshes the list and moves
+  the online friend first.
+- Base: reopening the home page restores pending requests from SQLite.
+- Bad: store friendship or invitation acceptance only in React state.
+
+### 6. Tests Required
+
+- Service tests for request lifecycle, online projection and invite expiry.
+- Hook/pure-helper tests when refresh coalescing or relationship branching
+  changes.
+- Mini-program typecheck and production `build:weapp` after any social UI
+  contract change.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+socket.on("friend:list", (friends) => setFriends(friends));
+```
+
+Correct:
+
+```ts
+socket.on("social:update", () => void refresh());
+```
+
+The authenticated REST snapshot remains the single projection boundary.
+
 ## Scenario: End-of-round final hand projection
 
 ### 1. Scope / Trigger

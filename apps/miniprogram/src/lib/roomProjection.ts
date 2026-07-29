@@ -25,7 +25,13 @@ export function normalizeRoomProjection(projection: RoomProjection): RoomProject
     projection.schemaVersion === 10 &&
     legacy.effectCue !== undefined &&
     legacy.competitiveMatch !== undefined &&
-    legacy.teamMatchmaking !== undefined
+    legacy.teamMatchmaking !== undefined &&
+    (!Array.isArray(projection.players) ||
+      projection.players.every((player) => player.playerId !== undefined)) &&
+    (!Array.isArray(projection.lobbySeats) ||
+      projection.lobbySeats.every((seat) => seat.playerId !== undefined)) &&
+    (!Array.isArray(projection.spectators) ||
+      projection.spectators.every((spectator) => spectator.playerId !== undefined))
   ) {
     return projection;
   }
@@ -33,16 +39,24 @@ export function normalizeRoomProjection(projection: RoomProjection): RoomProject
   const players = Array.isArray(projection.players)
     ? projection.players.map((player) => ({
         ...player,
+        playerId: player.playerId ?? null,
         competitiveProfile: player.competitiveProfile ?? null,
       }))
     : projection.players;
   const lobbySeats = Array.isArray(projection.lobbySeats)
     ? projection.lobbySeats.map((seat) => ({
         ...seat,
+        playerId: seat.playerId ?? null,
         competitiveProfile: seat.competitiveProfile ?? null,
       }))
     : projection.lobbySeats;
   const roundSettlement = projection.roundSettlement;
+  const spectators = Array.isArray(projection.spectators)
+    ? projection.spectators.map((spectator) => ({
+        ...spectator,
+        playerId: spectator.playerId ?? null,
+      }))
+    : projection.spectators;
 
   return {
     ...projection,
@@ -50,6 +64,7 @@ export function normalizeRoomProjection(projection: RoomProjection): RoomProject
     effectCue: legacy.effectCue ?? null,
     competitiveMatch: legacy.competitiveMatch ?? null,
     teamMatchmaking: legacy.teamMatchmaking ?? null,
+    ...(spectators === undefined ? {} : { spectators }),
     ...(players === undefined ? {} : { players }),
     ...(lobbySeats === undefined ? {} : { lobbySeats }),
     ...(roundSettlement == null

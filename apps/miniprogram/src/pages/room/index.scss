@@ -67,14 +67,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.8vmin;
+  gap: 0.9vmin;
   border-bottom: 1px solid rgb(255 255 255 / 10%);
-  background: rgb(20 32 25 / 68%);
+  background: rgb(18 40 29 / 82%);
   color: #fff;
+  box-shadow: 0 0.45vmin 1.4vmin rgb(7 34 23 / 24%);
 }
 
 .lobby-toolbar__room {
   min-width: 0;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -118,7 +120,7 @@
 .lobby-toolbar__actions {
   display: flex;
   align-items: center;
-  gap: 0.6vmin;
+  gap: 0.55vmin;
 }
 
 .lobby-toolbar__button {
@@ -126,17 +128,18 @@
   z-index: 0;
   flex-shrink: 0;
   margin: 0 !important;
-  min-width: 54px !important;
+  min-width: 62px !important;
+  width: 62px !important;
   min-height: 44px !important;
   height: 44px !important;
   line-height: 44px !important;
-  padding: 0 1.2vmin !important;
+  padding: 0 !important;
   border: 0 !important;
   border-radius: 9px !important;
   background: transparent !important;
-  color: #fff !important;
-  font-size: clamp(11px, 2vmin, 13px) !important;
-  font-weight: 600 !important;
+  color: #f5f0df !important;
+  font-size: clamp(10px, 1.8vmin, 12px) !important;
+  font-weight: 650 !important;
   white-space: nowrap !important;
 }
 
@@ -144,9 +147,10 @@
   position: absolute;
   inset: 5px 0;
   z-index: -1;
-  border: 1px solid rgb(255 255 255 / 24%);
-  border-radius: 8px;
-  background: rgb(255 255 255 / 12%);
+  border: 1px solid rgb(239 230 202 / 22%);
+  border-radius: 7px;
+  background: rgb(246 240 220 / 10%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 7%);
   content: "";
   pointer-events: none;
 }
@@ -156,29 +160,21 @@
 }
 
 .lobby-toolbar__button.is-pressed::before {
-  opacity: 0.86;
+  opacity: 0.76;
   transform: translateY(1px);
 }
 
-.lobby-toolbar__button--share {
-  color: #254b37 !important;
-}
-
-.lobby-toolbar__button--share::before {
-  background: rgb(255 255 255 / 92%);
+.lobby-toolbar__button--danger {
+  color: #edc5bb !important;
 }
 
 .lobby-toolbar__button--danger::before {
-  border-color: rgb(255 213 205 / 24%) !important;
-  background: rgb(122 75 69 / 80%) !important;
+  border-color: rgb(224 151 136 / 34%) !important;
+  background: rgb(121 67 57 / 18%) !important;
 }
 
 .sound-toggle.is-muted {
-  color: rgb(255 255 255 / 62%) !important;
-}
-
-.sound-toggle.is-muted::before {
-  background: rgb(20 24 15 / 42%);
+  color: rgb(245 240 223 / 52%) !important;
 }
 
 .banner-error {
@@ -438,6 +434,87 @@
     radial-gradient(circle at 50% 48%, rgb(242 232 196 / 10%) 0%, transparent 34%),
     rgb(13 61 42 / 28%);
   box-shadow: inset 0 0 7vmin rgb(8 38 26 / 24%);
+}
+
+/* Match settings live on the table edge, away from the central status card.
+   It reads like a compact table rule instead of another primary action. */
+.lobby-match-config {
+  position: absolute;
+  z-index: 4;
+  top: 1.6vmin;
+  left: calc(1.5vmin + env(safe-area-inset-left));
+  width: max(25vmin, 158px);
+  min-height: max(7vmin, 42px);
+  display: flex;
+  align-items: center;
+  gap: 1vmin;
+  box-sizing: border-box;
+  border: 1px solid rgb(238 231 207 / 34%);
+  border-radius: 1vmin;
+  padding: 0.8vmin 1.1vmin;
+  background: rgb(18 54 39 / 78%);
+  color: #f4f0df;
+  box-shadow:
+    0 0.35vmin 0 rgb(9 36 25 / 72%),
+    0 0.9vmin 2vmin rgb(6 31 21 / 18%);
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease;
+}
+
+.lobby-match-config.is-pressed {
+  transform: translateY(1px);
+}
+
+.lobby-match-config.is-on {
+  border-color: rgb(216 188 121 / 58%);
+  background: rgb(61 69 39 / 84%);
+}
+
+.lobby-match-config__check {
+  width: max(3.8vmin, 23px);
+  height: max(3.8vmin, 23px);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid rgb(246 240 220 / 42%);
+  border-radius: 0.65vmin;
+  background: rgb(8 31 22 / 24%);
+  color: #294c38;
+  font-size: clamp(11px, 2vmin, 14px);
+  font-weight: 900;
+}
+
+.lobby-match-config.is-on .lobby-match-config__check {
+  border-color: #d7bc78;
+  background: #d7bc78;
+  box-shadow: 0 0.25vmin 0 #9a7d3d;
+}
+
+.lobby-match-config__copy {
+  min-width: 0;
+}
+
+.lobby-match-config__title,
+.lobby-match-config__hint {
+  display: block;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-match-config__title {
+  font-size: clamp(10px, 1.75vmin, 12px);
+  font-weight: 750;
+}
+
+.lobby-match-config__hint {
+  margin-top: 0.15vmin;
+  color: rgb(244 240 223 / 62%);
+  font-size: clamp(8px, 1.35vmin, 10px);
 }
 
 .lobby-seat {
@@ -1667,4 +1744,12 @@
     animation-duration: 1ms;
     animation-iteration-count: 1;
   }
+}
+
+.lobby-team-actions {
+  min-width: 0;
+}
+
+.lobby-team-actions .lobby-team-button {
+  align-self: center;
 }

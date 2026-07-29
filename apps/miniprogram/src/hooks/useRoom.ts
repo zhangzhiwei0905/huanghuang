@@ -35,7 +35,7 @@ type RoomController = {
   leaveRoom: () => Promise<void>;
   dissolve: () => Promise<void>;
   ready: () => Promise<void>;
-  startTeamMatchmaking: () => Promise<void>;
+  startTeamMatchmaking: (allowBots: boolean) => Promise<void>;
   cancelTeamMatchmaking: () => Promise<void>;
   updateBaseScore: (baseScore: BaseScore) => Promise<void>;
   updateBotDifficulty: (difficulty: BotDifficulty) => Promise<void>;
@@ -358,17 +358,20 @@ export function useRoom(): RoomController {
     });
   }, [replaceProjection, runExclusive]);
 
-  const startTeamMatchmaking = useCallback(async () => {
-    const current = roomRef.current;
-    if (current === null) return;
-    await runExclusive(null, async () => {
-      try {
-        replaceProjection(await roomApi.startTeamMatchmaking(current.roomCode));
-      } catch (cause) {
-        setError(errorLabel(cause instanceof ApiError ? cause.code : "UNKNOWN_ERROR"));
-      }
-    });
-  }, [replaceProjection, runExclusive]);
+  const startTeamMatchmaking = useCallback(
+    async (allowBots: boolean) => {
+      const current = roomRef.current;
+      if (current === null) return;
+      await runExclusive(null, async () => {
+        try {
+          replaceProjection(await roomApi.startTeamMatchmaking(current.roomCode, allowBots));
+        } catch (cause) {
+          setError(errorLabel(cause instanceof ApiError ? cause.code : "UNKNOWN_ERROR"));
+        }
+      });
+    },
+    [replaceProjection, runExclusive],
+  );
 
   const cancelTeamMatchmaking = useCallback(async () => {
     const current = roomRef.current;

@@ -13,16 +13,22 @@ import type {
   Tile,
 } from "@huanghuang/protocol";
 import tableBackground from "../../assets/background.optimized.jpg";
-import { competitiveApi, getStoredMatchmakingAllowBots } from "../../api/http";
+import {
+  competitiveApi,
+  getStoredMatchmakingAllowBots,
+  setStoredMatchmakingAllowBots,
+} from "../../api/http";
 import { API_BASE } from "../../config";
 import { ActionDock } from "../../components/ActionDock";
+import { PlayerProfileModal } from "../../components/PlayerProfileModal";
+import { FriendsPanel } from "../../components/FriendsPanel";
 import { MahjongTile } from "../../components/MahjongTile";
 import { MahjongEffectOverlay } from "../../components/MahjongEffectOverlay";
-import { PlayerProfileModal } from "../../components/PlayerProfileModal";
 import { RankBadge } from "../../components/RankBadge";
 import { RoundSettlementModal } from "../../components/RoundSettlementModal";
 import { TingHintCard } from "../../components/TingHintCard";
 import { useRoom, type ConnectionStatus } from "../../hooks/useRoom";
+import { useSocial } from "../../hooks/useSocial";
 import {
   hasValidTileSelection,
   primaryActionButtons,
@@ -82,6 +88,7 @@ const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
 
 /** Unified player snapshot feeding PlayerProfileModal from either a lobby or in-round seat. */
 type ProfileTarget = {
+  playerId: string | null;
   nickname: string;
   avatarUrl: string | null;
   score: number;
@@ -130,16 +137,20 @@ function LobbySeat({
   busy,
   onToggleReady,
   canManageBots,
+  showReadyAction,
   onRemoveBot,
   onShowProfile,
+  onInviteEmpty,
 }: {
   seat: LobbySeatProjection;
   positionClass: (typeof POSITION_CLASS)[number];
   busy: boolean;
   onToggleReady: () => void;
   canManageBots: boolean;
+  showReadyAction: boolean;
   onRemoveBot: () => void;
   onShowProfile: () => void;
+  onInviteEmpty?: () => void;
 }) {
   const displayName = seat.occupied ? (seat.nickname ?? "玩家") : "等待加入";
   const status = !seat.occupied
@@ -164,7 +175,7 @@ function LobbySeat({
           nickname={seat.occupied ? seat.nickname : "空"}
           isBot={seat.controller === "BOT"}
           variant="lobby"
-          onClick={seat.occupied ? onShowProfile : undefined}
+          onClick={seat.occupied ? onShowProfile : onInviteEmpty}
         />
         <View className="lobby-seat__copy">
           <View className="lobby-seat__name-row">
@@ -203,7 +214,7 @@ function LobbySeat({
           />
         ) : null}
       </View>
-      {seat.isSelf ? (
+      {seat.isSelf && showReadyAction ? (
         <View className="lobby-seat__state-row">
           <Button
             className={`lobby-ready-button${seat.ready ? " is-cancel" : ""}`}
@@ -361,12 +372,15 @@ function phaseLabel(room: RoomProjection): string {
 
 export default function RoomPage() {
   const roomCtrl = useRoom();
+  const social = useSocial(true);
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [inviteStatus, setInviteStatus] = useState("复制房号");
   const [gameAudioEnabled, setGameAudioEnabled] = useState(getStoredGameAudioEnabled);
   const [quickMessageOpen, setQuickMessageOpen] = useState(false);
   const [roundStartCountdown, setRoundStartCountdown] = useState<number | null>(null);
   const [profileTarget, setProfileTarget] = useState<ProfileTarget | null>(null);
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  const [allowBots, setAllowBots] = useState(getStoredMatchmakingAllowBots);
   const previousStageRef = useRef<RoomStage | null>(null);
   const previousRoomIdRef = useRef<string | null>(null);
   const room = roomCtrl.room;
@@ -449,8 +463,10 @@ export default function RoomPage() {
   const teamMatchActive = teamQueued || teamMatched;
   const teamCanStart =
     room?.mode === "TEAM_MATCH" &&
-    lobbyOccupiedCount >= 2 &&
-    room.lobbySeats.filter((candidate) => candidate.occupied).every((candidate) => candidate.ready);
+    lobbyOccupiedCount >= 1 &&
+    room.lobbySeats
+      .filter((candidate) => candidate.occupied && !candidate.isOwner)
+      .every((candidate) => candidate.ready);
   const [teamMatchNow, setTeamMatchNow] = useState(Date.now());
   const teamWaitSeconds =
     room?.teamMatchmaking?.status === "QUEUED"
@@ -806,6 +822,16 @@ export default function RoomPage() {
               >
                 {inviteStatus}
               </Button>
+              {room.mode === "TEAM_MATCH" ? (
+                <Button
+                  className="lobby-toolbar__button lobby-toolbar__button--invite"
+                  hoverClass="is-pressed"
+                  disabled={teamMatchActive}
+                  onClick={() => setFriendsOpen(true)}
+                >
+                  邀请好友
+                </Button>
+              ) : null}
               <Button
                 className="lobby-toolbar__button lobby-toolbar__button--share"
                 hoverClass="is-pressed"
@@ -897,6 +923,27 @@ export default function RoomPage() {
         {room.stage === "WAITING" ? (
           <View className="lobby-stage">
             <View className="lobby-stage__felt-ring" />
+            {room.mode === "TEAM_MATCH" && room.isOwner && !teamMatchActive ? (
+              <View
+                className={`lobby-match-config${allowBots ? " is-on" : ""}`}
+                hoverClass="is-pressed"
+                onClick={() => {
+                  const next = !allowBots;
+                  setAllowBots(next);
+                  setStoredMatchmakingAllowBots(next);
+                }}
+              >
+                <View className="lobby-match-config__check">
+                  {allowBots ? <Text>✓</Text> : null}
+                </View>
+                <View className="lobby-match-config__copy">
+                  <Text className="lobby-match-config__title">机器人补位</Text>
+                  <Text className="lobby-match-config__hint">
+                    {allowBots ? "人数不足时按段位补齐" : "关闭后只匹配真人"}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
             {room.lobbySeats.map((seat) => {
               const pos = POSITION_CLASS[relativePosition(seat.seat, selfSeat)] ?? "pos-self";
               return (
@@ -907,10 +954,12 @@ export default function RoomPage() {
                   busy={roomCtrl.busy || teamMatchActive}
                   onToggleReady={() => void roomCtrl.ready()}
                   canManageBots={room.isOwner}
+                  showReadyAction={room.mode !== "TEAM_MATCH" || !seat.isOwner}
                   onRemoveBot={() => void roomCtrl.removeBot(seat.seat)}
                   onShowProfile={() => {
                     if (!seat.occupied) return;
                     setProfileTarget({
+                      playerId: seat.playerId ?? null,
                       nickname: seat.nickname ?? "玩家",
                       avatarUrl: seat.avatarUrl,
                       score: seat.score,
@@ -921,6 +970,11 @@ export default function RoomPage() {
                       competitiveProfile: seat.competitiveProfile,
                     });
                   }}
+                  onInviteEmpty={
+                    room.mode === "TEAM_MATCH" && !teamMatchActive
+                      ? () => setFriendsOpen(true)
+                      : undefined
+                  }
                 />
               );
             })}
@@ -943,11 +997,11 @@ export default function RoomPage() {
                     ? "正在进入竞技牌桌"
                     : teamQueued
                       ? "正在为整队寻找合适牌友，队伍不会被拆分"
-                      : lobbyOccupiedCount < 2
-                        ? "至少邀请 1 位好友后可开始匹配"
-                        : room.isOwner
-                          ? "全员准备后，由你开始匹配"
-                          : "全员准备后，等待房主开始匹配"
+                      : room.isOwner
+                        ? lobbyOccupiedCount === 1
+                          ? "可单人开始，也可邀请好友一起排位"
+                          : "好友准备后，由你开始匹配"
+                        : "准备后，等待房主开始匹配"
                   : lobbyOccupiedCount < 4
                     ? "邀请好友，或由房主添加机器人"
                     : "所有真人准备后自动开始"}
@@ -975,13 +1029,9 @@ export default function RoomPage() {
                       className="lobby-team-button"
                       hoverClass="is-pressed"
                       disabled={roomCtrl.busy || !teamCanStart}
-                      onClick={() => void roomCtrl.startTeamMatchmaking()}
+                      onClick={() => void roomCtrl.startTeamMatchmaking(allowBots)}
                     >
-                      {lobbyOccupiedCount < 2
-                        ? "至少需要 2 人"
-                        : teamCanStart
-                          ? "开始匹配"
-                          : "等待全员准备"}
+                      {teamCanStart ? "开始匹配" : "等待好友准备"}
                     </Button>
                   ) : (
                     <Text className="lobby-team-waiting">等待房主开始匹配</Text>
@@ -1041,7 +1091,7 @@ export default function RoomPage() {
               <Text className="lobby-invite-tip__dot">·</Text>
               <Text>
                 {room.mode === "TEAM_MATCH"
-                  ? "好友在首页输入房号即可加入组队"
+                  ? "从好友列表发出游戏内邀请，或输入房号加入"
                   : "好友在首页输入房号即可加入"}
               </Text>
             </View>
@@ -1075,6 +1125,7 @@ export default function RoomPage() {
                           variant="player"
                           onClick={() =>
                             setProfileTarget({
+                              playerId: player.playerId ?? null,
                               nickname: player.nickname,
                               avatarUrl: player.avatarUrl,
                               score: player.score,
@@ -1091,6 +1142,7 @@ export default function RoomPage() {
                             className="player-station__name is-clickable"
                             onClick={() =>
                               setProfileTarget({
+                                playerId: player.playerId ?? null,
                                 nickname: player.nickname,
                                 avatarUrl: player.avatarUrl,
                                 score: player.score,
@@ -1386,6 +1438,7 @@ export default function RoomPage() {
       {roundStartCountdown !== null ? <RoundStartOverlay countdown={roundStartCountdown} /> : null}
       {profileTarget !== null ? (
         <PlayerProfileModal
+          playerId={profileTarget.playerId}
           nickname={profileTarget.nickname}
           avatarUrl={profileTarget.avatarUrl}
           score={profileTarget.score}
@@ -1394,7 +1447,60 @@ export default function RoomPage() {
           isSelf={profileTarget.isSelf}
           isOwner={profileTarget.isOwner}
           competitiveProfile={profileTarget.competitiveProfile}
+          friendActionLabel={(() => {
+            if (
+              profileTarget.isSelf ||
+              profileTarget.playerId === null ||
+              profileTarget.controller === "BOT"
+            ) {
+              return null;
+            }
+            if (
+              social.snapshot?.friends.some(
+                (friend) => friend.playerId === profileTarget.playerId,
+              ) === true
+            ) {
+              return "已是好友";
+            }
+            const pending = social.snapshot?.friendRequests.find(
+              (request) => request.player.playerId === profileTarget.playerId,
+            );
+            if (pending?.direction === "INCOMING") return "同意好友申请";
+            if (pending?.direction === "OUTGOING") return "已发送申请";
+            return "添加好友";
+          })()}
+          friendActionDisabled={
+            social.busy ||
+            social.snapshot?.friends.some(
+              (friend) => friend.playerId === profileTarget.playerId,
+            ) === true ||
+            social.snapshot?.friendRequests.some(
+              (request) =>
+                request.player.playerId === profileTarget.playerId &&
+                request.direction === "OUTGOING",
+            ) === true
+          }
+          onFriendAction={() => {
+            if (profileTarget.playerId === null) return;
+            const incoming = social.snapshot?.friendRequests.find(
+              (request) =>
+                request.player.playerId === profileTarget.playerId &&
+                request.direction === "INCOMING",
+            );
+            if (incoming !== undefined) {
+              void social.acceptRequest(incoming.id);
+              return;
+            }
+            void social.sendRequest(profileTarget.playerId);
+          }}
           onClose={() => setProfileTarget(null)}
+        />
+      ) : null}
+      {friendsOpen && room.mode === "TEAM_MATCH" && room.stage === "WAITING" ? (
+        <FriendsPanel
+          social={social}
+          roomCode={room.roomCode}
+          onClose={() => setFriendsOpen(false)}
         />
       ) : null}
     </View>

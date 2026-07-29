@@ -14,16 +14,16 @@ import tableBackground from "../../assets/background.optimized.jpg";
 import {
   ApiError,
   competitiveApi,
-  getStoredMatchmakingAllowBots,
   roomApi,
-  setStoredMatchmakingAllowBots,
   versionApi,
   type MatchmakingResponse,
   type VersionInfo,
 } from "../../api/http";
 import { API_BASE, APP_BUILT_AT, APP_VERSION } from "../../config";
 import { PlayerProfileModal } from "../../components/PlayerProfileModal";
+import { FriendsPanel } from "../../components/FriendsPanel";
 import { RankBadge } from "../../components/RankBadge";
+import { useSocial } from "../../hooks/useSocial";
 import {
   clearStoredSessionToken,
   type Identity,
@@ -278,8 +278,6 @@ export default function IndexPage() {
   const [matchmakingNow, setMatchmakingNow] = useState(Date.now());
   const [matchmakingBusy, setMatchmakingBusy] = useState(false);
   const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
-  const [botsEnabled, setBotsEnabled] = useState(false);
-  const [allowBots, setAllowBots] = useState(getStoredMatchmakingAllowBots());
   const pageVisibleRef = useRef(true);
   const matchedRoomOpeningRef = useRef(false);
   const openedMatchRoomKeyRef = useRef<string | null>(null);
@@ -289,6 +287,8 @@ export default function IndexPage() {
   const [backendVersion, setBackendVersion] = useState<VersionInfo | null>(null);
   const [backendVersionError, setBackendVersionError] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  const social = useSocial(identityState === "loggedIn" && identity !== null);
 
   useEffect(() => {
     // Prefetched once on page load (mirrors the competitiveApi.profile()
@@ -316,7 +316,6 @@ export default function IndexPage() {
   function applyMatchmakingResponse(response: MatchmakingResponse): void {
     setMatchmaking(response.state);
     setMatchmakingNow(Date.now());
-    if (response.botsEnabled) setBotsEnabled(true);
     const navigationKey = matchmakingRoomNavigationKey(response);
     if (navigationKey === null || response.room === null) return;
     if (response.state.status === "MATCHED") {
@@ -483,19 +482,6 @@ export default function IndexPage() {
     }
   }
 
-  async function startMatchmaking() {
-    if (matchmakingBusy) return;
-    setMatchmakingBusy(true);
-    setMatchmakingError(null);
-    try {
-      applyMatchmakingResponse(await competitiveApi.queue({ allowBots: allowBots && botsEnabled }));
-    } catch (cause) {
-      setMatchmakingError(describeSubmitError(cause));
-    } finally {
-      setMatchmakingBusy(false);
-    }
-  }
-
   async function startTeamRanked() {
     if (identity === null || matchmakingBusy) return;
     setMatchmakingBusy(true);
@@ -522,14 +508,6 @@ export default function IndexPage() {
     } finally {
       setMatchmakingBusy(false);
     }
-  }
-
-  function toggleAllowBots() {
-    setAllowBots((previous) => {
-      const next = !previous;
-      setStoredMatchmakingAllowBots(next);
-      return next;
-    });
   }
 
   function logout() {
@@ -624,6 +602,17 @@ export default function IndexPage() {
 
   const queuedWaitSeconds =
     matchmaking.status === "QUEUED" ? matchmakingWaitSeconds(matchmaking, matchmakingNow) : 0;
+  const pendingSocialCount =
+    (social.snapshot?.friendRequests.filter((request) => request.direction === "INCOMING").length ??
+      0) + (social.snapshot?.roomInvites.length ?? 0);
+  const latestRoomInvite = social.snapshot?.roomInvites[0] ?? null;
+
+  async function acceptRoomInvite(inviteId: string) {
+    const invitedRoom = await social.acceptInvite(inviteId);
+    if (invitedRoom === null) return;
+    Taro.setStorageSync("huanghuang_open_room", invitedRoom);
+    await Taro.navigateTo({ url: "/pages/room/index" });
+  }
 
   return (
     <View className="mp-home">
@@ -648,11 +637,31 @@ export default function IndexPage() {
           </View>
           <View className="mp-account__text">
             <Text className="mp-account__nickname">{identity.nickname}</Text>
+            <Text
+              className="mp-account__player-id"
+              onClick={(event) => {
+                event.stopPropagation();
+                void Taro.setClipboardData({ data: identity.playerId });
+              }}
+            >
+              ID {identity.playerId}
+            </Text>
           </View>
           {competitiveProfile !== null ? (
             <RankBadge rank={competitiveProfile.rankDisplay} size="compact" />
           ) : null}
         </View>
+        <Button
+          hoverClass="is-pressed"
+          className="mp-account__friends"
+          ariaLabel="好友"
+          onClick={() => setFriendsOpen(true)}
+        >
+          好友
+          {pendingSocialCount > 0 ? (
+            <Text className="mp-account__friends-badge">{pendingSocialCount}</Text>
+          ) : null}
+        </Button>
         <Button
           hoverClass="is-pressed"
           className="mp-account__logout"
@@ -667,69 +676,77 @@ export default function IndexPage() {
         <View className="mp-home__stage">
           <HomeBrand />
           <View className="mp-home__menu">
-            {matchmaking.status === "MATCHED" ? (
+            <Button
+              hoverClass="is-pressed"
+              className="mp-home-rank"
+              disabled={
+                busy ||
+                matchmakingBusy ||
+                (matchmaking.status !== "MATCHED" && competitiveProfile === null)
+              }
+              onClick={() =>
+                void (matchmaking.status === "MATCHED"
+                  ? returnToCompetitiveMatch()
+                  : startTeamRanked())
+              }
+            >
+              <View className="mp-home-rank__tile">
+                <Text>{matchmaking.status === "MATCHED" ? "归" : "排"}</Text>
+              </View>
+              <View className="mp-home-rank__copy">
+                <Text className="mp-home-rank__eyebrow">
+                  {matchmaking.status === "MATCHED" ? "牌局进行中" : "竞技牌桌"}
+                </Text>
+                <Text className="mp-home-rank__title">
+                  {matchmakingBusy
+                    ? matchmaking.status === "MATCHED"
+                      ? "正在返回…"
+                      : "正在开桌…"
+                    : matchmaking.status === "MATCHED"
+                      ? "返回排位对局"
+                      : "排位赛"}
+                </Text>
+                <Text className="mp-home-rank__hint">
+                  {matchmaking.status === "MATCHED"
+                    ? "继续未完成的竞技牌局"
+                    : "单人可开局，也可邀请好友组队"}
+                </Text>
+              </View>
+              <Text className="mp-home-rank__enter">入场</Text>
+            </Button>
+            <View className="mp-home__secondary-menu">
               <Button
                 hoverClass="is-pressed"
-                className="mp-btn mp-btn--primary"
-                disabled={busy || matchmakingBusy}
-                onClick={() => void returnToCompetitiveMatch()}
+                className="mp-home-mode mp-home-mode--friend"
+                disabled={busy}
+                onClick={() => setMode("CREATE")}
               >
-                {matchmakingBusy ? "正在处理…" : "返回排位对局"}
+                <Text className="mp-home-mode__eyebrow">私人牌桌</Text>
+                <Text className="mp-home-mode__title">好友房</Text>
+                <Text className="mp-home-mode__hint">创建房间，等牌友入座</Text>
               </Button>
-            ) : (
-              <>
+              <View className="mp-home__secondary-stack">
                 <Button
                   hoverClass="is-pressed"
-                  className="mp-btn mp-btn--primary"
-                  disabled={busy || matchmakingBusy || competitiveProfile === null}
-                  onClick={() => void startMatchmaking()}
+                  className="mp-home-mode mp-home-mode--bot"
+                  disabled={busy || matchmakingBusy}
+                  onClick={() => setMode("BOT")}
                 >
-                  {matchmakingBusy ? "正在处理…" : "单人排位"}
+                  <Text className="mp-home-mode__title">人机练习</Text>
+                  <Text className="mp-home-mode__hint">随时开一桌</Text>
                 </Button>
                 <Button
                   hoverClass="is-pressed"
-                  className="mp-btn mp-btn--rank-team"
-                  disabled={busy || matchmakingBusy || competitiveProfile === null}
-                  onClick={() => void startTeamRanked()}
+                  className="mp-home-mode mp-home-mode--join"
+                  disabled={busy}
+                  onClick={() => setMode("JOIN")}
                 >
-                  组队排位
+                  <Text className="mp-home-mode__title">输入房号</Text>
+                  <Text className="mp-home-mode__hint">加入好友牌桌</Text>
                 </Button>
-              </>
-            )}
-            <Button
-              hoverClass="is-pressed"
-              className="mp-btn"
-              disabled={busy || matchmakingBusy}
-              onClick={() => setMode("BOT")}
-            >
-              人机对战
-            </Button>
-            <Button
-              hoverClass="is-pressed"
-              className="mp-btn"
-              disabled={busy}
-              onClick={() => setMode("CREATE")}
-            >
-              创建房间
-            </Button>
-            <Button
-              hoverClass="is-pressed"
-              className="mp-btn"
-              disabled={busy}
-              onClick={() => setMode("JOIN")}
-            >
-              加入房间
-            </Button>
-          </View>
-          {botsEnabled && matchmaking.status !== "MATCHED" ? (
-            <View
-              className={`mp-home__toggle${allowBots ? " is-on" : ""}`}
-              onClick={() => toggleAllowBots()}
-            >
-              <View className="mp-home__toggle-box">{allowBots ? <Text>✓</Text> : null}</View>
-              <Text className="mp-home__toggle-label">允许机器人（体验期秒开）</Text>
+              </View>
             </View>
-          ) : null}
+          </View>
           {matchmakingError !== null ? (
             <Text className="mp-matchmaking__error">{matchmakingError}</Text>
           ) : null}
@@ -859,11 +876,7 @@ export default function IndexPage() {
             {matchmaking.disconnectedAt !== null ? (
               <Text className="mp-matchmaking__notice">连接暂时中断，正在保留排队位置</Text>
             ) : (
-              <Text className="mp-matchmaking__notice">
-                {allowBots && botsEnabled
-                  ? "正在等待其他玩家，5 秒后用机器人补位开局"
-                  : "仅匹配四名真人玩家"}
-              </Text>
+              <Text className="mp-matchmaking__notice">正在匹配符合当前段位范围的玩家</Text>
             )}
             {matchmakingError !== null ? (
               <Text className="mp-matchmaking__error">{matchmakingError}</Text>
@@ -893,6 +906,7 @@ export default function IndexPage() {
         <PlayerProfileModal
           nickname={identity.nickname}
           avatarUrl={identity.avatarUrl}
+          playerId={identity.playerId}
           score={0}
           connected
           isSelf
@@ -900,6 +914,31 @@ export default function IndexPage() {
           onClose={() => setProfileOpen(false)}
         />
       ) : null}
+      {latestRoomInvite !== null && !friendsOpen ? (
+        <View className="mp-room-invite">
+          <View>
+            <Text className="mp-room-invite__eyebrow">排位房邀请</Text>
+            <Text className="mp-room-invite__copy">
+              {latestRoomInvite.inviter.nickname} 邀请你加入 {latestRoomInvite.roomCode}
+            </Text>
+          </View>
+          <Button
+            className="mp-room-invite__button"
+            disabled={social.busy}
+            onClick={() => void acceptRoomInvite(latestRoomInvite.id)}
+          >
+            加入
+          </Button>
+          <Button
+            className="mp-room-invite__button is-quiet"
+            disabled={social.busy}
+            onClick={() => void social.declineInvite(latestRoomInvite.id)}
+          >
+            忽略
+          </Button>
+        </View>
+      ) : null}
+      {friendsOpen ? <FriendsPanel social={social} onClose={() => setFriendsOpen(false)} /> : null}
     </View>
   );
 }

@@ -706,7 +706,32 @@ once 预览 is confirmed clean.
 
 ### Competitive matchmaking presentation
 
-- The signed-in home shows the server-projected rank and places `快速开始` before practice/friend actions.
+- The signed-in home shows the server-projected rank and one primary `排位赛`
+  action. It always creates a `TEAM_MATCH` waiting room: the owner may start
+  alone, invite in-game friends, or wait for 2–4 members. Do not restore
+  separate single/team ranked buttons.
+- The home keeps the existing Mahjong-tile logo and table artwork, but the
+  ranked action owns the visual hierarchy as a jade match ticket. Secondary
+  actions use an asymmetric cluster: the friend-room action gets the larger
+  paper surface while practice/join stack in a narrower column. Do not restore
+  equal three-column cards or full-width button stacks.
+- The authenticated account strip displays the stable four-digit player ID and
+  a friend entry with incoming-request/invite count. ID copy is a direct
+  `Taro.setClipboardData` action, not a WeChat subscription/share flow.
+- `FriendsPanel` is the shared management/invite surface. Management mode
+  supports exact ID search, incoming/outgoing requests, online status and
+  confirmed deletion; room mode enables invite only for online friends.
+- The TEAM_MATCH room owns the `允许机器人补位` checkbox and persists its last
+  local choice. Place it as a compact table-edge rule, outside the centered
+  room-status card, so it cannot overlap the start/cancel action. Unchecked
+  sends `{ allowBots: false }`; checked sends `true`. Never put this control
+  back on the home page.
+- Waiting-room utility buttons share one fixed visual size and one neutral
+  cream-on-jade surface. Danger actions may use a muted terracotta foreground
+  and border, but must keep the same dimensions and visual weight.
+- `FriendsPanel` should feel playful without becoming noisy: use a Mahjong-tile
+  header mark, warm paper texture, squircle avatars, composed loading/empty
+  states, and one jade interaction accent.
 - Queue polling is serial, never overlapping. It runs quickly while `QUEUED`,
   continues at the slower reconciliation cadence while `MATCHED`, and stops
   on unmount, cancel, or `IDLE`; delayed responses must not overwrite a newer
@@ -725,7 +750,7 @@ once 预览 is confirmed clean.
 - The matching modal shows wait time and the same 10/20/40-second search-window labels owned by product requirements. It does not offer bot fallback or configuration.
 - A MATCH projection hides room code sharing, settings, chat and dissolve controls. Exiting PLAYING requires explicit confirmation that trustee play and rank settlement continue.
 - Settlement uses `winnerMultiplier`, `payerEffectiveMultiplier` and `competitiveSettlement.self`; it must not derive rank from personal multiplier, table score or `roundDelta`.
-- `PlayerProfileModal` labels room score as `本局牌桌分`, shows public rank/five MATCH achievement totals (放赖 displayed first as the core mechanic, then 明杠/碰亮牌/补杠/暗杠), and represents a `null` competitive profile as no permanent record rather than five zero counters.
+- `PlayerProfileModal` labels room score as `本局牌桌分`, shows public rank/five MATCH achievement totals (放赖 displayed first as the core mechanic, then 明杠/碰亮牌/补杠/暗杠), and represents a `null` competitive profile as no permanent record rather than five zero counters. Human profiles also show/copy `playerId` and expose the current friend action; bots have neither.
 - `normalizeRoomProjection` upgrades legacy projections once at the boundary with null competitive fields and authoritative effective-payment fallback. Components consume strict schema 9 values.
 
 ### Pattern: ranked-match stuck-point recovery

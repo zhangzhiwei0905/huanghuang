@@ -6,7 +6,7 @@ const ERROR_LABELS: Record<string, string> = {
   NOT_A_MEMBER: "你不在这个牌局中",
   NOT_CURRENT_PLAYER: "还没轮到你",
   OWNER_ONLY: "只有房主可以执行这个操作",
-  TEAM_SIZE_INVALID: "组队排位需要 2–4 名玩家",
+  TEAM_SIZE_INVALID: "排位房需要 1-4 名玩家",
   NOT_ALL_READY: "请等待所有队员准备完成",
   MATCHMAKING_STATE_CONFLICT: "有队员已在其他匹配或竞技对局中",
   TEAM_MATCHMAKING_FAILED: "组队匹配启动失败，请稍后重试",
@@ -19,6 +19,16 @@ const ERROR_LABELS: Record<string, string> = {
   WALL_EMPTY: "牌墙已空",
   WILDCARD_CANNOT_BE_DISCARDED: "赖子只能放赖，不能直接打出",
   WRONG_PHASE: "当前阶段不能执行这个操作",
+  PLAYER_NOT_FOUND: "没有找到这个玩家 ID",
+  PLAYER_ID_CAPACITY_EXHAUSTED: "玩家 ID 已分配完，请联系管理员",
+  SELF_FRIEND_REQUEST: "不能添加自己为好友",
+  ALREADY_FRIENDS: "你们已经是好友",
+  FRIEND_REQUEST_PENDING: "好友申请已经发送",
+  INCOMING_FRIEND_REQUEST_PENDING: "对方已申请添加你，请在好友申请中处理",
+  FRIEND_REQUEST_NOT_FOUND: "好友申请不存在或已处理",
+  NOT_FRIENDS: "对方已不在你的好友列表",
+  FRIEND_OFFLINE: "好友当前不在线",
+  ROOM_INVITE_NOT_AVAILABLE: "房间邀请已失效",
 };
 
 export function errorLabel(code: string): string {

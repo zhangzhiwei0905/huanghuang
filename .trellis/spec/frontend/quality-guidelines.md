@@ -6,6 +6,8 @@
 pnpm lint
 pnpm --filter @huanghuang/web typecheck
 pnpm --filter @huanghuang/web build
+pnpm --filter @huanghuang/miniprogram typecheck
+pnpm --filter @huanghuang/miniprogram build:weapp
 pnpm test
 ```
 
@@ -17,6 +19,9 @@ Root `pnpm test` runs the monorepo vitest suite (engine, server, web pure module
 - Use **physical tile IDs** as React keys for hands, melds, and discards.
 - Keep the **discreet** theme fully functional before adding premium presentation. Both themes share one component tree; only CSS tokens / artwork change via `data-theme`.
 - Verify phone landscape (e.g. 844×390), desktop, keyboard focus, and `prefers-reduced-motion`.
+- For mini-program lobby/social changes, verify the landscape safe area,
+  4-digit numeric input, loading/empty/error states, online invite disabling,
+  delete confirmation and reduced-motion fallback.
 - Extract legal-action presentation into pure modules:
   - `actionButtons.ts` — dock button models / image map
   - `actionEligibility.ts` — hand highlights, concealed/added kong payloads

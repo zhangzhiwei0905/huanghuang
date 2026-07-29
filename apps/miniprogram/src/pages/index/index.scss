@@ -790,3 +790,323 @@
 .mp-about__close {
   margin-top: 0.6vmin !important;
 }
+
+/* Home actions read as a small Mahjong lobby, not a stack of generic cards:
+   one jade match ticket with an asymmetric paper-and-ink secondary cluster. */
+.mp-home__stage {
+  gap: 1.15vmin;
+}
+
+.mp-home__logo {
+  transform: scale(0.7);
+  margin: -2.8vmin 0;
+}
+
+.mp-home__tagline {
+  padding: 0.4vmin 1.7vmin;
+  font-size: clamp(10px, 1.9vmin, 13px);
+}
+
+.mp-home__menu {
+  width: min(67vw, 590px);
+  grid-template-columns: 1fr;
+  gap: 1.05vmin;
+  margin-top: 0.3vmin;
+}
+
+.mp-home-rank,
+.mp-home-mode {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 !important;
+  border: 0 !important;
+  line-height: 1 !important;
+  text-align: left;
+  transition:
+    transform 180ms ease,
+    filter 180ms ease;
+}
+
+.mp-home-rank::after,
+.mp-home-mode::after {
+  border: 0;
+}
+
+.mp-home-rank.is-pressed,
+.mp-home-mode.is-pressed {
+  transform: translateY(2px) scale(0.985);
+  filter: brightness(0.96);
+}
+
+.mp-home-rank[disabled],
+.mp-home-mode[disabled] {
+  opacity: 0.52;
+}
+
+.mp-home-rank {
+  min-height: max(9.8vmin, 54px);
+  display: flex !important;
+  align-items: center;
+  gap: 1.5vmin;
+  overflow: visible;
+  border-radius: 1.25vmin !important;
+  padding: 1.25vmin 2vmin 1.25vmin 1.35vmin !important;
+  background: #245c43 !important;
+  box-shadow:
+    0 0.72vmin 0 #173e2d,
+    0 1.3vmin 2.6vmin rgb(19 55 40 / 22%);
+  color: #fff9e9 !important;
+  animation: home-rise 380ms cubic-bezier(0.34, 1.25, 0.64, 1) 150ms backwards;
+}
+
+.mp-home-rank::before {
+  position: absolute;
+  top: 1vmin;
+  right: 5.4vmin;
+  bottom: 1vmin;
+  width: 1px;
+  background: rgb(255 249 233 / 18%);
+  content: "";
+}
+
+.mp-home-rank__tile {
+  width: max(6.5vmin, 36px);
+  height: max(7.5vmin, 42px);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d7d0b7;
+  border-radius: 0.8vmin;
+  background: #f7f0dc;
+  box-shadow: 0 0.45vmin 0 #b7aa87;
+  color: #286047;
+  font-size: clamp(19px, 4vmin, 27px);
+  font-weight: 800;
+}
+
+.mp-home-rank__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.mp-home-rank__eyebrow,
+.mp-home-rank__title,
+.mp-home-rank__hint,
+.mp-home-mode__eyebrow,
+.mp-home-mode__title,
+.mp-home-mode__hint {
+  display: block;
+}
+
+.mp-home-rank__eyebrow {
+  margin-bottom: 0.15vmin;
+  color: #d8c38e;
+  font-size: clamp(8px, 1.35vmin, 10px);
+  font-weight: 650;
+  letter-spacing: 0.16em;
+}
+
+.mp-home-rank__title {
+  color: #fff9e9;
+  font-size: clamp(18px, 3.6vmin, 25px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.mp-home-rank__hint {
+  margin-top: 0.35vmin;
+  color: rgb(255 249 233 / 68%);
+  font-size: clamp(9px, 1.55vmin, 11px);
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.mp-home-rank__enter {
+  flex: 0 0 auto;
+  color: #e5d29e;
+  font-size: clamp(9px, 1.55vmin, 11px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.mp-home__secondary-menu {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 0.9vmin;
+}
+
+.mp-home__secondary-stack {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0.8vmin;
+}
+
+.mp-home-mode {
+  min-height: max(5.2vmin, 38px);
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  border-radius: 0.8vmin !important;
+  padding: 0.9vmin 1.4vmin !important;
+  animation: home-rise 360ms cubic-bezier(0.34, 1.22, 0.64, 1) backwards;
+}
+
+.mp-home-mode--friend {
+  min-height: max(11.2vmin, 82px);
+  border-left: 0.7vmin solid #b3894f !important;
+  background: #f4edda !important;
+  box-shadow: 0 0.55vmin 0 #c5b58c;
+  color: #324e40 !important;
+  animation-delay: 210ms;
+}
+
+.mp-home-mode--bot,
+.mp-home-mode--join {
+  background: rgb(225 232 221 / 94%) !important;
+  box-shadow: 0 0.45vmin 0 #aebfad;
+  color: #355344 !important;
+}
+
+.mp-home-mode--bot {
+  animation-delay: 260ms;
+}
+
+.mp-home-mode--join {
+  background: rgb(235 231 216 / 96%) !important;
+  box-shadow: 0 0.45vmin 0 #bdb39a;
+  animation-delay: 310ms;
+}
+
+.mp-home-mode__eyebrow {
+  margin-bottom: 0.5vmin;
+  color: #9a743f;
+  font-size: clamp(8px, 1.3vmin, 10px);
+  font-weight: 650;
+  letter-spacing: 0.14em;
+}
+
+.mp-home-mode__title {
+  font-size: clamp(12px, 2.25vmin, 16px);
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.mp-home-mode--friend .mp-home-mode__title {
+  font-size: clamp(17px, 3.2vmin, 22px);
+  letter-spacing: -0.02em;
+}
+
+.mp-home-mode__hint {
+  margin-top: 0.35vmin;
+  color: rgb(45 72 58 / 62%);
+  font-size: clamp(8px, 1.35vmin, 10px);
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.mp-account__player-id {
+  display: block;
+  margin-top: 0.15vmin;
+  color: rgb(37 42 38 / 62%);
+  font-size: clamp(9px, 1.55vmin, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-account__friends {
+  position: relative;
+  min-width: 9vmin;
+  margin: 0 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 1vmin 1.8vmin;
+  background: #e6eee8;
+  color: #2f6a4c;
+  font-size: clamp(10px, 1.8vmin, 12px);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.mp-account__friends::after {
+  border: 0;
+}
+
+.mp-account__friends-badge {
+  position: absolute;
+  top: -0.8vmin;
+  right: -0.5vmin;
+  min-width: 2.7vmin;
+  height: 2.7vmin;
+  box-sizing: border-box;
+  border-radius: 999px;
+  padding: 0 0.6vmin;
+  background: #a0443b;
+  color: #fff;
+  font-size: 1.5vmin;
+  line-height: 2.7vmin;
+}
+
+.mp-room-invite {
+  position: fixed;
+  z-index: 12;
+  right: calc(2vmin + env(safe-area-inset-right));
+  bottom: calc(2vmin + env(safe-area-inset-bottom));
+  max-width: min(50vw, 500px);
+  display: flex;
+  align-items: center;
+  gap: 1vmin;
+  box-sizing: border-box;
+  border: 1px solid #c9d8cc;
+  border-radius: 1.2vmin;
+  padding: 1.3vmin;
+  background: rgb(250 249 241 / 97%);
+  box-shadow: 0 0.8vmin 2.5vmin rgb(0 0 0 / 18%);
+}
+
+.mp-room-invite > view {
+  min-width: 0;
+  flex: 1;
+}
+
+.mp-room-invite__eyebrow,
+.mp-room-invite__copy {
+  display: block;
+}
+
+.mp-room-invite__eyebrow {
+  color: #6a756e;
+  font-size: 1.5vmin;
+}
+
+.mp-room-invite__copy {
+  overflow: hidden;
+  margin-top: 0.2vmin;
+  font-size: clamp(10px, 1.8vmin, 13px);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-room-invite__button {
+  min-width: 8vmin;
+  margin: 0;
+  border: 0;
+  border-radius: 0.8vmin;
+  padding: 1.1vmin 1.4vmin;
+  background: #2f6a4c;
+  color: #fff;
+  font-size: 1.7vmin;
+  line-height: 1;
+}
+
+.mp-room-invite__button::after {
+  border: 0;
+}
+
+.mp-room-invite__button.is-quiet {
+  background: #e6e8e1;
+  color: #59635c;
+}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button, Image, Text, View } from "@tarojs/components";
+import Taro from "@tarojs/taro";
 import type { PublicCompetitiveProfile } from "@huanghuang/protocol";
 import { API_BASE } from "../config";
 import { RankBadge } from "./RankBadge";
@@ -13,7 +14,11 @@ export type PlayerProfileModalProps = {
   connected?: boolean;
   isSelf?: boolean;
   isOwner?: boolean;
+  playerId?: string | null;
   competitiveProfile: PublicCompetitiveProfile | null;
+  friendActionLabel?: string | null;
+  friendActionDisabled?: boolean;
+  onFriendAction?: () => void;
   onClose: () => void;
 };
 
@@ -31,7 +36,11 @@ export function PlayerProfileModal({
   connected = true,
   isSelf = false,
   isOwner = false,
+  playerId = null,
   competitiveProfile,
+  friendActionLabel = null,
+  friendActionDisabled = false,
+  onFriendAction,
   onClose,
 }: PlayerProfileModalProps) {
   const [avatarZoomed, setAvatarZoomed] = useState(false);
@@ -68,6 +77,14 @@ export function PlayerProfileModal({
 
           <View className="profile-modal__body">
             <Text className="profile-modal__name">{nickname}</Text>
+            {playerId !== null ? (
+              <Text
+                className="profile-modal__player-id"
+                onClick={() => void Taro.setClipboardData({ data: playerId })}
+              >
+                ID {playerId} · 点击复制
+              </Text>
+            ) : null}
             {chips.length > 0 ? (
               <View className="profile-modal__chips">
                 {chips.map((chip) => (
@@ -120,6 +137,16 @@ export function PlayerProfileModal({
           </View>
 
           <View className="profile-modal__actions">
+            {friendActionLabel !== null && onFriendAction !== undefined ? (
+              <Button
+                className="btn-friend"
+                hoverClass="is-pressed"
+                disabled={friendActionDisabled}
+                onClick={onFriendAction}
+              >
+                {friendActionLabel}
+              </Button>
+            ) : null}
             <Button className="btn-ghost" hoverClass="is-pressed" onClick={onClose}>
               关闭
             </Button>

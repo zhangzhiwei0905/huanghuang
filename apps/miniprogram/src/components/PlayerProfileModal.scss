@@ -119,6 +119,12 @@
   white-space: nowrap;
 }
 
+.profile-modal__player-id {
+  color: var(--accent, #2f6a4c);
+  font-size: 1.8vmin;
+  font-variant-numeric: tabular-nums;
+}
+
 .profile-modal__chips {
   display: flex;
   flex-wrap: wrap;
@@ -214,6 +220,24 @@
 .profile-modal__actions {
   display: flex;
   justify-content: center;
+  gap: 1vmin;
+}
+
+.btn-friend {
+  min-width: 18vmin;
+  margin: 0;
+  border: 0;
+  border-radius: 1vmin;
+  padding: 1.2vmin 2vmin;
+  background: var(--accent, #2f6a4c);
+  color: #fff;
+  font-size: 2vmin;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.btn-friend::after {
+  border: 0;
 }
 
 /* Full-screen avatar zoom layer — sits above the modal backdrop so a tap on

@@ -7,7 +7,9 @@ import type {
   MatchmakingState,
   RoomMode,
   RoomProjection,
+  PlayerSearchResult,
   SelfCompetitiveProfile,
+  SocialSnapshot,
   Seat,
   TurnTimeoutSeconds,
 } from "@huanghuang/protocol";
@@ -160,10 +162,10 @@ export const roomApi = {
       data: { ready },
     });
   },
-  startTeamMatchmaking(roomCode: string): Promise<RoomProjection> {
+  startTeamMatchmaking(roomCode: string, allowBots = false): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/team-matchmaking`, {
       method: "POST",
-      data: {},
+      data: { allowBots },
     });
   },
   cancelTeamMatchmaking(roomCode: string): Promise<RoomProjection> {
@@ -195,6 +197,42 @@ export const roomApi = {
   },
   leave(roomCode: string): Promise<{ closed: boolean }> {
     return request(`/api/rooms/${roomCode}`, { method: "DELETE" });
+  },
+};
+
+export const socialApi = {
+  snapshot(): Promise<SocialSnapshot> {
+    return request("/api/social");
+  },
+  search(playerId: string): Promise<PlayerSearchResult> {
+    return request(`/api/players/${playerId}`);
+  },
+  sendRequest(playerId: string): Promise<SocialSnapshot> {
+    return request("/api/friend-requests", { method: "POST", data: { playerId } });
+  },
+  acceptRequest(requestId: string): Promise<SocialSnapshot> {
+    return request(`/api/friend-requests/${requestId}/accept`, { method: "POST", data: {} });
+  },
+  declineRequest(requestId: string): Promise<SocialSnapshot> {
+    return request(`/api/friend-requests/${requestId}/decline`, { method: "POST", data: {} });
+  },
+  withdrawRequest(requestId: string): Promise<SocialSnapshot> {
+    return request(`/api/friend-requests/${requestId}`, { method: "DELETE" });
+  },
+  removeFriend(playerId: string): Promise<SocialSnapshot> {
+    return request(`/api/friends/${playerId}`, { method: "DELETE" });
+  },
+  invite(roomCode: string, playerId: string): Promise<{ accepted: true }> {
+    return request(`/api/rooms/${roomCode}/invites`, {
+      method: "POST",
+      data: { playerId },
+    });
+  },
+  acceptInvite(inviteId: string): Promise<RoomProjection> {
+    return request(`/api/room-invites/${inviteId}/accept`, { method: "POST", data: {} });
+  },
+  declineInvite(inviteId: string): Promise<SocialSnapshot> {
+    return request(`/api/room-invites/${inviteId}/decline`, { method: "POST", data: {} });
   },
 };
 
