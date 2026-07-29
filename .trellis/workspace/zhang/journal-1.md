@@ -1029,3 +1029,36 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: 组队排位与段位体验上线
+
+**Date**: 2026-07-29
+**Task**: 组队排位与段位体验上线
+**Branch**: `miniprogram`
+
+### Summary
+
+实现头像详情、单人/组队排位、2–4 人不可拆队匹配、统一段位徽章与晋升动画；416 项测试和双端构建通过；已部署生产版本 1.0.1（revision 0fd10e6），保留回滚容器与数据卷备份。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0fd10e6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
