@@ -9,6 +9,10 @@ import type {
 
 type TileRank = Tile["rank"];
 
+// "action-win.mp3" is intentionally absent: no code path below ever selects
+// it (winAudioFileName only returns yinghu.mp3/ruanhu.mp3, effectAudioFileName
+// never routes WIN through meldAudioFileName), so it's a dead asset — see
+// scripts/trim-audio.mjs for the full dead-asset list and rationale.
 export type GameAudioFileName =
   | `tile-wan-${TileRank}.mp3`
   | `tile-tiao-${TileRank}.mp3`
@@ -17,7 +21,6 @@ export type GameAudioFileName =
   | "action-kong.mp3"
   | "action-release-wildcard.mp3"
   | "action-added-kong.mp3"
-  | "action-win.mp3"
   | "yinghu.mp3"
   | "ruanhu.mp3"
   | "chaotiangang.mp3"
@@ -68,8 +71,9 @@ const WIN_AUDIO_FILE: Record<WinType, GameAudioFileName> = {
 
 // 来由 is its own semantic audio event, currently mapped onto the plain hard/soft
 // win clips. When dedicated 来由 audio lands, only this table changes — remember
-// to add the new file names to AUDIO_WINDOWS in gameAudioPlayer.ts, which is a
-// Record<GameAudioFileName, AudioWindow> and will fail typecheck if you forget.
+// to also add the new file name(s) to AUDIO_FILE_NAMES in gameAudioPlayer.ts
+// (so they get warmed up/cached) and to AUDIO_WINDOWS in
+// scripts/trim-audio.mjs (so a trimmed clip actually exists to play).
 const LAIYOU_AUDIO_FILE: Record<WinType, GameAudioFileName> = {
   HARD: "yinghu.mp3",
   SOFT: "ruanhu.mp3",

@@ -152,42 +152,65 @@ updateGameAudioTracker(
   detecting normal discards from physical tile IDs.
 - `GameEffectAction === "INDICATOR_PONG_KONG"` (碰亮牌/朝天杠) plays
   `chaotiangang.mp3`, not the generic `action-pong.mp3`/`action-kong.mp3`.
-- Resolve cloud URLs and pre-create a fixed pool of two
-  `Taro.createInnerAudioContext({ useWebAudioImplement: true })` instances as
-  soon as the room Socket is connected. Keep `obeyMuteSwitch = true`, seek to
-  each clip's measured voice start, and reuse an idle slot after natural end or
-  the clip timeout. Reuse must remove the exact prior `ended`/`error`
-  listeners; never create/destroy a native context per spoken cue.
-- Normal-paced cues finish naturally and may briefly overlap in the two
-  warmed slots. If both slots are still speaking, drop the new cue: do not
-  interrupt a half-spoken cue, do not create a third context, and do not queue
-  history for later playback. Stop active playback and destroy the fixed pool
-  only when the room page unmounts or the user disables audio.
+- **Clips are pre-trimmed at the source, not windowed at playback time.**
+  `scripts/trim-audio.mjs` ffmpeg-cuts each clip in `huanghuang-audio/mp3-version/`
+  down to its intended voice span and writes the result to
+  `huanghuang-audio/mp3-trimmed/` (uploaded to the WeChat Cloud Storage folder
+  named by `CLOUD_FOLDER` in `cloudAudio.ts`). `gameAudioPlayer.ts` has **no**
+  `AUDIO_WINDOWS` table, no `startTime` seek, and no stop-timer — every clip
+  plays from 0 to its natural `onEnded`. The old design (seek into a full-length
+  clip, forcibly `context.stop()` after a computed duration) is a **rejected
+  pattern**: the stop-timer started counting from `play()` being called, not
+  from when sound actually started, so a real network download + decode
+  (`useWebAudioImplement: true` requires full decode before sound starts) could
+  eat the entire window and truncate or fully silence a 300–400ms action cue
+  under real-device latency. If a clip's playable window ever needs to change,
+  re-run the trim script and re-upload — do not resurrect an in-player window
+  table.
+- **The pool never silently drops a play() call.** `acquireContext()` returns
+  an idle pooled context or creates a new one — there is no hard concurrency
+  cap. On natural completion, the context returns to a bounded idle-reuse pool
+  (`MAX_IDLE_POOL_SIZE`); only the *excess idle* contexts beyond that bound get
+  destroyed, never a context that's mid-playback. This is a **regression
+  fix**: an earlier revision added a hard `POOL_SIZE = 2` cap that returned
+  `null` (dropped, unlogged) whenever both slots were busy — a single long
+  clip (`yinghu.mp3` at ~2.3s, `woyijingtingle.mp3` at ~3.4s) could occupy a
+  slot for seconds and silently eat every action/tile cue that happened during
+  that window, which is what "sounds like it's queueing" actually was. Do not
+  reintroduce a hard drop-on-full cap in the name of resource limits; the
+  bounded idle-reuse pool already caps steady-state native-context count
+  without ever refusing a concurrent play.
+- **Warm a local file cache, not just the context pool.** `warmup()` checks
+  `Taro.getFileSystemManager()` for a local copy of each clip under
+  `${Taro.env.USER_DATA_PATH}/audio/<fileName>` and `Taro.downloadFile({ url,
+  filePath })`s any miss. `play()` uses the confirmed-local path synchronously
+  when present; only a cache miss falls back to the existing async
+  `resolveAudioFileUrls` cloud-temp-URL path. This removes the network
+  round-trip from the hot path — re-assigning `context.src` to a fresh HTTPS
+  URL on every single play (the pre-fix behavior) added an unpredictable
+  100–400ms decode-visible delay on top of the truncation bug above.
+- Keep `obeyMuteSwitch = true` on every context, whether pooled or freshly
+  created.
 - Store the audio preference as a boolean under
   `huanghuang_game_audio_enabled`, defaulting to enabled when missing or
   unreadable. Continue advancing the projection tracker while muted so
   re-enabling audio plays only future events.
-- Keep the 37 MP3 imports in a `Record<GameAudioFileName, string>` so a missing
-  tile or action asset fails type-check/build instead of becoming a silent
-  runtime hole.
+- Keep the audio file catalog in a `Record<GameAudioFileName, string>`-shaped
+  list (`AUDIO_FILE_NAMES` in `gameAudioPlayer.ts`, mirrored in
+  `scripts/trim-audio.mjs`'s trim spec) so a missing tile or action asset fails
+  type-check/build instead of becoming a silent runtime hole. `action-win.mp3`,
+  `laiyou.mp3` and `pre-audio.mp3` are dead — no code path ever selects them —
+  and must stay out of `GameAudioFileName`, `AUDIO_FILE_NAMES`, and the trim
+  script's file list; don't re-add a "just in case" entry for them.
 
 Tests must cover equal-length discard replacement, every cue-to-audio mapping,
 cue-completion suppression, wildcard release, both win types, initial-load
-silence, reconnect silence, two-slot warmup/reuse, excess-cue dropping,
-listener cleanup, destroy-before-URL-resolution safety and stored mute
-preference.
-Production verification must assert all 37 MP3 files exist in `dist` and that
-the complete main package remains below WeChat's size limit.
-
-`yinghu.mp3`, `ruanhu.mp3`, `gaokuaidian.mp3` and `woyijingtingle.mp3` play
-full length — `{ startTime: 0, duration: <measured length + ~0.15s buffer> }`
-in `AUDIO_WINDOWS`. The two win-call clips were originally windowed to a short
-peak span like the `action-*` cues, but the user found the trimmed version
-sounded incomplete and asked for the full clip, same as the voice-message
-pair. Only `chaotiangang.mp3` still follows the short-peak-window convention
-(`{ startTime: 0.62, duration: 0.7 }`) — do not default new action-style cues
-to full-length playback on the assumption it's now the norm; check with the
-user per-clip.
+silence, reconnect silence, pool warmup/reuse without ever dropping a
+concurrent play, idle-pool bound without leaking contexts, local-cache
+hit/miss behavior, listener cleanup, destroy-before-URL-resolution safety and
+stored mute preference.
+Production verification must assert all cataloged MP3 files exist in `dist`
+and that the complete main package remains below WeChat's size limit.
 
 ### Pattern: server-timed Mahjong Lottie overlay
 

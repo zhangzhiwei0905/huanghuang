@@ -44,5 +44,16 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-non-null-assertion": "off"
     }
+  },
+  {
+    // One-off Node build/tooling scripts (e.g. scripts/trim-audio.mjs) run
+    // directly under Node, outside any bundler's browser globals.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+      },
+    },
   }
 );

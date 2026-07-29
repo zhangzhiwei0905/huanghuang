@@ -5,7 +5,10 @@ import Taro from "@tarojs/taro";
 // they live in WeChat Cloud Storage instead and are streamed at runtime.
 const CLOUD_ENV_ID = "cloud1-d6g7jl5kade1bad81";
 const CLOUD_BUCKET_DOMAIN = "636c-cloud1-d6g7jl5kade1bad81-1418854253";
-const CLOUD_FOLDER = "mp3-version";
+// Trimmed clips (see scripts/trim-audio.mjs) live in their own folder so a
+// failed trim/upload never leaves the game with the original untrimmed
+// "mp3-version" folder silently unavailable.
+const CLOUD_FOLDER = "mp3-trimmed";
 
 let cloudInitialized = false;
 
