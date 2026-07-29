@@ -697,10 +697,12 @@
   z-index: 4;
   left: calc(1.8vmin + env(safe-area-inset-left));
   bottom: calc(1.6vmin + env(safe-area-inset-bottom));
-  padding: 0.6vmin 1.2vmin;
-  color: var(--muted, #5f625b);
-  font-size: clamp(10px, 2vmin, 12px);
-  opacity: 0.72;
+  padding: 0.8vmin 1.8vmin;
+  border-radius: 999px;
+  color: var(--ink, #272925);
+  background: rgb(248 251 246 / 82%);
+  box-shadow: 0 0.4vmin 1.2vmin rgb(0 0 0 / 18%);
+  font-size: clamp(11px, 2.2vmin, 13px);
 }
 
 .mp-about {
