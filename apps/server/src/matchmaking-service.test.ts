@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CompetitiveMatchCreationConflictError, GameDatabase, type AnonymousSession } from "./database.js";
+import {
+  CompetitiveMatchCreationConflictError,
+  GameDatabase,
+  type AnonymousSession,
+} from "./database.js";
 import {
   MATCHMAKING_BOT_FILL_WAIT_MS,
   MATCHMAKING_DISCONNECT_GRACE_MS,
@@ -229,7 +233,12 @@ describe("MatchmakingService", () => {
       { id: "bot-c", nickname: "赌圣", wechatOpenId: null, avatarUrl: null },
     ];
     for (const bot of botSessions) {
-      database.ensureRankedBotSession({ id: bot.id, nickname: bot.nickname, avatarUrl: null, rankLevel: 17 });
+      database.ensureRankedBotSession({
+        id: bot.id,
+        nickname: bot.nickname,
+        avatarUrl: null,
+        rankLevel: 17,
+      });
     }
     const onlineIds = new Set<string>(humans.map((human) => human.id));
     let matchNumber = 0;

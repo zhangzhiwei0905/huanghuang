@@ -824,10 +824,8 @@ describe("GameDatabase competitive persistence", () => {
 
     // Re-seeding an existing bot must not clobber earned rank, but must still
     // self-heal a stale highest_major_index that violates the invariant.
-    database
-      .connection.prepare(
-        "UPDATE competitive_profiles SET highest_major_index = 0 WHERE session_id = ?",
-      )
+    database.connection
+      .prepare("UPDATE competitive_profiles SET highest_major_index = 0 WHERE session_id = ?")
       .run("bot-dushen");
     database.ensureRankedBotSession({
       id: "bot-dushen",

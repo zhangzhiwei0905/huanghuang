@@ -59,9 +59,7 @@ describe("shouldPollMatchmakingStatus", () => {
 
 describe("nextMatchmakingPollDelayMs", () => {
   it("polls queued state every second", () => {
-    expect(nextMatchmakingPollDelayMs({ status: "QUEUED" } as MatchmakingState, false)).toBe(
-      1_000,
-    );
+    expect(nextMatchmakingPollDelayMs({ status: "QUEUED" } as MatchmakingState, false)).toBe(1_000);
   });
 
   it("polls an active trustee handoff quickly", () => {

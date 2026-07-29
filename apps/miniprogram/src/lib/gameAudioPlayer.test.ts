@@ -70,7 +70,9 @@ function mockContexts(count: number) {
   const contexts = Array.from({ length: count }, () => createAudioContextMock());
   const mocked = vi.mocked(Taro.createInnerAudioContext);
   for (const context of contexts) {
-    mocked.mockReturnValueOnce(context as unknown as ReturnType<typeof Taro.createInnerAudioContext>);
+    mocked.mockReturnValueOnce(
+      context as unknown as ReturnType<typeof Taro.createInnerAudioContext>,
+    );
   }
   return contexts;
 }
@@ -221,7 +223,9 @@ describe("game audio player", () => {
 
     // Idle pool caps at 4: exactly one of the five finished contexts must
     // have been destroyed on return instead of being kept around forever.
-    const destroyedCount = contexts.filter((context) => context.destroy.mock.calls.length > 0).length;
+    const destroyedCount = contexts.filter(
+      (context) => context.destroy.mock.calls.length > 0,
+    ).length;
     expect(destroyedCount).toBe(1);
 
     player.destroy();

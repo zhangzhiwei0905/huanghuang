@@ -38,12 +38,9 @@ export const RANKED_BOTS: readonly RankedBot[] = [
   { id: "bot-huluwa", nickname: "葫芦娃", rankLevel: 0, avatarUrl: null },
 ];
 
-export const matchmakingBotsEnabled: boolean =
-  process.env.MATCHMAKING_BOTS_ENABLED === "true";
+export const matchmakingBotsEnabled: boolean = process.env.MATCHMAKING_BOTS_ENABLED === "true";
 
-export const rankedBotSessionIds: ReadonlySet<string> = new Set(
-  RANKED_BOTS.map((bot) => bot.id),
-);
+export const rankedBotSessionIds: ReadonlySet<string> = new Set(RANKED_BOTS.map((bot) => bot.id));
 
 export function isRankedBotSession(sessionId: string): boolean {
   return rankedBotSessionIds.has(sessionId);
