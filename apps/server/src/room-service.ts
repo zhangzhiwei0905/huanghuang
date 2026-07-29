@@ -1873,15 +1873,13 @@ export class RoomService {
   project(room: RoomState, sessionId: string): RoomProjection {
     const selfSeat = sessionSeat(room, sessionId);
     const round = room.round;
-    const humanSessionIds = SEATS.flatMap((seat) => {
+    const competitiveSessionIds = SEATS.flatMap((seat) => {
       const controller = room.seats[seat];
-      return controller.sessionId === null || controller.controller === "BOT"
-        ? []
-        : [controller.sessionId];
+      return controller.sessionId === null ? [] : [controller.sessionId];
     });
     const competitiveProfiles = new Map(
       this.database
-        .getPublicCompetitiveProfiles(humanSessionIds)
+        .getPublicCompetitiveProfiles(competitiveSessionIds)
         .map((profile) => [profile.sessionId, profile] as const),
     );
     const profileForSeat = (seat: Seat): PublicCompetitiveProfile | null => {

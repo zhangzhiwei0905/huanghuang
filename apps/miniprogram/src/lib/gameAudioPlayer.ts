@@ -51,7 +51,11 @@ const AUDIO_FILE_NAMES: GameAudioFileName[] = [
   "woyijingtingle.mp3",
 ];
 
-const AUDIO_CACHE_SUBDIR = "audio";
+// Bump this directory whenever the cache-writing contract changes. Older
+// versions downloaded directly into the playable path, so an interrupted
+// download could leave a truncated file that accessSync() later accepted as
+// a valid cache hit.
+const AUDIO_CACHE_SUBDIR = "audio-v2";
 // Idle contexts are recycled up to this many at a time; anything beyond it
 // is destroyed instead of pooled. This bounds memory, not concurrency — a
 // play() call always gets a context (new one created if the pool is empty),
@@ -104,6 +108,7 @@ export function createGameAudioPlayer(): GameAudioPlayer {
   // temp URL when a name isn't in here yet.
   const localReady = new Map<GameAudioFileName, string>();
   let playerDestroyed = false;
+  let warmupStarted = false;
 
   function releaseContext(context: AudioContext): void {
     if (playerDestroyed || idlePool.length >= MAX_IDLE_POOL_SIZE) {
@@ -188,13 +193,23 @@ export function createGameAudioPlayer(): GameAudioPlayer {
       // Not cached locally yet — fall through and download it.
     }
     try {
-      const result = await Taro.downloadFile({ url: cloudUrl, filePath: localPath });
-      if (!playerDestroyed && result.statusCode >= 200 && result.statusCode < 300) {
-        localReady.set(fileName, localPath);
+      // Download to WeChat's temporary area first. Writing the network stream
+      // directly to localPath makes a partial file indistinguishable from a
+      // complete cache entry after interruption or process suspension.
+      const result = await Taro.downloadFile({ url: cloudUrl });
+      if (
+        playerDestroyed ||
+        result.statusCode < 200 ||
+        result.statusCode >= 300 ||
+        result.tempFilePath.length === 0
+      ) {
+        return;
       }
+      const savedPath = fsm.saveFileSync(result.tempFilePath, localPath);
+      if (!playerDestroyed) localReady.set(fileName, savedPath || localPath);
     } catch {
-      // Network failure — play() keeps working via the cloud temp URL
-      // fallback, just without the local-cache speedup this time.
+      // Network or final-save failure — play() keeps working via the cloud
+      // temp URL fallback, just without the local-cache speedup this time.
     }
   }
 
@@ -226,6 +241,8 @@ export function createGameAudioPlayer(): GameAudioPlayer {
       });
     },
     warmup() {
+      if (playerDestroyed || warmupStarted) return;
+      warmupStarted = true;
       void resolveAudioFileUrls(AUDIO_FILE_NAMES).then((urls) => {
         if (playerDestroyed) return;
         ensureCacheDir();

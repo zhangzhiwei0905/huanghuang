@@ -180,15 +180,6 @@ updateGameAudioTracker(
   reintroduce a hard drop-on-full cap in the name of resource limits; the
   bounded idle-reuse pool already caps steady-state native-context count
   without ever refusing a concurrent play.
-- **Warm a local file cache, not just the context pool.** `warmup()` checks
-  `Taro.getFileSystemManager()` for a local copy of each clip under
-  `${Taro.env.USER_DATA_PATH}/audio/<fileName>` and `Taro.downloadFile({ url,
-  filePath })`s any miss. `play()` uses the confirmed-local path synchronously
-  when present; only a cache miss falls back to the existing async
-  `resolveAudioFileUrls` cloud-temp-URL path. This removes the network
-  round-trip from the hot path — re-assigning `context.src` to a fresh HTTPS
-  URL on every single play (the pre-fix behavior) added an unpredictable
-  100–400ms decode-visible delay on top of the truncation bug above.
 - Keep `obeyMuteSwitch = true` on every context, whether pooled or freshly
   created.
 - Store the audio preference as a boolean under
@@ -211,6 +202,85 @@ hit/miss behavior, listener cleanup, destroy-before-URL-resolution safety and
 stored mute preference.
 Production verification must assert all cataloged MP3 files exist in `dist`
 and that the complete main package remains below WeChat's size limit.
+
+#### Audio cache integrity contract
+
+##### 1. Scope / Trigger
+
+Any change to `GameAudioPlayer.warmup()`, audio cache paths or
+`Taro.downloadFile` must preserve complete files on real devices. Projection
+updates may call `warmup()` repeatedly while the same page/player remains
+mounted.
+
+##### 2. Signatures
+
+```ts
+const AUDIO_CACHE_SUBDIR = "audio-v2";
+FileSystemManager.saveFileSync(tempFilePath: string, filePath: string): string;
+```
+
+##### 3. Contracts
+
+- One `GameAudioPlayer` instance starts warmup at most once.
+- A cache miss downloads with `Taro.downloadFile({ url })` into WeChat's
+  temporary area. Only a successful 2xx response with a non-empty
+  `tempFilePath` may be promoted through
+  `saveFileSync(tempFilePath, localPath)`.
+- `localReady` is written only after that final save succeeds. Until then,
+  `play()` uses the cloud temporary URL without waiting for cache completion.
+- Never download the network stream directly into the playable final path.
+  An interrupted direct write leaves a truncated file that `accessSync`
+  cannot distinguish from a complete cache entry.
+- Cache directory names are versioned when the write/integrity contract
+  changes. Old directories stay unreachable rather than being destructively
+  migrated during gameplay.
+
+##### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Repeated `warmup()` on one player | One catalog resolution/download pass |
+| Existing `audio-v2/<fileName>` | Mark local-ready without downloading |
+| Non-2xx or empty `tempFilePath` | Keep cloud fallback; do not mark ready |
+| `saveFileSync` throws | Keep cloud fallback; no playable partial file |
+| Player destroyed before completion | Do not mark local-ready or create playback contexts |
+
+##### 5. Good/Base/Bad Cases
+
+- Good: the first play during a pending download uses HTTPS; the next play
+  after successful save uses `audio-v2`.
+- Base: a complete versioned cache hit is used synchronously.
+- Bad: two projection updates download the same clip concurrently into
+  `${USER_DATA_PATH}/audio/<fileName>` and later accept a partial file by
+  existence alone.
+
+##### 6. Tests Required
+
+- Call `warmup()` twice before a cache-miss download resolves and assert one
+  download for the clip.
+- Assert cloud playback before save and versioned local playback after save.
+- Assert a final-save failure never promotes the local path.
+- Keep natural-end, no-drop concurrency, listener cleanup and
+  destroy-before-resolution regressions.
+
+##### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+await Taro.downloadFile({ url, filePath: localPath });
+localReady.set(fileName, localPath);
+```
+
+Correct:
+
+```ts
+const result = await Taro.downloadFile({ url });
+if (result.statusCode >= 200 && result.statusCode < 300 && result.tempFilePath) {
+  const savedPath = fsm.saveFileSync(result.tempFilePath, localPath);
+  localReady.set(fileName, savedPath || localPath);
+}
+```
 
 ### Pattern: server-timed Mahjong Lottie overlay
 

@@ -11,6 +11,7 @@ vi.mock("@tarojs/taro", () => {
     // download path override this per-test.
     accessSync: vi.fn(() => undefined),
     mkdirSync: vi.fn(() => undefined),
+    saveFileSync: vi.fn((_tempFilePath: string, filePath?: string) => filePath ?? ""),
   };
   return {
     default: {
@@ -83,6 +84,9 @@ describe("game audio player", () => {
     invalidateAudioFileUrls();
     vi.mocked(Taro.getFileSystemManager().accessSync).mockReset().mockReturnValue(undefined);
     vi.mocked(Taro.getFileSystemManager().mkdirSync).mockReset().mockReturnValue(undefined);
+    vi.mocked(Taro.getFileSystemManager().saveFileSync)
+      .mockReset()
+      .mockImplementation((_tempFilePath, filePath) => filePath ?? "");
     vi.mocked(Taro.downloadFile).mockReset();
   });
 
@@ -297,7 +301,7 @@ describe("game audio player", () => {
     player.warmup();
     await vi.waitFor(() => {
       expect(Taro.getFileSystemManager().accessSync).toHaveBeenCalledWith(
-        "/mock/user-data/audio/tile-wan-1.mp3",
+        "/mock/user-data/audio-v2/tile-wan-1.mp3",
       );
     });
 
@@ -306,7 +310,7 @@ describe("game audio player", () => {
       expect(audio.play).toHaveBeenCalledTimes(1);
     });
 
-    expect(audio.src).toBe("/mock/user-data/audio/tile-wan-1.mp3");
+    expect(audio.src).toBe("/mock/user-data/audio-v2/tile-wan-1.mp3");
     expect(Taro.downloadFile).not.toHaveBeenCalled();
 
     player.destroy();
@@ -315,7 +319,7 @@ describe("game audio player", () => {
   it("downloads and caches a clip locally on a cache miss, falling back to the cloud URL meanwhile", async () => {
     const [firstPlayAudio, laterPlayAudio] = mockContexts(2);
     vi.mocked(Taro.getFileSystemManager().accessSync).mockImplementation((path: string) => {
-      if (path === "/mock/user-data/audio/tile-wan-1.mp3") {
+      if (path === "/mock/user-data/audio-v2/tile-wan-1.mp3") {
         throw new Error("fail no such file or directory");
       }
     });
@@ -326,8 +330,8 @@ describe("game audio player", () => {
     vi.mocked(Taro.downloadFile).mockImplementation(
       () =>
         downloadPending.then(() => ({
-          filePath: "/mock/user-data/audio/tile-wan-1.mp3",
-          tempFilePath: "",
+          filePath: "",
+          tempFilePath: "/mock/temp/tile-wan-1.mp3",
           statusCode: 200,
           errMsg: "downloadFile:ok",
         })) as unknown as ReturnType<typeof Taro.downloadFile>,
@@ -335,11 +339,19 @@ describe("game audio player", () => {
     const player = createGameAudioPlayer();
 
     player.warmup();
+    player.warmup();
     await vi.waitFor(() => {
       expect(Taro.downloadFile).toHaveBeenCalledWith(
-        expect.objectContaining({ filePath: "/mock/user-data/audio/tile-wan-1.mp3" }),
+        expect.objectContaining({
+          url: expect.stringContaining("tile-wan-1.mp3"),
+        }),
       );
     });
+    expect(
+      vi
+        .mocked(Taro.downloadFile)
+        .mock.calls.filter(([options]) => options.url.includes("tile-wan-1.mp3")),
+    ).toHaveLength(1);
 
     // Cache miss hasn't resolved yet — play() must not stall waiting for the
     // download, it falls back to the cloud temp URL immediately.
@@ -356,13 +368,47 @@ describe("game audio player", () => {
     for (let flush = 0; flush < 5; flush += 1) {
       await Promise.resolve();
     }
+    expect(Taro.getFileSystemManager().saveFileSync).toHaveBeenCalledWith(
+      "/mock/temp/tile-wan-1.mp3",
+      "/mock/user-data/audio-v2/tile-wan-1.mp3",
+    );
 
     player.play("tile-wan-1.mp3");
     await vi.waitFor(() => {
       expect(laterPlayAudio.play).toHaveBeenCalledTimes(1);
     });
-    expect(laterPlayAudio.src).toBe("/mock/user-data/audio/tile-wan-1.mp3");
+    expect(laterPlayAudio.src).toBe("/mock/user-data/audio-v2/tile-wan-1.mp3");
 
+    player.destroy();
+  });
+
+  it("keeps using the cloud URL when saving the downloaded temp file fails", async () => {
+    const [audio] = mockContexts(1);
+    vi.mocked(Taro.getFileSystemManager().accessSync).mockImplementation(() => {
+      throw new Error("fail no such file or directory");
+    });
+    vi.mocked(Taro.getFileSystemManager().saveFileSync).mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    vi.mocked(Taro.downloadFile).mockResolvedValue({
+      filePath: "",
+      tempFilePath: "/mock/temp/tile-wan-1.mp3",
+      statusCode: 200,
+      errMsg: "downloadFile:ok",
+    });
+    const player = createGameAudioPlayer();
+
+    player.warmup();
+    await vi.waitFor(() => {
+      expect(Taro.getFileSystemManager().saveFileSync).toHaveBeenCalled();
+    });
+    player.play("tile-wan-1.mp3");
+    await vi.waitFor(() => {
+      expect(audio.play).toHaveBeenCalledTimes(1);
+    });
+
+    expect(audio.src).toContain("https://mock.example/");
+    expect(audio.src).not.toContain("/mock/user-data/audio-v2/");
     player.destroy();
   });
 });

@@ -1963,10 +1963,16 @@ describe("RoomService", () => {
     expect(winnerProjection.roundSettlement?.competitiveSettlement?.self).not.toEqual(
       loserProjection.roundSettlement?.competitiveSettlement?.self,
     );
-    expect(service.project(service.createRoom(owner, 2, "BOT"), owner.id)).toMatchObject({
+    const practiceProjection = service.project(service.createRoom(owner, 2, "BOT"), owner.id);
+    expect(practiceProjection).toMatchObject({
       competitiveMatch: null,
       roundSettlement: null,
     });
+    expect(
+      practiceProjection.players
+        .filter((player) => player.controller === "BOT")
+        .every((player) => player.competitiveProfile === null),
+    ).toBe(true);
   });
 
   it("records all five competitive achievements once from accepted authoritative effects", () => {
@@ -2132,6 +2138,19 @@ describe("RoomService", () => {
     if (botSeat === undefined) throw new Error("Expected a bot seat");
     const botSessionId = room.seats[botSeat].sessionId;
     if (botSessionId === null) throw new Error("Expected the bot seat to carry a session id");
+    const initialProjection = service.project(room, humanSession.id);
+    expect(initialProjection.players.every((player) => player.competitiveProfile !== null)).toBe(
+      true,
+    );
+    const projectedBotProfile = initialProjection.players[botSeat]?.competitiveProfile;
+    expect(typeof projectedBotProfile?.rankDisplay.displayName).toBe("string");
+    expect(projectedBotProfile?.achievements).toEqual({
+      exposedKong: 0,
+      indicatorPongKong: 0,
+      addedKong: 0,
+      concealedKong: 0,
+      releaseWildcard: 0,
+    });
 
     const indicatorKind = { suit: round.indicatorTile.suit, rank: round.indicatorTile.rank };
     // Strip any incidental copies of the indicator's kind dealt by the random
@@ -2187,6 +2206,10 @@ describe("RoomService", () => {
     const humanProfile = database.getCompetitiveProfile(humanSession.id);
     expect(botProfile?.indicatorPongKongCount).toBe(1);
     expect(humanProfile?.indicatorPongKongCount).toBe(0);
+    expect(
+      service.project(room, humanSession.id).players[botSeat]?.competitiveProfile?.achievements
+        .indicatorPongKong,
+    ).toBe(1);
   });
 
   it("settles a competitive win only after its effect and remains idempotent across restart", () => {

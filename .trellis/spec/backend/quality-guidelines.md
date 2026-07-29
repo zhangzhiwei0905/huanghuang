@@ -26,6 +26,82 @@ Pure game modules require positive, negative, and boundary tests. Settlement fun
 - A settled result remains recoverable until each player acknowledges it. Continue matchmaking atomically acknowledges and enqueues. All acknowledgements or the 24-hour retention boundary close the room; timeout acknowledgement releases abandoned results.
 - Rank level, table score and any future rechargeable balance are separate ledgers. This project has no wallet or recharge path.
 
+## Scenario: Ranked bot public profile projection
+
+### 1. Scope / Trigger
+
+Any change to MATCH seat controllers, public player projection or competitive
+profile lookup must preserve profile parity between linked humans and preset
+ranked bots.
+
+### 2. Signatures
+
+```ts
+type SeatController = {
+  controller: "HUMAN" | "BOT" | "TRUSTEE";
+  sessionId: string | null;
+};
+
+type PlayerProjection = {
+  competitiveProfile: PublicCompetitiveProfile | null;
+};
+```
+
+No protocol or database schema change is required.
+
+### 3. Contracts
+
+- `RoomService.project` queries public competitive profiles for every non-null
+  seated `sessionId`; controller kind is not an identity filter.
+- Preset ranked bots carry stable session ids created by
+  `ensureRankedBotSession`, so their persisted rank and five achievement
+  totals project through the same `PublicCompetitiveProfile` path as humans.
+- Ordinary practice/friend bots have `sessionId: null` and continue to project
+  `competitiveProfile: null`.
+- Never synthesize bot-only rank or achievement values in the frontend.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required projection |
+|---|---|
+| Human seat with linked profile | Real public profile |
+| Ranked BOT seat with stable session/profile | Real public profile |
+| Practice BOT seat with null session | `competitiveProfile: null` |
+| Profile row absent for a non-null session | `competitiveProfile: null` |
+| Ranked bot earns a MATCH achievement | Next projection exposes the persisted increment |
+
+### 5. Good/Base/Bad Cases
+
+- Good: clicking a ranked bot avatar shows its current rank and all five real
+  counters, including an action earned in the current match.
+- Base: clicking an ordinary practice bot shows no permanent competitive
+  record.
+- Bad: filtering profile lookup with `controller === "BOT"`; this discards the
+  identity of ranked bots even though they own real database rows.
+
+### 6. Tests Required
+
+- A 1-human + 3-ranked-bot MATCH projection has non-null profiles for all four
+  seats.
+- After a ranked bot claims an indicator pong-kong, its projected counter is
+  one and the discarding human's persisted counter remains zero.
+- A normal BOT-mode room keeps every null-session bot profile null.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+if (seat.sessionId === null || seat.controller === "BOT") return [];
+```
+
+Correct:
+
+```ts
+if (seat.sessionId === null) return [];
+return [seat.sessionId];
+```
+
 ## Room turn-duration configuration
 
 - `packages/protocol/src/commands.ts` owns the only allowed values:
