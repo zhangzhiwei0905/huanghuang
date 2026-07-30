@@ -1,3 +1,5 @@
+import { majorIndexForRankLevel } from "@huanghuang/game-engine";
+
 export type MatchmakingCandidate = {
   sessionId: string;
   rankLevel: number;
@@ -27,15 +29,26 @@ export type BotFillGroup = {
 
 const MATCH_SIZE = 4;
 
-export function matchmakingRange(waitMs: number): number {
-  if (waitMs < 10_000) return 2;
-  if (waitMs < 20_000) return 5;
-  if (waitMs < 40_000) return 10;
+/**
+ * Widens matchmaking tolerance over time, measured in major-tier distance
+ * (黑铁/青铜/白银/黄金/... — see majorIndexForRankLevel) rather than raw
+ * rankLevel units. A pair 1 major tier apart (e.g. adjacent-tier boundary
+ * players) no longer has to wait as long as a pair whose raw rankLevel gap
+ * happens to be similarly sized but who are actually several tiers apart.
+ */
+export function matchmakingMajorTierRange(waitMs: number): number {
+  if (waitMs < 10_000) return 0;
+  if (waitMs < 20_000) return 1;
+  if (waitMs < 40_000) return 2;
   return Number.POSITIVE_INFINITY;
 }
 
 function waitMs(candidate: MatchmakingCandidate, now: number): number {
   return Math.max(0, now - Date.parse(candidate.enqueuedAt));
+}
+
+function majorTierDistance(leftRankLevel: number, rightRankLevel: number): number {
+  return Math.abs(majorIndexForRankLevel(leftRankLevel) - majorIndexForRankLevel(rightRankLevel));
 }
 
 function mutuallyCompatible(
@@ -44,10 +57,10 @@ function mutuallyCompatible(
   now: number,
 ): boolean {
   if (left.partyId !== undefined && left.partyId === right.partyId) return true;
-  const distance = Math.abs(left.rankLevel - right.rankLevel);
+  const distance = majorTierDistance(left.rankLevel, right.rankLevel);
   return (
-    distance <= matchmakingRange(waitMs(left, now)) &&
-    distance <= matchmakingRange(waitMs(right, now))
+    distance <= matchmakingMajorTierRange(waitMs(left, now)) &&
+    distance <= matchmakingMajorTierRange(waitMs(right, now))
   );
 }
 
@@ -252,7 +265,8 @@ export function selectBotFillGroup(
       .filter((bot) =>
         best.every(
           (human) =>
-            Math.abs(human.rankLevel - bot.rankLevel) <= matchmakingRange(waitMs(human, now)),
+            majorTierDistance(human.rankLevel, bot.rankLevel) <=
+            matchmakingMajorTierRange(waitMs(human, now)),
         ),
       )
       .sort((left, right) => {

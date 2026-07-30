@@ -15,12 +15,12 @@ describe("matchmaking presentation", () => {
   });
 
   it.each([
-    [0, "相差 2 级内"],
-    [9, "相差 2 级内"],
-    [10, "相差 5 级内"],
-    [19, "相差 5 级内"],
-    [20, "相差 10 级内"],
-    [39, "相差 10 级内"],
+    [0, "同大段内"],
+    [9, "同大段内"],
+    [10, "相邻大段内"],
+    [19, "相邻大段内"],
+    [20, "2 个大段内"],
+    [39, "2 个大段内"],
     [40, "全服范围"],
   ])("maps %i seconds to %s", (seconds, label) => {
     expect(matchmakingRangeLabel(seconds)).toBe(label);

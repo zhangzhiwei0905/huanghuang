@@ -36,6 +36,12 @@ indivisible unit.
 - `allowBots = false` means human-only matching. `allowBots = true` preserves a
   five-second human aggregation window, then fills remaining seats only with
   idle bots compatible under the same 10/20/40-second expanding rank range.
+  Compatibility is measured in **major-tier distance**
+  (`majorIndexForRankLevel`, 5 rankLevels per major tier — 黑铁/青铜/白银/黄金/
+  铂金/钻石/星耀/雀神), not raw `rankLevel` distance: 0 major tiers before 10s,
+  1 before 20s, 2 before 40s, then unlimited. This lets adjacent-tier pairs
+  match sooner than a same-sized raw-level gap that happens to span more
+  major tiers (`matchmakingMajorTierRange` in `matchmaking-algorithm.ts`).
 - A complete four-human compatible group always has priority over bot fill.
   Bot selection maximizes compatible humans, never splits a party, and orders
   equally eligible bots by oldest/null `lastMatchedAt` before session ID.

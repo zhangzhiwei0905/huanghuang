@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  matchmakingRange,
+  matchmakingMajorTierRange,
   selectBotFillGroup,
   selectMatchmakingGroup,
   type MatchmakingCandidate,
@@ -24,17 +24,17 @@ function candidate(
   };
 }
 
-describe("matchmakingRange", () => {
+describe("matchmakingMajorTierRange", () => {
   it.each([
-    [0, 2],
-    [9_999, 2],
-    [10_000, 5],
-    [19_999, 5],
-    [20_000, 10],
-    [39_999, 10],
+    [0, 0],
+    [9_999, 0],
+    [10_000, 1],
+    [19_999, 1],
+    [20_000, 2],
+    [39_999, 2],
     [40_000, Number.POSITIVE_INFINITY],
-  ])("maps %i milliseconds to %s levels", (waitMs, expected) => {
-    expect(matchmakingRange(waitMs)).toBe(expected);
+  ])("maps %i milliseconds to %s major tiers", (waitMs, expected) => {
+    expect(matchmakingMajorTierRange(waitMs)).toBe(expected);
   });
 });
 
@@ -123,6 +123,41 @@ describe("selectMatchmakingGroup", () => {
           candidate("new-1", 20, 0),
           candidate("new-2", 20, 0),
           candidate("new-3", 20, 0),
+        ],
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("matches candidates in adjacent major tiers sooner than the old raw-level ladder allowed", () => {
+    // rankLevel 0 is 黑铁 (major 0), rankLevel 9 is 青铜 (major 1) — one major
+    // tier apart, but 9 raw levels apart. Under the old raw-rankLevel ladder
+    // (2 / 5 / 10 / ∞ at 10s / 20s / 40s) this pair needed the 20-40s bucket
+    // (9 <= 10) to be considered compatible. Under the major-tier ladder
+    // (0 / 1 / 2 / ∞), adjacent tiers only need the 10-20s bucket (1 <= 1) —
+    // this is the actual fix for "large rank gap waits far too long".
+    const group = selectMatchmakingGroup(
+      [
+        candidate("a", 0, 15_000),
+        candidate("b", 9, 15_000),
+        candidate("c", 9, 15_000),
+        candidate("d", 9, 15_000),
+      ],
+      NOW,
+    );
+    expect(group?.map((item) => item.sessionId)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("still refuses candidates two major tiers apart until the range is fully open", () => {
+    // rankLevel 0 (major 0) vs rankLevel 10 (major 2): two major tiers apart,
+    // so the 10-20s bucket (major distance <= 1) must still refuse them.
+    expect(
+      selectMatchmakingGroup(
+        [
+          candidate("a", 0, 15_000),
+          candidate("b", 10, 15_000),
+          candidate("c", 10, 15_000),
+          candidate("d", 10, 15_000),
         ],
         NOW,
       ),
