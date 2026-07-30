@@ -37,10 +37,16 @@ import {
   matchmakingRoomNavigationKey,
   nextMatchmakingPollDelayMs,
   resolveReturnToCompetitiveMatch,
+  shouldForceResetMatchRoomOpening,
   shouldOpenMatchmakingRoom,
   shouldPollMatchmakingStatus,
 } from "../../lib/matchmakingRecovery";
 import { matchmakingRangeLabel, matchmakingWaitSeconds } from "../../lib/matchmakingPresentation";
+import {
+  remainingRoundStartSeconds,
+  ROUND_START_COUNTDOWN_SECONDS,
+} from "../../lib/roomTransitions";
+import { RoundStartOverlay } from "../../components/RoundStartOverlay";
 import "./index.scss";
 
 const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
@@ -51,6 +57,12 @@ const BASE_SCORES: readonly BaseScore[] = [1, 2, 5, 10];
 const TURN_TIMEOUT_OPTIONS = [20, 25, 30] satisfies TurnTimeoutSeconds[];
 const BOT_DIFFICULTY_OPTIONS = ["LOW", "HIGH"] satisfies BotDifficulty[];
 const TRUSTEE_MATCH_STORAGE_KEY = "huanghuang_trustee_match";
+// Guards against Taro.navigateTo's promise silently never settling (observed
+// intermittently in WeChat): without this, matchedRoomOpeningRef would stay
+// locked forever and every future poll/push would be refused by
+// shouldOpenMatchmakingRoom, requiring a full app reload to recover.
+const MATCH_ROOM_OPENING_TIMEOUT_MS = 8_000;
+const MATCH_ROOM_OPENING_HEARTBEAT_MS = 2_000;
 
 type Mode = "HOME" | "CREATE" | "JOIN" | "BOT";
 type IdentityState = "checking" | "loggedOut" | "loggedIn";
@@ -276,10 +288,16 @@ export default function IndexPage() {
   const [competitiveProfile, setCompetitiveProfile] = useState<SelfCompetitiveProfile | null>(null);
   const [matchmaking, setMatchmaking] = useState<MatchmakingState>({ status: "IDLE" });
   const [matchmakingNow, setMatchmakingNow] = useState(Date.now());
+  const [pendingMatchNavigation, setPendingMatchNavigation] = useState<{
+    navigationKey: string;
+    room: RoomProjection;
+    matchFoundAt: number;
+  } | null>(null);
   const [matchmakingBusy, setMatchmakingBusy] = useState(false);
   const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
   const pageVisibleRef = useRef(true);
   const matchedRoomOpeningRef = useRef(false);
+  const matchedRoomOpeningSinceRef = useRef<number | null>(null);
   const openedMatchRoomKeyRef = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -288,7 +306,13 @@ export default function IndexPage() {
   const [backendVersionError, setBackendVersionError] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
-  const social = useSocial(identityState === "loggedIn" && identity !== null);
+  const social = useSocial(identityState === "loggedIn" && identity !== null, (reason) => {
+    // The server pushes this the instant matchmaking.tick() finds a match, so
+    // acting on it immediately shortcuts the up-to-1s HTTP poll interval below
+    // (which still runs unconditionally as a fallback if this push is missed).
+    if (reason !== "MATCHMAKING") return;
+    void refreshMatchmakingStatus().catch((cause) => setMatchmakingError(describeSubmitError(cause)));
+  });
 
   useEffect(() => {
     // Prefetched once on page load (mirrors the competitiveApi.profile()
@@ -335,9 +359,26 @@ export default function IndexPage() {
     ) {
       return;
     }
-    matchedRoomOpeningRef.current = true;
+    // Claim this result immediately so later polls/pushes for the same match
+    // don't re-trigger the countdown or open a second room.
     openedMatchRoomKeyRef.current = navigationKey;
-    Taro.setStorageSync("huanghuang_open_room", response.room);
+    if (response.state.status === "MATCHED") {
+      // A freshly found ranked match gets a brief "匹配成功" transition
+      // before navigating, mirroring the friend-room ready countdown
+      // (RoundStartOverlay) instead of jumping straight into the game.
+      setPendingMatchNavigation({ navigationKey, room: response.room, matchFoundAt: Date.now() });
+      return;
+    }
+    // A queued team-match party room (navigationKey starts with "party:")
+    // opens immediately — it's the party's own waiting room, not an
+    // announcement that a match was just found.
+    openMatchedRoom(navigationKey, response.room);
+  }
+
+  function openMatchedRoom(navigationKey: string, room: RoomProjection): void {
+    matchedRoomOpeningRef.current = true;
+    matchedRoomOpeningSinceRef.current = Date.now();
+    Taro.setStorageSync("huanghuang_open_room", room);
     void Taro.navigateTo({ url: "/pages/room/index" })
       .catch((cause) => {
         if (openedMatchRoomKeyRef.current === navigationKey) {
@@ -348,7 +389,18 @@ export default function IndexPage() {
       })
       .finally(() => {
         matchedRoomOpeningRef.current = false;
+        matchedRoomOpeningSinceRef.current = null;
       });
+  }
+
+  // Shared by the polling loop below, the "MATCHMAKING" push handler, and the
+  // opening-lock heartbeat, so there is exactly one place that fetches status
+  // and applies it — avoids parallel/duplicate navigation logic.
+  async function refreshMatchmakingStatus(): Promise<MatchmakingResponse> {
+    const response = await competitiveApi.status();
+    setMatchmakingError(null);
+    applyMatchmakingResponse(response);
+    return response;
   }
 
   useEffect(() => {
@@ -378,10 +430,8 @@ export default function IndexPage() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const poll = async () => {
       try {
-        const response = await competitiveApi.status();
+        const response = await refreshMatchmakingStatus();
         if (disposed) return;
-        setMatchmakingError(null);
-        applyMatchmakingResponse(response);
         const stillTrustee =
           response.state.status === "MATCHED" &&
           Taro.getStorageSync(TRUSTEE_MATCH_STORAGE_KEY) === response.state.matchId;
@@ -400,12 +450,84 @@ export default function IndexPage() {
     };
   }, [matchmaking.status]);
 
+  useEffect(() => {
+    // Independent of the poll/push chains above by design: a fixed-cadence
+    // heartbeat that only ever checks a timestamp, so it keeps working even
+    // if both of the other discovery paths have silently stopped. Recovers
+    // from Taro.navigateTo's promise never settling (observed intermittently
+    // in WeChat), which otherwise locks matchedRoomOpeningRef forever and
+    // blocks every future match from opening — previously only a full app
+    // reload could clear it.
+    if (matchmaking.status === "IDLE") return;
+    const interval = setInterval(() => {
+      if (
+        !shouldForceResetMatchRoomOpening(
+          matchedRoomOpeningSinceRef.current,
+          Date.now(),
+          MATCH_ROOM_OPENING_TIMEOUT_MS,
+        )
+      ) {
+        return;
+      }
+      matchedRoomOpeningRef.current = false;
+      matchedRoomOpeningSinceRef.current = null;
+      openedMatchRoomKeyRef.current = null;
+      void refreshMatchmakingStatus().catch((cause) =>
+        setMatchmakingError(describeSubmitError(cause)),
+      );
+    }, MATCH_ROOM_OPENING_HEARTBEAT_MS);
+    return () => clearInterval(interval);
+  }, [matchmaking.status]);
+
+  useEffect(() => {
+    // Drives the "匹配成功" countdown display. Uses a real timestamp
+    // (matchFoundAt) rather than a decrementing counter so a backgrounded
+    // app that resumes mid-countdown recomputes the true elapsed time
+    // instead of restarting from 3 or getting stuck.
+    if (pendingMatchNavigation === null) return;
+    const interval = setInterval(() => setMatchmakingNow(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, [pendingMatchNavigation]);
+
+  useEffect(() => {
+    if (pendingMatchNavigation === null) return;
+    const remaining = remainingRoundStartSeconds(
+      pendingMatchNavigation.matchFoundAt,
+      matchmakingNow,
+      ROUND_START_COUNTDOWN_SECONDS,
+    );
+    if (remaining > 0) return;
+    const { navigationKey, room } = pendingMatchNavigation;
+    setPendingMatchNavigation(null);
+    openMatchedRoom(navigationKey, room);
+  }, [pendingMatchNavigation, matchmakingNow]);
+
   // Navigating back from the room page (empty-shell reLaunch, or the OS
   // resuming this page from the background) doesn't remount the component —
   // re-fetch matchmaking status so a stale MATCHED/QUEUED snapshot from
   // before the round ended gets corrected without waiting for the next poll.
   useDidShow(() => {
     pageVisibleRef.current = true;
+    if (pendingMatchNavigation !== null) {
+      // A "匹配成功" countdown is in progress. Its own tick effect uses a
+      // wall-clock timestamp so it stays correct even if the interval was
+      // suspended while backgrounded — but recompute here too so returning
+      // from a long background stay opens the room immediately instead of
+      // waiting for the next 250ms tick, and skip the reset-and-refetch
+      // below (it would otherwise clear openedMatchRoomKeyRef and restart
+      // this same countdown from 3 on every resume).
+      const remaining = remainingRoundStartSeconds(
+        pendingMatchNavigation.matchFoundAt,
+        Date.now(),
+        ROUND_START_COUNTDOWN_SECONDS,
+      );
+      if (remaining <= 0) {
+        const { navigationKey, room } = pendingMatchNavigation;
+        setPendingMatchNavigation(null);
+        openMatchedRoom(navigationKey, room);
+      }
+      return;
+    }
     // A genuinely new visible visit may recover the same active match once.
     // While the room page is on top, useDidHide prevents background polling
     // from pushing duplicate room pages onto the stack.
@@ -602,6 +724,14 @@ export default function IndexPage() {
 
   const queuedWaitSeconds =
     matchmaking.status === "QUEUED" ? matchmakingWaitSeconds(matchmaking, matchmakingNow) : 0;
+  const matchFoundCountdown =
+    pendingMatchNavigation === null
+      ? 0
+      : remainingRoundStartSeconds(
+          pendingMatchNavigation.matchFoundAt,
+          matchmakingNow,
+          ROUND_START_COUNTDOWN_SECONDS,
+        );
   const pendingSocialCount =
     (social.snapshot?.friendRequests.filter((request) => request.direction === "INCOMING").length ??
       0) + (social.snapshot?.roomInvites.length ?? 0);
@@ -939,6 +1069,9 @@ export default function IndexPage() {
         </View>
       ) : null}
       {friendsOpen ? <FriendsPanel social={social} onClose={() => setFriendsOpen(false)} /> : null}
+      {pendingMatchNavigation !== null ? (
+        <RoundStartOverlay eyebrow="匹配成功" title="即将开局" countdown={matchFoundCountdown} />
+      ) : null}
     </View>
   );
 }

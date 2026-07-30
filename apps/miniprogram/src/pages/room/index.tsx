@@ -26,6 +26,7 @@ import { MahjongTile } from "../../components/MahjongTile";
 import { MahjongEffectOverlay } from "../../components/MahjongEffectOverlay";
 import { RankBadge } from "../../components/RankBadge";
 import { RoundSettlementModal } from "../../components/RoundSettlementModal";
+import { RoundStartOverlay } from "../../components/RoundStartOverlay";
 import { TingHintCard } from "../../components/TingHintCard";
 import { useRoom, type ConnectionStatus } from "../../hooks/useRoom";
 import { useSocial } from "../../hooks/useSocial";
@@ -238,21 +239,6 @@ function LobbySeat({
           </Button>
         </View>
       ) : null}
-    </View>
-  );
-}
-
-function RoundStartOverlay({ countdown }: { countdown: number }) {
-  return (
-    <View className="round-start-overlay">
-      <View className="round-start-overlay__halo" />
-      <View className="round-start-overlay__content">
-        <Text className="round-start-overlay__eyebrow">全员已准备</Text>
-        <Text className="round-start-overlay__title">游戏开始</Text>
-        <Text key={countdown} className="round-start-overlay__count">
-          {countdown}
-        </Text>
-      </View>
     </View>
   );
 }
@@ -1435,7 +1421,9 @@ export default function RoomPage() {
           </>
         )}
       </View>
-      {roundStartCountdown !== null ? <RoundStartOverlay countdown={roundStartCountdown} /> : null}
+      {roundStartCountdown !== null ? (
+        <RoundStartOverlay eyebrow="全员已准备" title="游戏开始" countdown={roundStartCountdown} />
+      ) : null}
       {profileTarget !== null ? (
         <PlayerProfileModal
           playerId={profileTarget.playerId}
