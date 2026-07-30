@@ -186,6 +186,9 @@ async function emitRoomProjection(roomId: string, excludedSocketId: string | nul
 
 function tickMatchmaking() {
   const result = matchmaking.tick();
+  if (result.changedSessionIds.length > 0) {
+    notifySocial(result.changedSessionIds, "MATCHMAKING");
+  }
   for (const room of rooms.reconcileTeamMatchQueues()) {
     void emitRoomProjection(room.id);
   }

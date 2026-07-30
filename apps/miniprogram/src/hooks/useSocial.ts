@@ -24,13 +24,15 @@ export type SocialController = {
   clearError: () => void;
 };
 
-export function useSocial(enabled: boolean): SocialController {
+export function useSocial(enabled: boolean, onUpdate?: (reason: string) => void): SocialController {
   const [snapshot, setSnapshot] = useState<SocialSnapshot | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const disposed = useRef(false);
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
 
   const labelError = useCallback((cause: unknown) => {
     setError(errorLabel(cause instanceof ApiError ? cause.code : "UNKNOWN_ERROR"));
@@ -77,7 +79,10 @@ export function useSocial(enabled: boolean): SocialController {
       reconnectionDelayMax: 5_000,
     });
     const handleConnect = () => void refresh();
-    const handleUpdate = () => void refresh();
+    const handleUpdate = (payload?: { reason?: string }) => {
+      void refresh();
+      if (payload?.reason !== undefined) onUpdateRef.current?.(payload.reason);
+    };
     socket.on("connect", handleConnect);
     socket.on("social:update", handleUpdate);
     socket.connect();

@@ -70,6 +70,24 @@ export function matchmakingRoomNavigationKey(response: MatchmakingResponse): str
   return null;
 }
 
+/**
+ * Whether the home page's opening-in-flight lock should be force-cleared.
+ *
+ * `matchedRoomOpeningRef` is only ever reset by `Taro.navigateTo`'s promise
+ * settling; if that promise never settles (observed intermittently in
+ * WeChat), the lock stays true forever and `shouldOpenMatchmakingRoom` then
+ * refuses every future poll/push, requiring a full app reload to recover.
+ * This is checked on a fixed-cadence heartbeat independent of the poll/push
+ * chains, so it keeps working even if both of those have silently stopped.
+ */
+export function shouldForceResetMatchRoomOpening(
+  openingSince: number | null,
+  now: number,
+  timeoutMs: number,
+): boolean {
+  return openingSince !== null && now - openingSince > timeoutMs;
+}
+
 export function shouldOpenMatchmakingRoom({
   pageVisible,
   navigationInFlight,

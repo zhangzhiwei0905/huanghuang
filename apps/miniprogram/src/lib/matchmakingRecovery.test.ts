@@ -5,6 +5,7 @@ import {
   matchmakingRoomNavigationKey,
   nextMatchmakingPollDelayMs,
   resolveReturnToCompetitiveMatch,
+  shouldForceResetMatchRoomOpening,
   shouldOpenMatchmakingRoom,
   shouldPollMatchmakingStatus,
 } from "./matchmakingRecovery.js";
@@ -75,6 +76,24 @@ describe("nextMatchmakingPollDelayMs", () => {
 
   it("stops polling once idle", () => {
     expect(nextMatchmakingPollDelayMs(idleState, false)).toBeNull();
+  });
+});
+
+describe("shouldForceResetMatchRoomOpening", () => {
+  it("does nothing while no navigation is in flight", () => {
+    expect(shouldForceResetMatchRoomOpening(null, 100_000, 8_000)).toBe(false);
+  });
+
+  it("does not reset before the timeout elapses", () => {
+    expect(shouldForceResetMatchRoomOpening(100_000, 107_000, 8_000)).toBe(false);
+  });
+
+  it("forces a reset once the lock has been held past the timeout", () => {
+    // This is the exact stuck scenario: Taro.navigateTo's promise never
+    // settled, so matchedRoomOpeningRef would otherwise stay locked forever
+    // and every future poll/push gets refused by shouldOpenMatchmakingRoom —
+    // previously only a full app reload could clear it.
+    expect(shouldForceResetMatchRoomOpening(100_000, 108_001, 8_000)).toBe(true);
   });
 });
 
