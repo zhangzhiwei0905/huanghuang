@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 30
-- **Last Active**: 2026-07-29
+- **Total Sessions**: 31
+- **Last Active**: 2026-07-30
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1167 | Active |
+| `journal-1.md` | ~1202 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 31 | 2026-07-30 | 排位匹配体验优化：大段位阶梯、匹配成功倒计时、socket 推送根治卡死 | `7c9192a`, `295f778`, `7f95802` | `miniprogram` |
 | 30 | 2026-07-29 | 好友组队、机器人补位与小程序大厅重设计上线 | `38df455`, `5b78268`, `e4ca104`, `4a455f5` | `miniprogram` |
 | 29 | 2026-07-29 | 修复胡牌音效并补齐机器人竞技档案 | `cf0685e`, `a090b2e` | `miniprogram` |
 | 28 | 2026-07-29 | 修复排位重复开页与实时连接重连 | `f4a16b7` | `miniprogram` |

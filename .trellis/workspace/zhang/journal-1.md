@@ -1165,3 +1165,38 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: 排位匹配体验优化：大段位阶梯、匹配成功倒计时、socket 推送根治卡死
+
+**Date**: 2026-07-30
+**Task**: 排位匹配体验优化：大段位阶梯、匹配成功倒计时、socket 推送根治卡死
+**Branch**: `miniprogram`
+
+### Summary
+
+重构排位匹配段位差判定为大段(major tier)距离而非原始rankLevel差；提炼共享RoundStartOverlay组件并给排位匹配成功加3秒倒计时过渡；复用现有useSocial/notifySocial推送通道让匹配成功即时通知客户端，并给matchedRoomOpeningRef加超时心跳兜底根治卡死。三部分改动分3次commit、4次归档提交，均已部署到生产（d0ef57f，version 1.0.4）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7c9192a` | (see git log) |
+| `295f778` | (see git log) |
+| `7f95802` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
