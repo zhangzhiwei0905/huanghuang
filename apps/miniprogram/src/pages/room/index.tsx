@@ -57,7 +57,11 @@ import {
   setStoredGameAudioEnabled,
 } from "../../lib/gameAudioPreference";
 import { createGameAudioPlayer, type GameAudioPlayer } from "../../lib/gameAudioPlayer";
-import { ROUND_START_COUNTDOWN_SECONDS, shouldShowRoundStart } from "../../lib/roomTransitions";
+import {
+  ROUND_START_COUNTDOWN_SECONDS,
+  remainingRoundStartSeconds,
+  shouldShowRoundStart,
+} from "../../lib/roomTransitions";
 import { isWildcardTile } from "../../lib/tileArt";
 import { sortHand } from "../../lib/tiles";
 import { indexTingHints, tingCardAnchor } from "../../lib/tingHints";
@@ -358,12 +362,26 @@ function phaseLabel(room: RoomProjection): string {
 
 export default function RoomPage() {
   const roomCtrl = useRoom();
-  const social = useSocial(true);
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [inviteStatus, setInviteStatus] = useState("复制房号");
   const [gameAudioEnabled, setGameAudioEnabled] = useState(getStoredGameAudioEnabled);
   const [quickMessageOpen, setQuickMessageOpen] = useState(false);
   const [roundStartCountdown, setRoundStartCountdown] = useState<number | null>(null);
+  const [pendingTeamMatchNavigation, setPendingTeamMatchNavigation] = useState<{
+    room: RoomProjection;
+    matchFoundAt: number;
+  } | null>(null);
+  const [teamMatchFoundNow, setTeamMatchFoundNow] = useState(Date.now());
+  const openedTeamMatchIdRef = useRef<string | null>(null);
+  const teamMatchPollRefreshRef = useRef<(() => void) | null>(null);
+  const social = useSocial(true, (reason) => {
+    // Mirrors the home page's push-shortcut (pages/index/index.tsx): the
+    // server emits this the instant matchmaking.tick() finds a team match,
+    // so acting on it immediately shortcuts the up-to-1s HTTP poll below
+    // (which still runs unconditionally as a fallback if this push is missed).
+    if (reason !== "MATCHMAKING") return;
+    teamMatchPollRefreshRef.current?.();
+  });
   const [profileTarget, setProfileTarget] = useState<ProfileTarget | null>(null);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [allowBots, setAllowBots] = useState(getStoredMatchmakingAllowBots);
@@ -489,8 +507,19 @@ export default function RoomPage() {
     const poll = async () => {
       try {
         const response = await competitiveApi.status();
-        if (!disposed && response.state.status === "MATCHED" && response.room !== null) {
-          roomCtrl.openRoom(response.room);
+        if (
+          !disposed &&
+          response.state.status === "MATCHED" &&
+          response.room !== null &&
+          openedTeamMatchIdRef.current !== response.state.matchId
+        ) {
+          // Claim this match immediately so a later poll/push for the same
+          // match doesn't restart the countdown or open the room twice.
+          openedTeamMatchIdRef.current = response.state.matchId;
+          // A freshly found team-ranked match gets the same brief "匹配成功"
+          // countdown as solo ranked (pages/index/index.tsx) before opening
+          // the game room, instead of jumping straight into it.
+          setPendingTeamMatchNavigation({ room: response.room, matchFoundAt: Date.now() });
         }
       } catch {
         // The room socket owns the visible connection state. Retry a transient
@@ -499,13 +528,35 @@ export default function RoomPage() {
         if (!disposed) pollTimer = setTimeout(() => void poll(), 1_000);
       }
     };
+    teamMatchPollRefreshRef.current = () => void poll();
     void poll();
     return () => {
       disposed = true;
+      teamMatchPollRefreshRef.current = null;
       clearInterval(clock);
       if (pollTimer !== null) clearTimeout(pollTimer);
     };
   }, [room?.roomId, roomCtrl.openRoom, teamMatchActive]);
+
+  useEffect(() => {
+    // Drives the "匹配成功" countdown display, mirroring pages/index/index.tsx.
+    if (pendingTeamMatchNavigation === null) return;
+    const interval = setInterval(() => setTeamMatchFoundNow(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, [pendingTeamMatchNavigation]);
+
+  useEffect(() => {
+    if (pendingTeamMatchNavigation === null) return;
+    const remaining = remainingRoundStartSeconds(
+      pendingTeamMatchNavigation.matchFoundAt,
+      teamMatchFoundNow,
+      ROUND_START_COUNTDOWN_SECONDS,
+    );
+    if (remaining > 0) return;
+    const { room: matchedRoom } = pendingTeamMatchNavigation;
+    setPendingTeamMatchNavigation(null);
+    roomCtrl.openRoom(matchedRoom);
+  }, [pendingTeamMatchNavigation, teamMatchFoundNow, roomCtrl.openRoom]);
 
   useEffect(() => {
     if (selectedTileId === null) return;
@@ -1421,7 +1472,17 @@ export default function RoomPage() {
           </>
         )}
       </View>
-      {roundStartCountdown !== null ? (
+      {pendingTeamMatchNavigation !== null ? (
+        <RoundStartOverlay
+          eyebrow="匹配成功"
+          title="即将开局"
+          countdown={remainingRoundStartSeconds(
+            pendingTeamMatchNavigation.matchFoundAt,
+            teamMatchFoundNow,
+            ROUND_START_COUNTDOWN_SECONDS,
+          )}
+        />
+      ) : roundStartCountdown !== null ? (
         <RoundStartOverlay eyebrow="全员已准备" title="游戏开始" countdown={roundStartCountdown} />
       ) : null}
       {profileTarget !== null ? (
