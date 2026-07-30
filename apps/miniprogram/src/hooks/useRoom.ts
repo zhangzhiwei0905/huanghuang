@@ -12,7 +12,7 @@ import { ApiError, createCommand, roomApi, type CommandAcknowledge } from "../ap
 import { getStoredSessionToken } from "../api/session";
 import { API_BASE } from "../config";
 import { errorLabel } from "../lib/errors";
-import { normalizeRoomProjection } from "../lib/roomProjection";
+import { normalizeRoomProjection, shouldAcceptRoomProjection } from "../lib/roomProjection";
 import { createReconnectWatchdog } from "../lib/reconnectWatchdog";
 import {
   deriveLastSettlementFromClosedProjection,
@@ -121,7 +121,7 @@ export function useRoom(): RoomController {
         return;
       }
       setRoom((current) =>
-        current === null || normalized.version >= current.version ? normalized : current,
+        shouldAcceptRoomProjection(current, normalized) ? normalized : current,
       );
       setError(null);
     },
