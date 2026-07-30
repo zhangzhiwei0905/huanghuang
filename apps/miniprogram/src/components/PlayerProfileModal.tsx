@@ -19,6 +19,7 @@ export type PlayerProfileModalProps = {
   friendActionLabel?: string | null;
   friendActionDisabled?: boolean;
   onFriendAction?: () => void;
+  onViewMatchHistory?: () => void;
   onClose: () => void;
 };
 
@@ -41,6 +42,7 @@ export function PlayerProfileModal({
   friendActionLabel = null,
   friendActionDisabled = false,
   onFriendAction,
+  onViewMatchHistory,
   onClose,
 }: PlayerProfileModalProps) {
   const [avatarZoomed, setAvatarZoomed] = useState(false);
@@ -126,6 +128,14 @@ export function PlayerProfileModal({
                     <Text>暗杠</Text>
                     <Text>{competitiveProfile.achievements.concealedKong}</Text>
                   </View>
+                  <View>
+                    <Text>硬来由</Text>
+                    <Text>{competitiveProfile.achievements.hardLaiyou}</Text>
+                  </View>
+                  <View>
+                    <Text>软来由</Text>
+                    <Text>{competitiveProfile.achievements.softLaiyou}</Text>
+                  </View>
                 </View>
               </>
             )}
@@ -137,6 +147,11 @@ export function PlayerProfileModal({
           </View>
 
           <View className="profile-modal__actions">
+            {isSelf && competitiveProfile !== null && onViewMatchHistory !== undefined ? (
+              <Button className="btn-ghost" hoverClass="is-pressed" onClick={onViewMatchHistory}>
+                历史战绩
+              </Button>
+            ) : null}
             {friendActionLabel !== null && onFriendAction !== undefined ? (
               <Button
                 className="btn-friend"

@@ -310,6 +310,136 @@ describe("GameDatabase competitive persistence", () => {
     expect(database.getCompetitiveProfile("legacy-player")?.releaseWildcardCount).toBe(1);
   });
 
+  it("rebuilds the competitive_action_events CHECK constraint for a database predating HARD_LAIYOU/SOFT_LAIYOU", () => {
+    const path = createTempDatabasePath();
+    const legacy = new Database(path);
+    legacy.pragma("foreign_keys = ON");
+    legacy.exec(`
+      CREATE TABLE anonymous_sessions (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        nickname TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+      CREATE TABLE competitive_profiles (
+        session_id TEXT PRIMARY KEY,
+        rank_level INTEGER NOT NULL DEFAULT 0 CHECK (rank_level >= 0),
+        highest_major_index INTEGER NOT NULL DEFAULT 0 CHECK (highest_major_index >= 0),
+        protection_cards INTEGER NOT NULL DEFAULT 0 CHECK (protection_cards >= 0),
+        exposed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (exposed_kong_count >= 0),
+        indicator_pong_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (indicator_pong_kong_count >= 0),
+        added_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (added_kong_count >= 0),
+        concealed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (concealed_kong_count >= 0),
+        release_wildcard_count INTEGER NOT NULL DEFAULT 0 CHECK (release_wildcard_count >= 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+      );
+      CREATE TABLE competitive_matches (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL UNIQUE,
+        round_id TEXT NOT NULL,
+        rule_version INTEGER NOT NULL CHECK (rule_version >= 1),
+        status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'SETTLED')),
+        result_json TEXT,
+        created_at TEXT NOT NULL,
+        settled_at TEXT
+      );
+      CREATE TABLE competitive_match_players (
+        match_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        seat INTEGER NOT NULL CHECK (seat BETWEEN 0 AND 3),
+        pre_rank_level INTEGER NOT NULL CHECK (pre_rank_level >= 0),
+        post_rank_level INTEGER CHECK (post_rank_level >= 0),
+        raw_rank_delta INTEGER,
+        final_rank_delta INTEGER,
+        protection_cards_before INTEGER CHECK (protection_cards_before >= 0),
+        protection_cards_after INTEGER CHECK (protection_cards_after >= 0),
+        protection_cards_consumed INTEGER CHECK (protection_cards_consumed >= 0),
+        protection_cards_granted INTEGER CHECK (protection_cards_granted >= 0),
+        multiplier INTEGER CHECK (multiplier IN (1, 2, 4, 8, 16, 32, 64)),
+        acknowledged_at TEXT,
+        PRIMARY KEY (match_id, session_id),
+        UNIQUE (match_id, seat),
+        FOREIGN KEY (match_id) REFERENCES competitive_matches (id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE RESTRICT
+      );
+      CREATE TABLE competitive_action_events (
+        event_key TEXT PRIMARY KEY,
+        match_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        round_id TEXT NOT NULL,
+        round_version INTEGER NOT NULL CHECK (round_version >= 0),
+        action TEXT NOT NULL CHECK (
+          action IN ('EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG', 'RELEASE_WILDCARD')
+        ),
+        created_at TEXT NOT NULL,
+        UNIQUE (match_id, session_id, round_id, round_version, action),
+        FOREIGN KEY (match_id, session_id)
+          REFERENCES competitive_match_players (match_id, session_id) ON DELETE CASCADE
+      );
+      INSERT INTO anonymous_sessions (id, token_hash, nickname, created_at, last_seen_at)
+      VALUES ('legacy-player', 'legacy-token', '老玩家', '${ENQUEUED_AT}', '${ENQUEUED_AT}');
+      INSERT INTO competitive_profiles (session_id, created_at, updated_at)
+      VALUES ('legacy-player', '${ENQUEUED_AT}', '${ENQUEUED_AT}');
+      INSERT INTO competitive_matches (id, room_id, round_id, rule_version, status, created_at)
+      VALUES ('legacy-match', 'legacy-room', 'legacy-round', 1, 'ACTIVE', '${ENQUEUED_AT}');
+      INSERT INTO competitive_match_players (match_id, session_id, seat, pre_rank_level)
+      VALUES ('legacy-match', 'legacy-player', 0, 0);
+      INSERT INTO competitive_action_events
+        (event_key, match_id, session_id, round_id, round_version, action, created_at)
+      VALUES
+        ('legacy-event', 'legacy-match', 'legacy-player', 'legacy-round', 1, 'RELEASE_WILDCARD', '${ENQUEUED_AT}');
+    `);
+    expect(() =>
+      legacy
+        .prepare(
+          `INSERT INTO competitive_action_events
+           (event_key, match_id, session_id, round_id, round_version, action, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "legacy-event-blocked",
+          "legacy-match",
+          "legacy-player",
+          "legacy-round",
+          2,
+          "HARD_LAIYOU",
+          ENQUEUED_AT,
+        ),
+    ).toThrow(/CHECK constraint failed/);
+    legacy.close();
+
+    const database = createDatabase(path);
+    expect(
+      database.connection
+        .prepare("SELECT action FROM competitive_action_events WHERE event_key = ?")
+        .get("legacy-event"),
+    ).toEqual({ action: "RELEASE_WILDCARD" });
+    expect(database.getCompetitiveProfile("legacy-player")).toMatchObject({
+      hardLaiyouCount: 0,
+      softLaiyouCount: 0,
+    });
+
+    expect(
+      database.saveAcceptedTransition({
+        room: roomSnapshot("legacy-room", 1),
+        stateJson: JSON.stringify({ id: "legacy-room", version: 1 }),
+        achievementEvent: {
+          eventKey: "legacy-event-hard-laiyou",
+          matchId: "legacy-match",
+          sessionId: "legacy-player",
+          roundId: "legacy-round",
+          roundVersion: 2,
+          action: "HARD_LAIYOU",
+          createdAt: ENQUEUED_AT,
+        },
+      }),
+    ).toEqual({ achievementRecorded: true, settlementApplied: false });
+    expect(database.getCompetitiveProfile("legacy-player")?.hardLaiyouCount).toBe(1);
+  });
+
   it("creates a black-iron-V profile once and returns safe public batches", () => {
     const database = createDatabase();
     createSessions(database);
@@ -856,6 +986,162 @@ describe("GameDatabase competitive persistence", () => {
       PLAYER_IDS[2],
       PLAYER_IDS[3],
     ]);
+  });
+
+  describe("listCompetitiveMatchHistory", () => {
+    function matchRoomSnapshot(id: string, code: string, version = 1) {
+      return { id, code, status: "ACTIVE", version };
+    }
+
+    function createSettledMatch(
+      database: GameDatabase,
+      options: {
+        matchId: string;
+        roomId: string;
+        code: string;
+        settledAt: string;
+        players: readonly CompetitivePlayerSettlementInput[];
+      },
+    ): void {
+      queueSessions(database);
+      database.createCompetitiveMatch({
+        match: {
+          id: options.matchId,
+          roomId: options.roomId,
+          roundId: `round-${options.matchId}`,
+          ruleVersion: 1,
+          createdAt: options.settledAt,
+        },
+        room: matchRoomSnapshot(options.roomId, options.code),
+        stateJson: JSON.stringify({ id: options.roomId, version: 1 }),
+        players: PLAYER_IDS.map((sessionId, seat) => ({ sessionId, seat, queueVersion: 1 })),
+      });
+      database.saveAcceptedTransition({
+        room: matchRoomSnapshot(options.roomId, options.code, 2),
+        stateJson: JSON.stringify({ id: options.roomId, version: 2 }),
+        terminalSettlement: {
+          matchId: options.matchId,
+          resultJson: "{}",
+          settledAt: options.settledAt,
+          players: options.players,
+        },
+      });
+      // upsertMatchmakingEntry() treats an unacknowledged settled match the
+      // same as an active one, so the next match's queueSessions() would
+      // otherwise reject these sessions as still "in" this match.
+      for (const sessionId of PLAYER_IDS) {
+        database.acknowledgeCompetitiveMatchResult(options.matchId, sessionId, options.settledAt);
+      }
+    }
+
+    function seedThreeMatches(database: GameDatabase): void {
+      createSettledMatch(database, {
+        matchId: "history-win",
+        roomId: "history-room-win",
+        code: "5001",
+        settledAt: "2026-07-28T10:00:00.000Z",
+        players: [
+          {
+            ...unchangedSettlement(PLAYER_IDS[0]),
+            postRankLevel: 5,
+            finalRankDelta: 5,
+            multiplier: 4,
+          },
+          unchangedSettlement(PLAYER_IDS[1]),
+          unchangedSettlement(PLAYER_IDS[2]),
+          unchangedSettlement(PLAYER_IDS[3]),
+        ],
+      });
+      createSettledMatch(database, {
+        matchId: "history-loss",
+        roomId: "history-room-loss",
+        code: "5002",
+        settledAt: "2026-07-28T11:00:00.000Z",
+        players: [
+          {
+            ...unchangedSettlement(PLAYER_IDS[0]),
+            postRankLevel: 2,
+            finalRankDelta: -3,
+            multiplier: 2,
+          },
+          unchangedSettlement(PLAYER_IDS[1]),
+          unchangedSettlement(PLAYER_IDS[2]),
+          unchangedSettlement(PLAYER_IDS[3]),
+        ],
+      });
+      createSettledMatch(database, {
+        matchId: "history-draw",
+        roomId: "history-room-draw",
+        code: "5003",
+        settledAt: "2026-07-28T12:00:00.000Z",
+        players: [
+          { ...unchangedSettlement(PLAYER_IDS[0]), postRankLevel: 2, multiplier: null },
+          unchangedSettlement(PLAYER_IDS[1]),
+          unchangedSettlement(PLAYER_IDS[2]),
+          unchangedSettlement(PLAYER_IDS[3]),
+        ],
+      });
+    }
+
+    it("derives WIN/LOSS/DRAW and returns each session's own multiplier and rank delta, newest first", () => {
+      const database = createDatabase();
+      createSessions(database);
+      seedThreeMatches(database);
+
+      const ownHistory = database.listCompetitiveMatchHistory(PLAYER_IDS[0], { limit: 10 });
+      expect(ownHistory.map((entry) => entry.matchId)).toEqual([
+        "history-draw",
+        "history-loss",
+        "history-win",
+      ]);
+      expect(ownHistory[0]).toMatchObject({ outcome: "DRAW", multiplier: null, finalRankDelta: 0 });
+      expect(ownHistory[1]).toMatchObject({ outcome: "LOSS", multiplier: 2, finalRankDelta: -3 });
+      expect(ownHistory[2]).toMatchObject({ outcome: "WIN", multiplier: 4, finalRankDelta: 5 });
+
+      // A player who never changed rank across any of the three matches
+      // (unchangedSettlement keeps finalRankDelta at 0 with a real
+      // multiplier) reads as LOSS every time — matches
+      // applyCompetitiveRankTransition's guarantee that only DRAW can pair a
+      // zero delta with a null multiplier.
+      const otherHistory = database.listCompetitiveMatchHistory(PLAYER_IDS[1], { limit: 10 });
+      expect(otherHistory.every((entry) => entry.outcome === "LOSS")).toBe(true);
+    });
+
+    it("paginates with a beforeMatchId cursor in settledAt order", () => {
+      const database = createDatabase();
+      createSessions(database);
+      seedThreeMatches(database);
+
+      const firstPage = database.listCompetitiveMatchHistory(PLAYER_IDS[0], { limit: 2 });
+      expect(firstPage.map((entry) => entry.matchId)).toEqual(["history-draw", "history-loss"]);
+
+      const secondPageCursor = firstPage[1]?.matchId;
+      if (secondPageCursor === undefined) throw new Error("Expected a second-page cursor");
+      const secondPage = database.listCompetitiveMatchHistory(PLAYER_IDS[0], {
+        limit: 2,
+        beforeMatchId: secondPageCursor,
+      });
+      expect(secondPage.map((entry) => entry.matchId)).toEqual(["history-win"]);
+    });
+
+    it("excludes matches that have not yet settled", () => {
+      const database = createDatabase();
+      createSessions(database);
+      queueSessions(database);
+      database.createCompetitiveMatch({
+        match: {
+          id: "history-active",
+          roomId: "history-room-active",
+          roundId: "round-history-active",
+          ruleVersion: 1,
+        },
+        room: matchRoomSnapshot("history-room-active", "5004"),
+        stateJson: JSON.stringify({ id: "history-room-active", version: 1 }),
+        players: PLAYER_IDS.map((sessionId, seat) => ({ sessionId, seat, queueVersion: 1 })),
+      });
+
+      expect(database.listCompetitiveMatchHistory(PLAYER_IDS[0], { limit: 10 })).toEqual([]);
+    });
   });
 
   it("seeds a ranked bot with a highestMajorIndex that satisfies the rank-state invariant", () => {

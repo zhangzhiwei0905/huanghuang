@@ -36,7 +36,13 @@ export type RoomInviteRow = {
 };
 
 export type CompetitiveAchievementAction =
-  "EXPOSED_KONG" | "INDICATOR_PONG_KONG" | "ADDED_KONG" | "CONCEALED_KONG" | "RELEASE_WILDCARD";
+  | "EXPOSED_KONG"
+  | "INDICATOR_PONG_KONG"
+  | "ADDED_KONG"
+  | "CONCEALED_KONG"
+  | "RELEASE_WILDCARD"
+  | "HARD_LAIYOU"
+  | "SOFT_LAIYOU";
 
 export type CompetitiveProfileRow = {
   sessionId: string;
@@ -48,6 +54,8 @@ export type CompetitiveProfileRow = {
   addedKongCount: number;
   concealedKongCount: number;
   releaseWildcardCount: number;
+  hardLaiyouCount: number;
+  softLaiyouCount: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -61,6 +69,8 @@ export type PublicCompetitiveProfileRow = Pick<
   | "addedKongCount"
   | "concealedKongCount"
   | "releaseWildcardCount"
+  | "hardLaiyouCount"
+  | "softLaiyouCount"
 >;
 
 export type AppVersionRow = {
@@ -129,6 +139,16 @@ export type CompetitiveMatchPlayerRow = {
 export type CompetitiveMatchSettlement = {
   match: CompetitiveMatchRow;
   players: CompetitiveMatchPlayerRow[];
+};
+
+export type CompetitiveMatchHistoryEntry = {
+  matchId: string;
+  settledAt: string;
+  outcome: "WIN" | "LOSS" | "DRAW";
+  multiplier: number | null;
+  preRankLevel: number;
+  postRankLevel: number;
+  finalRankDelta: number;
 };
 
 export type RoomSnapshotInput = {
@@ -305,6 +325,8 @@ export class GameDatabase {
         added_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (added_kong_count >= 0),
         concealed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (concealed_kong_count >= 0),
         release_wildcard_count INTEGER NOT NULL DEFAULT 0 CHECK (release_wildcard_count >= 0),
+        hard_laiyou_count INTEGER NOT NULL DEFAULT 0 CHECK (hard_laiyou_count >= 0),
+        soft_laiyou_count INTEGER NOT NULL DEFAULT 0 CHECK (soft_laiyou_count >= 0),
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
@@ -358,7 +380,8 @@ export class GameDatabase {
         round_version INTEGER NOT NULL CHECK (round_version >= 0),
         action TEXT NOT NULL CHECK (
           action IN (
-            'EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG', 'RELEASE_WILDCARD'
+            'EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG', 'RELEASE_WILDCARD',
+            'HARD_LAIYOU', 'SOFT_LAIYOU'
           )
         ),
         created_at TEXT NOT NULL,
@@ -431,6 +454,8 @@ export class GameDatabase {
       "ALTER TABLE matchmaking_entries ADD COLUMN party_id TEXT",
       "ALTER TABLE matchmaking_entries ADD COLUMN party_size INTEGER CHECK (party_size BETWEEN 1 AND 4)",
       "ALTER TABLE competitive_profiles ADD COLUMN release_wildcard_count INTEGER NOT NULL DEFAULT 0 CHECK (release_wildcard_count >= 0)",
+      "ALTER TABLE competitive_profiles ADD COLUMN hard_laiyou_count INTEGER NOT NULL DEFAULT 0 CHECK (hard_laiyou_count >= 0)",
+      "ALTER TABLE competitive_profiles ADD COLUMN soft_laiyou_count INTEGER NOT NULL DEFAULT 0 CHECK (soft_laiyou_count >= 0)",
     ]) {
       try {
         this.connection.exec(statement);
@@ -466,7 +491,7 @@ export class GameDatabase {
     // competitive_action_events by an earlier CREATE TABLE (run against a
     // pre-existing database file) can't be widened with ALTER TABLE — SQLite
     // has no "ALTER CHECK CONSTRAINT". Detect that case by inspecting the
-    // persisted table definition and, if it predates RELEASE_WILDCARD,
+    // persisted table definition and, if it predates HARD_LAIYOU/SOFT_LAIYOU,
     // rebuild the table with the current schema and copy the rows over.
     this.migrateCompetitiveActionEventsCheckConstraint();
     this.backfillPlayerIds();
@@ -492,10 +517,10 @@ export class GameDatabase {
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'competitive_action_events'",
       )
       .get() as { sql: string } | undefined;
-    if (existing === undefined || existing.sql.includes("RELEASE_WILDCARD")) return;
+    if (existing === undefined || existing.sql.includes("HARD_LAIYOU")) return;
     const rebuild = this.connection.transaction(() => {
       this.connection.exec(`
-        ALTER TABLE competitive_action_events RENAME TO competitive_action_events_pre_release_wildcard;
+        ALTER TABLE competitive_action_events RENAME TO competitive_action_events_pre_laiyou;
         CREATE TABLE competitive_action_events (
           event_key TEXT PRIMARY KEY,
           match_id TEXT NOT NULL,
@@ -504,7 +529,8 @@ export class GameDatabase {
           round_version INTEGER NOT NULL CHECK (round_version >= 0),
           action TEXT NOT NULL CHECK (
             action IN (
-              'EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG', 'RELEASE_WILDCARD'
+              'EXPOSED_KONG', 'INDICATOR_PONG_KONG', 'ADDED_KONG', 'CONCEALED_KONG', 'RELEASE_WILDCARD',
+              'HARD_LAIYOU', 'SOFT_LAIYOU'
             )
           ),
           created_at TEXT NOT NULL,
@@ -513,8 +539,8 @@ export class GameDatabase {
             REFERENCES competitive_match_players (match_id, session_id) ON DELETE CASCADE
         );
         INSERT INTO competitive_action_events
-          SELECT * FROM competitive_action_events_pre_release_wildcard;
-        DROP TABLE competitive_action_events_pre_release_wildcard;
+          SELECT * FROM competitive_action_events_pre_laiyou;
+        DROP TABLE competitive_action_events_pre_laiyou;
         CREATE INDEX IF NOT EXISTS idx_competitive_action_events_match
           ON competitive_action_events (match_id, round_id, round_version);
       `);
@@ -574,6 +600,8 @@ export class GameDatabase {
     added_kong_count AS addedKongCount,
     concealed_kong_count AS concealedKongCount,
     release_wildcard_count AS releaseWildcardCount,
+    hard_laiyou_count AS hardLaiyouCount,
+    soft_laiyou_count AS softLaiyouCount,
     created_at AS createdAt,
     updated_at AS updatedAt`;
 
@@ -584,7 +612,9 @@ export class GameDatabase {
     indicator_pong_kong_count AS indicatorPongKongCount,
     added_kong_count AS addedKongCount,
     concealed_kong_count AS concealedKongCount,
-    release_wildcard_count AS releaseWildcardCount`;
+    release_wildcard_count AS releaseWildcardCount,
+    hard_laiyou_count AS hardLaiyouCount,
+    soft_laiyou_count AS softLaiyouCount`;
 
   private static readonly MATCHMAKING_ENTRY_COLUMNS = `
     session_id AS sessionId,
@@ -1672,6 +1702,52 @@ export class GameDatabase {
     return [...new Set(rows.map((row) => row.sessionId))];
   }
 
+  /**
+   * Self-only match history, newest first. `outcome` is derived straight from
+   * the settled columns rather than parsing `result_json`: `multiplier` is
+   * only ever null for a draw, and `applyCompetitiveRankTransition` (game-engine)
+   * guarantees a WIN's `final_rank_delta` is always positive and a LOSS's is
+   * always `<= 0` (even fully protection-card-absorbed losses stay at 0, never
+   * positive), so the sign alone disambiguates WIN vs LOSS once DRAW is ruled out.
+   */
+  listCompetitiveMatchHistory(
+    sessionId: string,
+    options: { limit: number; beforeMatchId?: string },
+  ): CompetitiveMatchHistoryEntry[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT
+           m.id AS matchId,
+           m.settled_at AS settledAt,
+           CASE
+             WHEN p.multiplier IS NULL THEN 'DRAW'
+             WHEN p.final_rank_delta > 0 THEN 'WIN'
+             ELSE 'LOSS'
+           END AS outcome,
+           p.multiplier AS multiplier,
+           p.pre_rank_level AS preRankLevel,
+           p.post_rank_level AS postRankLevel,
+           p.final_rank_delta AS finalRankDelta
+         FROM competitive_match_players p
+         JOIN competitive_matches m ON m.id = p.match_id
+         WHERE p.session_id = ?
+           AND m.status = 'SETTLED'
+           AND (
+             ? IS NULL
+             OR m.settled_at < (SELECT settled_at FROM competitive_matches WHERE id = ?)
+           )
+         ORDER BY m.settled_at DESC, m.id DESC
+         LIMIT ?`,
+      )
+      .all(
+        sessionId,
+        options.beforeMatchId ?? null,
+        options.beforeMatchId ?? null,
+        options.limit,
+      ) as CompetitiveMatchHistoryEntry[];
+    return rows;
+  }
+
   getCompetitiveMatchSettlement(matchId: string): CompetitiveMatchSettlement | null {
     const match = this.connection
       .prepare(
@@ -1861,6 +1937,8 @@ export class GameDatabase {
       ADDED_KONG: "added_kong_count",
       CONCEALED_KONG: "concealed_kong_count",
       RELEASE_WILDCARD: "release_wildcard_count",
+      HARD_LAIYOU: "hard_laiyou_count",
+      SOFT_LAIYOU: "soft_laiyou_count",
     };
     const updated = this.connection
       .prepare(

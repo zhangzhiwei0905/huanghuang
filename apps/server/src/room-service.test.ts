@@ -2102,6 +2102,85 @@ describe("RoomService", () => {
     }
   });
 
+  it("records a HARD_LAIYOU achievement when a hard win lands on the wildcard-release draw", () => {
+    const { database, room, service } = createCompetitiveFixture();
+    const round = activeRound(room);
+    const winnerSessionId = room.seats[0].sessionId;
+    if (winnerSessionId === null) throw new Error("Expected a competitive winner");
+    const winningTile = testTile("laiyou-hard-winning-tile", "TIAO", 9);
+    round.wildcardKind = { suit: "WAN", rank: 5 };
+    round.players[0].hand = [
+      ...["a", "b", "c"].map((suffix) => testTile(`laiyou-hard-wan-1-${suffix}`, "WAN", 1)),
+      ...["a", "b", "c"].map((suffix) => testTile(`laiyou-hard-tiao-2-${suffix}`, "TIAO", 2)),
+      ...["a", "b", "c"].map((suffix) => testTile(`laiyou-hard-tong-3-${suffix}`, "TONG", 3)),
+      testTile("laiyou-hard-tiao-9-a", "TIAO", 9),
+      testTile("laiyou-hard-tiao-9-b", "TIAO", 9),
+      winningTile,
+      testTile("laiyou-hard-wan-7-a", "WAN", 7),
+      testTile("laiyou-hard-wan-7-b", "WAN", 7),
+    ];
+    round.currentSeat = 0;
+    round.phase = "TURN_DECISION";
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = winningTile.id;
+    round.winPassedThisTurn = false;
+    // Marks the winning draw as the one right after this seat's most recent
+    // wildcard release, exactly what isLaiyouWin() (game-engine/round.ts)
+    // checks — this is what "来由" means.
+    round.laiyouCandidate = { seat: 0, tileId: winningTile.id };
+
+    const result = service.execute(winnerSessionId, {
+      type: "DECLARE_WIN",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: room.version,
+      payload: {},
+    });
+    expect(result.accepted).toBe(true);
+    const profile = database.getCompetitiveProfile(winnerSessionId);
+    expect(profile?.hardLaiyouCount).toBe(1);
+    expect(profile?.softLaiyouCount).toBe(0);
+  });
+
+  it("records a SOFT_LAIYOU achievement when a soft win lands on the wildcard-release draw", () => {
+    const { database, room, service } = createCompetitiveFixture();
+    const round = activeRound(room);
+    const winnerSessionId = room.seats[0].sessionId;
+    if (winnerSessionId === null) throw new Error("Expected a competitive winner");
+    const wildcard = testTile("laiyou-soft-wildcard", "WAN", 5);
+    round.wildcardKind = { suit: "WAN", rank: 5 };
+    round.players[0].hand = [
+      ...["a", "b", "c"].map((suffix) => testTile(`laiyou-soft-wan-1-${suffix}`, "WAN", 1)),
+      ...["a", "b", "c"].map((suffix) => testTile(`laiyou-soft-tiao-2-${suffix}`, "TIAO", 2)),
+      ...["a", "b", "c"].map((suffix) => testTile(`laiyou-soft-tong-3-${suffix}`, "TONG", 3)),
+      testTile("laiyou-soft-wan-7-a", "WAN", 7),
+      testTile("laiyou-soft-wan-7-b", "WAN", 7),
+      testTile("laiyou-soft-tiao-9-a", "TIAO", 9),
+      testTile("laiyou-soft-tiao-9-b", "TIAO", 9),
+      wildcard,
+    ];
+    round.currentSeat = 0;
+    round.phase = "TURN_DECISION";
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = wildcard.id;
+    round.winPassedThisTurn = false;
+    round.laiyouCandidate = { seat: 0, tileId: wildcard.id };
+
+    const result = service.execute(winnerSessionId, {
+      type: "DECLARE_WIN",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: room.version,
+      payload: {},
+    });
+    expect(result.accepted).toBe(true);
+    const profile = database.getCompetitiveProfile(winnerSessionId);
+    expect(profile?.softLaiyouCount).toBe(1);
+    expect(profile?.hardLaiyouCount).toBe(0);
+  });
+
   it("attributes an INDICATOR_PONG_KONG claim to the claiming bot's session, not the discarding human's", () => {
     // Reproduces the user report that a human's own achievement counter went
     // up after a BOT claimed the human's discarded indicator-matching tile.
@@ -2153,6 +2232,8 @@ describe("RoomService", () => {
       addedKong: 0,
       concealedKong: 0,
       releaseWildcard: 0,
+      hardLaiyou: 0,
+      softLaiyou: 0,
     });
 
     const indicatorKind = { suit: round.indicatorTile.suit, rank: round.indicatorTile.rank };

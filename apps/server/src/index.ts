@@ -528,6 +528,19 @@ app.get("/api/competitive/profile", (request, reply) => {
   }
 });
 
+app.get<{ Querystring: { before?: string } }>("/api/competitive/matches", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    return matchmaking.getMatchHistory(session, request.query.before);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === "WECHAT_LINK_REQUIRED") {
+      return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+    }
+    throw cause;
+  }
+});
+
 app.get("/api/matchmaking/status", (request, reply) => {
   const session = sessions.resolve(request);
   if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });

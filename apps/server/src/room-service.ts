@@ -306,6 +306,8 @@ function projectCompetitiveProfile(
       addedKong: profile.addedKongCount,
       concealedKong: profile.concealedKongCount,
       releaseWildcard: profile.releaseWildcardCount,
+      hardLaiyou: profile.hardLaiyouCount,
+      softLaiyou: profile.softLaiyouCount,
     },
   };
 }
@@ -343,17 +345,19 @@ function shuffledCompetitivePlayers(
 }
 
 function competitiveAchievementAction(
-  action: GameEffectAction,
+  descriptor: Pick<EffectDescriptor, "action" | "winType" | "laiyou">,
 ): CompetitiveAchievementAction | null {
-  switch (action) {
+  switch (descriptor.action) {
     case "EXPOSED_KONG":
     case "INDICATOR_PONG_KONG":
     case "ADDED_KONG":
     case "CONCEALED_KONG":
     case "RELEASE_WILDCARD":
-      return action;
-    case "PONG":
+      return descriptor.action;
     case "WIN":
+      if (!descriptor.laiyou) return null;
+      return descriptor.winType === "HARD" ? "HARD_LAIYOU" : "SOFT_LAIYOU";
+    case "PONG":
       return null;
   }
 }
@@ -852,7 +856,7 @@ export class RoomService {
     }
     const descriptor = detectEffectDescriptor(room.round, result.state);
     if (descriptor === null) return undefined;
-    const action = competitiveAchievementAction(descriptor.action);
+    const action = competitiveAchievementAction(descriptor);
     const sessionId = room.seats[descriptor.actorSeat].sessionId;
     if (action === null || sessionId === null) return undefined;
     return {

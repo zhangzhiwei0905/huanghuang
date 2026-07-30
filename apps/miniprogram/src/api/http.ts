@@ -4,6 +4,7 @@ import type {
   BotDifficulty,
   CommandEnvelope,
   CommandResult,
+  CompetitiveMatchHistoryPage,
   MatchmakingState,
   RoomMode,
   RoomProjection,
@@ -96,6 +97,11 @@ export type MatchmakingQueueOptions = {
 export const competitiveApi = {
   profile(): Promise<SelfCompetitiveProfile> {
     return request("/api/competitive/profile");
+  },
+  matchHistory(beforeMatchId?: string): Promise<CompetitiveMatchHistoryPage> {
+    return request(
+      `/api/competitive/matches${beforeMatchId !== undefined ? `?before=${encodeURIComponent(beforeMatchId)}` : ""}`,
+    );
   },
   status(): Promise<MatchmakingResponse> {
     return request("/api/matchmaking/status");

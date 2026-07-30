@@ -168,12 +168,20 @@
 
 .profile-modal__achievements {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--line, #cde0d3);
   border-radius: 0.8vmin;
   background: var(--line, #cde0d3);
+}
+
+/* 7 achievement tiles don't divide evenly into 4 columns (4 + 3); span the
+   last tile across the two remaining columns so the final row stays full
+   instead of leaving an empty grid cell for the gap-color trick to bleed
+   into. */
+.profile-modal__achievements > view:last-child {
+  grid-column: span 2;
 }
 
 .profile-modal__achievements > view {

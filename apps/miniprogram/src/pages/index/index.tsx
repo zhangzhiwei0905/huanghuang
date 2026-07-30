@@ -21,6 +21,7 @@ import {
 } from "../../api/http";
 import { API_BASE, APP_BUILT_AT, APP_VERSION } from "../../config";
 import { PlayerProfileModal } from "../../components/PlayerProfileModal";
+import { MatchHistoryModal } from "../../components/MatchHistoryModal";
 import { FriendsPanel } from "../../components/FriendsPanel";
 import { RankBadge } from "../../components/RankBadge";
 import { useSocial } from "../../hooks/useSocial";
@@ -305,6 +306,7 @@ export default function IndexPage() {
   const [backendVersion, setBackendVersion] = useState<VersionInfo | null>(null);
   const [backendVersionError, setBackendVersionError] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [matchHistoryOpen, setMatchHistoryOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const social = useSocial(identityState === "loggedIn" && identity !== null, (reason) => {
     // The server pushes this the instant matchmaking.tick() finds a match, so
@@ -1041,8 +1043,12 @@ export default function IndexPage() {
           connected
           isSelf
           competitiveProfile={competitiveProfile}
+          onViewMatchHistory={() => setMatchHistoryOpen(true)}
           onClose={() => setProfileOpen(false)}
         />
+      ) : null}
+      {matchHistoryOpen ? (
+        <MatchHistoryModal onClose={() => setMatchHistoryOpen(false)} />
       ) : null}
       {latestRoomInvite !== null && !friendsOpen ? (
         <View className="mp-room-invite">

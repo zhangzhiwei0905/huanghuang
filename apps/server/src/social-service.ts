@@ -42,6 +42,8 @@ export class SocialService {
                 addedKong: profile.addedKongCount,
                 concealedKong: profile.concealedKongCount,
                 releaseWildcard: profile.releaseWildcardCount,
+                hardLaiyou: profile.hardLaiyouCount,
+                softLaiyou: profile.softLaiyouCount,
               },
             },
     };

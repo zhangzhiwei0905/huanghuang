@@ -40,6 +40,8 @@ export const competitiveAchievementActionSchema = z.enum([
   "ADDED_KONG",
   "CONCEALED_KONG",
   "RELEASE_WILDCARD",
+  "HARD_LAIYOU",
+  "SOFT_LAIYOU",
 ]);
 
 export const competitiveAchievementTotalsSchema = z.object({
@@ -48,6 +50,8 @@ export const competitiveAchievementTotalsSchema = z.object({
   addedKong: z.number().int().nonnegative(),
   concealedKong: z.number().int().nonnegative(),
   releaseWildcard: z.number().int().nonnegative(),
+  hardLaiyou: z.number().int().nonnegative(),
+  softLaiyou: z.number().int().nonnegative(),
 });
 
 export const publicCompetitiveProfileSchema = z.object({
@@ -103,6 +107,24 @@ export const competitiveSettlementProjectionSchema = competitiveMatchProjectionS
   afterRankDisplay: competitiveRankDisplaySchema,
 });
 
+export const competitiveMatchOutcomeSchema = z.enum(["WIN", "LOSS", "DRAW"]);
+
+export const competitiveMatchHistoryEntrySchema = z.object({
+  matchId: z.string().min(1),
+  settledAt: z.iso.datetime({ offset: true }),
+  outcome: competitiveMatchOutcomeSchema,
+  /** The querying player's own multiplier for this match; null for a draw. */
+  multiplier: competitiveMultiplierSchema.nullable(),
+  finalRankDelta: z.number().int(),
+  /** Set only when the match's rank change crossed a major-tier boundary. */
+  crossedMajor: z.enum(["UP", "DOWN"]).nullable(),
+});
+
+export const competitiveMatchHistoryPageSchema = z.object({
+  entries: z.array(competitiveMatchHistoryEntrySchema),
+  nextCursor: z.string().nullable(),
+});
+
 export const matchmakingQueueInputSchema = z.object({
   previousMatchId: z.string().min(1).optional(),
   // Experience-phase toggle: when true and the server has ranked bots
@@ -156,6 +178,9 @@ export type CompetitiveRankOutcome = z.infer<typeof competitiveRankOutcomeSchema
 export type CompetitiveRankTransition = z.infer<typeof competitiveRankTransitionSchema>;
 export type CompetitiveMatchProjection = z.infer<typeof competitiveMatchProjectionSchema>;
 export type CompetitiveSettlementProjection = z.infer<typeof competitiveSettlementProjectionSchema>;
+export type CompetitiveMatchOutcome = z.infer<typeof competitiveMatchOutcomeSchema>;
+export type CompetitiveMatchHistoryEntry = z.infer<typeof competitiveMatchHistoryEntrySchema>;
+export type CompetitiveMatchHistoryPage = z.infer<typeof competitiveMatchHistoryPageSchema>;
 export type MatchmakingQueueInput = z.infer<typeof matchmakingQueueInputSchema>;
 export type MatchmakingState = z.infer<typeof matchmakingStateSchema>;
 export type TeamMatchmakingProjection = z.infer<typeof teamMatchmakingProjectionSchema>;

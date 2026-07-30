@@ -1,5 +1,10 @@
-import { formatRankLevel } from "@huanghuang/game-engine";
-import type { MatchmakingState, SelfCompetitiveProfile } from "@huanghuang/protocol";
+import { formatRankLevel, majorIndexForRankLevel } from "@huanghuang/game-engine";
+import type {
+  CompetitiveMatchHistoryPage,
+  CompetitiveMultiplier,
+  MatchmakingState,
+  SelfCompetitiveProfile,
+} from "@huanghuang/protocol";
 import {
   CompetitiveMatchCreationConflictError,
   type AnonymousSession,
@@ -11,6 +16,8 @@ import {
   selectMatchmakingGroup,
   type MatchmakingCandidate,
 } from "./matchmaking-algorithm.js";
+
+export const MATCH_HISTORY_PAGE_SIZE = 20;
 
 export const MATCHMAKING_DISCONNECT_GRACE_MS = 10_000;
 // Client polls status roughly every 1s over HTTP; 8s tolerates a few missed
@@ -85,7 +92,36 @@ export class MatchmakingService {
         addedKong: profile.addedKongCount,
         concealedKong: profile.concealedKongCount,
         releaseWildcard: profile.releaseWildcardCount,
+        hardLaiyou: profile.hardLaiyouCount,
+        softLaiyou: profile.softLaiyouCount,
       },
+    };
+  }
+
+  getMatchHistory(session: AnonymousSession, beforeMatchId?: string): CompetitiveMatchHistoryPage {
+    this.assertWechatLinked(session);
+    const entries = this.database.listCompetitiveMatchHistory(session.id, {
+      limit: MATCH_HISTORY_PAGE_SIZE,
+      ...(beforeMatchId === undefined ? {} : { beforeMatchId }),
+    });
+    return {
+      entries: entries.map((entry) => {
+        const beforeMajor = majorIndexForRankLevel(entry.preRankLevel);
+        const afterMajor = majorIndexForRankLevel(entry.postRankLevel);
+        return {
+          matchId: entry.matchId,
+          settledAt: entry.settledAt,
+          outcome: entry.outcome,
+          multiplier: entry.multiplier as CompetitiveMultiplier | null,
+          finalRankDelta: entry.finalRankDelta,
+          crossedMajor:
+            afterMajor === beforeMajor ? null : afterMajor > beforeMajor ? "UP" : "DOWN",
+        };
+      }),
+      nextCursor:
+        entries.length < MATCH_HISTORY_PAGE_SIZE
+          ? null
+          : (entries[entries.length - 1]?.matchId ?? null),
     };
   }
 

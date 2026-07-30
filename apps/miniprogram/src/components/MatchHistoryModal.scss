@@ -1,0 +1,140 @@
+@keyframes history-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes history-rise {
+  from {
+    opacity: 0;
+    transform: translateY(2.4vmin) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.history-backdrop {
+  position: fixed;
+  z-index: 55;
+  inset: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3vmin;
+  background: rgb(20 24 22 / 62%);
+  animation: history-fade 200ms ease-out backwards;
+}
+
+.history-modal {
+  width: min(84vw, 78vmin);
+  max-height: calc(100vh - 6vmin);
+  overflow-y: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6vmin;
+  border: 1px solid #d8d4c4;
+  border-radius: 2vmin;
+  padding: 3vmin;
+  background: linear-gradient(175deg, #fdfcf6 0%, #f0ecdd 100%);
+  color: var(--ink, #272925);
+  box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 30%);
+  animation: history-rise 260ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+.history-modal__title {
+  font-size: 2.6vmin;
+  font-weight: 700;
+  text-align: center;
+}
+
+.history-modal__empty {
+  padding: 4vmin 0;
+  color: var(--muted, #5f625b);
+  font-size: 2vmin;
+  text-align: center;
+}
+
+.history-modal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 1vmin;
+  background: var(--line, #cde0d3);
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5vmin;
+  padding: 1.4vmin 1.8vmin;
+  background: #fdfcf6;
+}
+
+.history-row__outcome {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2vmin;
+}
+
+.history-row__outcome-label {
+  font-size: 2.2vmin;
+  font-weight: 800;
+}
+
+.history-row--WIN .history-row__outcome-label {
+  color: var(--accent, #2f6a4c);
+}
+
+.history-row--LOSS .history-row__outcome-label {
+  color: var(--danger, #7a4b45);
+}
+
+.history-row--DRAW .history-row__outcome-label {
+  color: var(--muted, #5f625b);
+}
+
+.history-row__time {
+  color: var(--muted, #5f625b);
+  font-size: 1.6vmin;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row__multiplier {
+  min-width: 8vmin;
+  color: var(--muted, #5f625b);
+  font-size: 1.9vmin;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.history-row__delta {
+  min-width: 18vmin;
+  font-size: 1.9vmin;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.history-modal__error {
+  color: var(--danger, #7a4b45);
+  font-size: 1.8vmin;
+  text-align: center;
+}
+
+.history-modal__more,
+.history-modal__close {
+  margin: 0;
+}
