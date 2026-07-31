@@ -16,6 +16,7 @@ import tableBackground from "../../assets/background.optimized.jpg";
 import {
   competitiveApi,
   getStoredMatchmakingAllowBots,
+  roomApi,
   setStoredMatchmakingAllowBots,
 } from "../../api/http";
 import { API_BASE } from "../../config";
@@ -671,6 +672,28 @@ export default function RoomPage() {
     // `room.competitiveMatch` itself is gone.
     const matchId = matchIdOverride ?? room?.competitiveMatch?.matchId;
     if (matchId === undefined) return;
+    // A team-ranked match remembers the staging room its party queued from.
+    // Sending the player back there (instead of the solo requeue below) lets
+    // them regroup with the same teammates — and re-invite friends — rather
+    // than being silently dropped into solo ranked.
+    const originRoomCode =
+      room?.competitiveMatch?.originRoomCode ??
+      roomCtrl.lastSettlement?.competitiveMatch.originRoomCode ??
+      null;
+    if (originRoomCode !== null) {
+      try {
+        const originRoom = await roomApi.get(originRoomCode);
+        Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
+        roomCtrl.clearLastSettlement();
+        Taro.setStorageSync("huanghuang_open_room", originRoom);
+        await Taro.reLaunch({ url: "/pages/room/index" });
+        return;
+      } catch {
+        // Origin room is gone (dissolved, expired, etc.) — fall through to
+        // the ordinary solo requeue below instead of leaving the player
+        // stuck on a dead "继续游戏" button.
+      }
+    }
     try {
       Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
       const response = await competitiveApi.queue({

@@ -124,6 +124,11 @@ export type CompetitiveMatchPlayerRow = {
   matchId: string;
   sessionId: string;
   seat: number;
+  /**
+   * The team-ranked staging room id this player queued from as part of a
+   * pre-made party, if any. Null for solo queuers and for bots.
+   */
+  partyId: string | null;
   preRankLevel: number;
   postRankLevel: number | null;
   rawRankDelta: number | null;
@@ -168,7 +173,18 @@ export type CreateCompetitiveMatchInput = {
   };
   room: RoomSnapshotInput;
   stateJson: string;
-  players: readonly { sessionId: string; seat: number; queueVersion: number }[];
+  players: readonly {
+    sessionId: string;
+    seat: number;
+    queueVersion: number;
+    /**
+     * The team-ranked staging room id this player queued from as part of a
+     * pre-made party, if any. Lets a settled match's "continue" flow send
+     * this player's original party back to that room instead of silently
+     * re-queueing them solo — see 07-31-ranked-continue-team-bug.
+     */
+    partyId?: string | null;
+  }[];
 };
 
 /**
@@ -181,7 +197,7 @@ export type CreateCompetitiveMatchWithBotsInput = {
   match: CreateCompetitiveMatchInput["match"];
   room: RoomSnapshotInput;
   stateJson: string;
-  humanPlayers: readonly { sessionId: string; seat: number; queueVersion: number }[];
+  humanPlayers: readonly CreateCompetitiveMatchInput["players"][number][];
   botPlayers: readonly { sessionId: string; seat: number }[];
 };
 
@@ -456,6 +472,13 @@ export class GameDatabase {
       "ALTER TABLE competitive_profiles ADD COLUMN release_wildcard_count INTEGER NOT NULL DEFAULT 0 CHECK (release_wildcard_count >= 0)",
       "ALTER TABLE competitive_profiles ADD COLUMN hard_laiyou_count INTEGER NOT NULL DEFAULT 0 CHECK (hard_laiyou_count >= 0)",
       "ALTER TABLE competitive_profiles ADD COLUMN soft_laiyou_count INTEGER NOT NULL DEFAULT 0 CHECK (soft_laiyou_count >= 0)",
+      // Nullable: which team-ranked staging room (matchmaking_entries.party_id)
+      // this player queued from, if any. Per-player (not per-match) because a
+      // single table can now be assembled from two different pre-made parties
+      // plus solo queuers — "continue as a team" must only re-group a player
+      // with their own original party, not everyone who happened to share the
+      // table.
+      "ALTER TABLE competitive_match_players ADD COLUMN party_id TEXT",
     ]) {
       try {
         this.connection.exec(statement);
@@ -640,6 +663,7 @@ export class GameDatabase {
     match_id AS matchId,
     session_id AS sessionId,
     seat,
+    party_id AS partyId,
     pre_rank_level AS preRankLevel,
     post_rank_level AS postRankLevel,
     raw_rank_delta AS rawRankDelta,
@@ -1510,14 +1534,20 @@ export class GameDatabase {
         );
       const insertPlayer = this.connection.prepare(
         `INSERT INTO competitive_match_players
-         (match_id, session_id, seat, pre_rank_level)
-         VALUES (?, ?, ?, ?)`,
+         (match_id, session_id, seat, party_id, pre_rank_level)
+         VALUES (?, ?, ?, ?, ?)`,
       );
       for (const player of input.players) {
         const profile = profiles.get(player.sessionId);
         if (profile === undefined)
           throw new Error("Missing competitive profile during match creation");
-        insertPlayer.run(input.match.id, player.sessionId, player.seat, profile.rankLevel);
+        insertPlayer.run(
+          input.match.id,
+          player.sessionId,
+          player.seat,
+          player.partyId ?? null,
+          profile.rankLevel,
+        );
       }
       const deleteQueuedPlayer = this.connection.prepare(
         `DELETE FROM matchmaking_entries
@@ -1606,16 +1636,20 @@ export class GameDatabase {
           input.match.ruleVersion,
           createdAt,
         );
+      const humanPartyIdBySessionId = new Map(
+        input.humanPlayers.map((player) => [player.sessionId, player.partyId ?? null] as const),
+      );
       const insertPlayer = this.connection.prepare(
         `INSERT INTO competitive_match_players
-         (match_id, session_id, seat, pre_rank_level)
-         VALUES (?, ?, ?, ?)`,
+         (match_id, session_id, seat, party_id, pre_rank_level)
+         VALUES (?, ?, ?, ?, ?)`,
       );
       for (const player of allPlayers) {
         const profile = profiles.get(player.sessionId);
         if (profile === undefined)
           throw new Error("Missing competitive profile during match creation");
-        insertPlayer.run(input.match.id, player.sessionId, player.seat, profile.rankLevel);
+        const partyId = humanPartyIdBySessionId.get(player.sessionId) ?? null;
+        insertPlayer.run(input.match.id, player.sessionId, player.seat, partyId, profile.rankLevel);
       }
       // Bots never queue, so only the humans' queue entries are consumed.
       const deleteQueuedPlayer = this.connection.prepare(

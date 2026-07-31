@@ -1783,6 +1783,63 @@ describe("RoomService", () => {
     expect(service.getRoom(room.code)).toBe(room);
   });
 
+  it("resolves originRoomCode to the still-open team-ranked staging room for its party members only", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const partySessions: AnonymousSession[] = [0, 1].map((index) => ({
+      id: `party-player-${index}`,
+      nickname: `队员${index}`,
+      wechatOpenId: `openid-party-player-${index}`,
+    }));
+    const soloSessions: AnonymousSession[] = [0, 1].map((index) => ({
+      id: `solo-player-${index}`,
+      nickname: `单排${index}`,
+      wechatOpenId: `openid-solo-player-${index}`,
+    }));
+    const sessions = [...partySessions, ...soloSessions];
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `origin-room-token-${index}`);
+      database.ensureCompetitiveProfile(session.id);
+    }
+    const service = new RoomService(database);
+    const [partyOwner, partyMember] = partySessions;
+    if (partyOwner === undefined || partyMember === undefined) {
+      throw new Error("Missing party fixture");
+    }
+    const stagingRoom = service.createRoom(partyOwner, 10, "TEAM_MATCH", 30, "HIGH");
+    expect(service.joinRoom(partyMember, stagingRoom.code)).toBe(stagingRoom);
+    expect(service.setReady(partyMember.id, stagingRoom.code, true)).toBe(stagingRoom);
+    database.enqueueMatchmakingParty(
+      stagingRoom.id,
+      partySessions.map((session) => ({ sessionId: session.id, rankLevelSnapshot: 0 })),
+      "2026-07-31T00:00:00.000Z",
+    );
+    for (const session of soloSessions) {
+      database.upsertMatchmakingEntry({ sessionId: session.id, rankLevelSnapshot: 0 });
+    }
+    const entries = sessions.map((session) => {
+      const entry = database.getMatchmakingEntry(session.id);
+      if (entry === null) throw new Error(`Missing matchmaking entry for ${session.id}`);
+      return entry;
+    });
+
+    const matchRoom = service.createCompetitiveMatch(sessions, entries);
+
+    const partyOwnerProjection = service.project(matchRoom, partyOwner.id);
+    const partyMemberProjection = service.project(matchRoom, partyMember.id);
+    const soloProjection = service.project(matchRoom, soloSessions[0]?.id ?? "");
+    expect(partyOwnerProjection.competitiveMatch?.originRoomCode).toBe(stagingRoom.code);
+    expect(partyMemberProjection.competitiveMatch?.originRoomCode).toBe(stagingRoom.code);
+    expect(soloProjection.competitiveMatch?.originRoomCode).toBeNull();
+
+    // Once the staging room is gone (dissolved, evicted, ...), "continue"
+    // must fall back gracefully instead of pointing at a dead room.
+    (service as unknown as { roomsByCode: Map<string, RoomState> }).roomsByCode.delete(
+      stagingRoom.code,
+    );
+    expect(service.project(matchRoom, partyOwner.id).competitiveMatch?.originRoomCode).toBeNull();
+  });
+
   it("does not register a competitive room when atomic creation rejects a stale queue entry", () => {
     const database = new GameDatabase(":memory:");
     databases.push(database);
@@ -1941,7 +1998,10 @@ describe("RoomService", () => {
     const loserProjection = service.project(room, seatOneSessionId);
 
     expect(winnerProjection.schemaVersion).toBe(10);
-    expect(winnerProjection.competitiveMatch).toEqual(room.competitiveMatch);
+    expect(winnerProjection.competitiveMatch).toEqual({
+      ...room.competitiveMatch,
+      originRoomCode: null,
+    });
     expect(winnerProjection.players.every((player) => player.competitiveProfile !== null)).toBe(
       true,
     );

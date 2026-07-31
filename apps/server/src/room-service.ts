@@ -1318,6 +1318,7 @@ export class RoomService {
         sessionId: session.id,
         seat,
         queueVersion: entry.version,
+        partyId: entry.partyId,
       })),
     });
     this.roomsByCode.set(room.code, room);
@@ -1376,7 +1377,12 @@ export class RoomService {
     const botsById = new Map(botSessions.map((bot) => [bot.id, bot] as const));
     const isBot = (session: AnonymousSession): boolean => botsById.has(session.id);
     const seats = {} as Record<Seat, SeatController>;
-    const humanPlayers: { sessionId: string; seat: Seat; queueVersion: number }[] = [];
+    const humanPlayers: {
+      sessionId: string;
+      seat: Seat;
+      queueVersion: number;
+      partyId: string | null;
+    }[] = [];
     // A plain for loop (not forEach) so TypeScript's control-flow analysis
     // tracks mutations inside the body.
     for (let index = 0; index < SEATS.length; index += 1) {
@@ -1392,7 +1398,12 @@ export class RoomService {
           throw new Error(`Missing matchmaking entry for human ${identity.id}`);
         }
         seats[seat] = humanSeat(seat, identity);
-        humanPlayers.push({ sessionId: identity.id, seat, queueVersion: entry.version });
+        humanPlayers.push({
+          sessionId: identity.id,
+          seat,
+          queueVersion: entry.version,
+          partyId: entry.partyId,
+        });
       }
     }
     if (humanPlayers.length !== humanSessions.length) {
@@ -1629,6 +1640,20 @@ export class RoomService {
     return [...this.roomsByCode.values()].find((room) => room.id === roomId) ?? null;
   }
 
+  /**
+   * Resolves the team-ranked staging room this player queued from for a
+   * given competitive match, if any and if that room is still around. Lets
+   * "continue" send a team-ranked player back to regroup with their
+   * original party instead of silently re-queueing them solo — see
+   * 07-31-ranked-continue-team-bug.
+   */
+  private resolveOriginRoomCode(matchId: string, sessionId: string): string | null {
+    const partyId = this.database.getCompetitiveMatchPlayer(matchId, sessionId)?.partyId ?? null;
+    if (partyId === null) return null;
+    const originRoom = this.getRoomById(partyId);
+    return originRoom !== null && originRoom.status === "ACTIVE" ? originRoom.code : null;
+  }
+
   hasMember(sessionId: string, code: string): boolean {
     const room = this.roomsByCode.get(code);
     return (
@@ -1781,6 +1806,7 @@ export class RoomService {
   ): {
     matchId: string;
     ruleVersion: number;
+    originRoomCode: string | null;
     self: CompetitiveRankTransition;
     beforeRankDisplay: ReturnType<typeof formatRankLevel>;
     afterRankDisplay: ReturnType<typeof formatRankLevel>;
@@ -1803,6 +1829,7 @@ export class RoomService {
       ? {
           matchId: room.competitiveMatch.matchId,
           ruleVersion: room.competitiveMatch.ruleVersion,
+          originRoomCode: this.resolveOriginRoomCode(room.competitiveMatch.matchId, sessionId),
           self: transition.data,
           beforeRankDisplay: formatRankLevel(transition.data.beforeRankLevel),
           afterRankDisplay: formatRankLevel(transition.data.afterRankLevel),
@@ -2033,7 +2060,13 @@ export class RoomService {
       turnTimeoutSeconds: room.turnTimeoutSeconds,
       botDifficulty: room.botDifficulty,
       mode: room.mode,
-      competitiveMatch: room.mode === "MATCH" ? room.competitiveMatch : null,
+      competitiveMatch:
+        room.mode === "MATCH" && room.competitiveMatch !== null
+          ? {
+              ...room.competitiveMatch,
+              originRoomCode: this.resolveOriginRoomCode(room.competitiveMatch.matchId, sessionId),
+            }
+          : null,
       teamMatchmaking: this.projectTeamMatchmaking(room),
       stage: room.stage,
       roundId: round?.id ?? null,

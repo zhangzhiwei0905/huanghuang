@@ -20,6 +20,7 @@ describe("competitive settlement projection", () => {
       competitiveSettlement: {
         matchId: "match-1",
         ruleVersion: 1,
+        originRoomCode: null,
         beforeRankDisplay: {
           majorIndex: 6,
           majorName: "星耀",

@@ -99,6 +99,13 @@ export const competitiveRankTransitionSchema = z.object({
 export const competitiveMatchProjectionSchema = z.object({
   matchId: z.string().min(1),
   ruleVersion: z.number().int().positive(),
+  /**
+   * Room code of the team-ranked staging room this player queued from as
+   * part of a pre-made party, if any and if that room still exists. Lets
+   * "continue" send the player back to regroup with their original party
+   * instead of silently re-queueing them solo.
+   */
+  originRoomCode: z.string().min(1).nullable(),
 });
 
 export const competitiveSettlementProjectionSchema = competitiveMatchProjectionSchema.extend({
