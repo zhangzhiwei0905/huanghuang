@@ -1,5 +1,3 @@
-import { majorIndexForRankLevel } from "@huanghuang/game-engine";
-
 export type MatchmakingCandidate = {
   sessionId: string;
   rankLevel: number;
@@ -28,41 +26,6 @@ export type BotFillGroup = {
 };
 
 const MATCH_SIZE = 4;
-
-/**
- * Widens matchmaking tolerance over time, measured in major-tier distance
- * (黑铁/青铜/白银/黄金/... — see majorIndexForRankLevel) rather than raw
- * rankLevel units. A pair 1 major tier apart (e.g. adjacent-tier boundary
- * players) no longer has to wait as long as a pair whose raw rankLevel gap
- * happens to be similarly sized but who are actually several tiers apart.
- */
-export function matchmakingMajorTierRange(waitMs: number): number {
-  if (waitMs < 10_000) return 0;
-  if (waitMs < 20_000) return 1;
-  if (waitMs < 40_000) return 2;
-  return Number.POSITIVE_INFINITY;
-}
-
-function waitMs(candidate: MatchmakingCandidate, now: number): number {
-  return Math.max(0, now - Date.parse(candidate.enqueuedAt));
-}
-
-function majorTierDistance(leftRankLevel: number, rightRankLevel: number): number {
-  return Math.abs(majorIndexForRankLevel(leftRankLevel) - majorIndexForRankLevel(rightRankLevel));
-}
-
-function mutuallyCompatible(
-  left: MatchmakingCandidate,
-  right: MatchmakingCandidate,
-  now: number,
-): boolean {
-  if (left.partyId !== undefined && left.partyId === right.partyId) return true;
-  const distance = majorTierDistance(left.rankLevel, right.rankLevel);
-  return (
-    distance <= matchmakingMajorTierRange(waitMs(left, now)) &&
-    distance <= matchmakingMajorTierRange(waitMs(right, now))
-  );
-}
 
 function containsCompleteParties(group: readonly MatchmakingCandidate[]): boolean {
   const grouped = new Map<string, MatchmakingCandidate[]>();
@@ -121,24 +84,6 @@ function recentOpponentPairs(group: readonly MatchmakingCandidate[]): number {
   return count;
 }
 
-function groupSpread(group: readonly MatchmakingCandidate[]): number {
-  const levels = group.map((candidate) => candidate.rankLevel);
-  return Math.max(...levels) - Math.min(...levels);
-}
-
-function totalPairDistance(group: readonly MatchmakingCandidate[]): number {
-  let total = 0;
-  for (let leftIndex = 0; leftIndex < group.length; leftIndex += 1) {
-    const left = group[leftIndex];
-    if (left === undefined) continue;
-    for (let rightIndex = leftIndex + 1; rightIndex < group.length; rightIndex += 1) {
-      const right = group[rightIndex];
-      if (right !== undefined) total += Math.abs(left.rankLevel - right.rankLevel);
-    }
-  }
-  return total;
-}
-
 function enqueueOrderKey(group: readonly MatchmakingCandidate[]): string {
   return [...group]
     .sort(
@@ -153,12 +98,16 @@ function enqueueOrderKey(group: readonly MatchmakingCandidate[]): string {
 function compareGroups(left: MatchmakingGroup, right: MatchmakingGroup): number {
   return (
     recentOpponentPairs(left) - recentOpponentPairs(right) ||
-    groupSpread(left) - groupSpread(right) ||
-    totalPairDistance(left) - totalPairDistance(right) ||
     enqueueOrderKey(left).localeCompare(enqueueOrderKey(right))
   );
 }
 
+/**
+ * Rank is intentionally not a matching criterion: any four candidates that
+ * don't split a party are considered compatible. See design.md in
+ * 07-31-team-matchmaking-bot-fill for why the range-widening tier system
+ * was removed.
+ */
 export function selectMatchmakingGroup(
   candidates: readonly MatchmakingCandidate[],
   now = Date.now(),
@@ -171,10 +120,7 @@ export function selectMatchmakingGroup(
   );
 
   for (const anchor of ordered) {
-    const eligible = ordered.filter(
-      (candidate) =>
-        candidate.sessionId !== anchor.sessionId && mutuallyCompatible(anchor, candidate, now),
-    );
+    const eligible = ordered.filter((candidate) => candidate.sessionId !== anchor.sessionId);
     const groups = combinations(eligible, MATCH_SIZE - 1)
       .flatMap((others): MatchmakingGroup[] => {
         const [second, third, fourth] = others;
@@ -182,22 +128,26 @@ export function selectMatchmakingGroup(
           ? []
           : [[anchor, second, third, fourth]];
       })
-      .filter(
-        (group) =>
-          containsCompleteParties(group) &&
-          group.every((left, leftIndex) =>
-            group.every(
-              (right, rightIndex) =>
-                leftIndex === rightIndex || mutuallyCompatible(left, right, now),
-            ),
-          ),
-      )
+      .filter((group) => containsCompleteParties(group))
       .sort(compareGroups);
     const selected = groups[0];
     if (selected !== undefined) return selected;
   }
 
   return null;
+}
+
+function shuffled<T>(values: readonly T[]): T[] {
+  const result = [...values];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const current = result[index];
+    const swap = result[swapIndex];
+    if (current === undefined || swap === undefined) continue;
+    result[index] = swap;
+    result[swapIndex] = current;
+  }
+  return result;
 }
 
 export function selectBotFillGroup(
@@ -242,16 +192,7 @@ export function selectBotFillGroup(
         const unit = remaining[index];
         if ((mask & (1 << index)) !== 0 && unit !== undefined) selected.push(...unit);
       }
-      if (
-        selected.length > 3 ||
-        !selected.every((left, leftIndex) =>
-          selected.every(
-            (right, rightIndex) => leftIndex === rightIndex || mutuallyCompatible(left, right, now),
-          ),
-        )
-      ) {
-        continue;
-      }
+      if (selected.length > 3) continue;
       if (
         selected.length > best.length ||
         (selected.length === best.length &&
@@ -261,25 +202,10 @@ export function selectBotFillGroup(
       }
     }
 
-    const compatibleBots = botCandidates
-      .filter((bot) =>
-        best.every(
-          (human) =>
-            majorTierDistance(human.rankLevel, bot.rankLevel) <=
-            matchmakingMajorTierRange(waitMs(human, now)),
-        ),
-      )
-      .sort((left, right) => {
-        if (left.lastMatchedAt === null && right.lastMatchedAt !== null) return -1;
-        if (left.lastMatchedAt !== null && right.lastMatchedAt === null) return 1;
-        return (
-          (left.lastMatchedAt ?? "").localeCompare(right.lastMatchedAt ?? "") ||
-          left.sessionId.localeCompare(right.sessionId)
-        );
-      });
     const needed = MATCH_SIZE - best.length;
-    if (compatibleBots.length >= needed) {
-      return { humans: best, bots: compatibleBots.slice(0, needed) };
+    const availableBots = shuffled(botCandidates);
+    if (availableBots.length >= needed) {
+      return { humans: best, bots: availableBots.slice(0, needed) };
     }
   }
   return null;
