@@ -65,13 +65,8 @@ export function PlayerProfileModal({
     <>
       <View className="profile-backdrop" onClick={onClose}>
         <View className="profile-modal" catchMove onClick={(e) => e.stopPropagation()}>
-          <View
-            className="profile-modal__close"
-            hoverClass="is-pressed"
-            onClick={onClose}
-            ariaLabel="关闭"
-          >
-            <Text className="profile-modal__close-icon">×</Text>
+          <View className="modal-close" hoverClass="is-pressed" onClick={onClose} ariaLabel="关闭">
+            <Text className="modal-close-icon">×</Text>
           </View>
           <View className="profile-modal__header">
             <View
@@ -169,7 +164,7 @@ export function PlayerProfileModal({
           <View className="profile-modal__footer">
             {isSelf && onEditNickname !== undefined ? (
               <Button
-                className="profile-modal__action profile-modal__action--ghost"
+                className="modal-action modal-action--ghost"
                 hoverClass="is-pressed"
                 onClick={onEditNickname}
               >
@@ -178,7 +173,7 @@ export function PlayerProfileModal({
             ) : null}
             {isSelf && competitiveProfile !== null && onViewMatchHistory !== undefined ? (
               <Button
-                className="profile-modal__action profile-modal__action--ghost"
+                className="modal-action modal-action--ghost"
                 hoverClass="is-pressed"
                 onClick={onViewMatchHistory}
               >
@@ -187,7 +182,7 @@ export function PlayerProfileModal({
             ) : null}
             {friendActionLabel !== null && onFriendAction !== undefined ? (
               <Button
-                className="profile-modal__action profile-modal__action--primary"
+                className="modal-action modal-action--primary"
                 hoverClass="is-pressed"
                 disabled={friendActionDisabled}
                 onClick={onFriendAction}

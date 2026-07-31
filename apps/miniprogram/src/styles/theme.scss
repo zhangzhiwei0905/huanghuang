@@ -159,3 +159,92 @@ page[data-theme="premium"] {
     0 0.5vmin 0 #55322d,
     0 0.9vmin 1.6vmin rgb(0 0 0 / 16%);
 }
+
+/* Lightweight modal chrome shared across PlayerProfileModal,
+   NicknameEditModal, MatchHistoryModal so every popover reads as one family.
+   The chunky jade .btn-ghost/.btn-accent stay reserved for the home menu;
+   inside a modal the footer needs flat, token-driven actions that do not
+   compete with the content. The close × replaces the heavy 关闭 button that
+   used to sit in each modal's footer. */
+.modal-close {
+  position: absolute;
+  top: 1.6vmin;
+  right: 1.6vmin;
+  z-index: 2;
+  width: 5.2vmin;
+  height: 5.2vmin;
+  min-width: 30px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 70%);
+  box-shadow: 0 0.3vmin 0.9vmin rgb(0 0 0 / 12%);
+  transition:
+    transform 110ms ease,
+    background 110ms ease;
+}
+
+.modal-close.is-pressed {
+  transform: scale(0.9);
+  background: rgb(255 255 255 / 92%);
+}
+
+.modal-close-icon {
+  color: var(--muted, #5f625b);
+  font-size: 3.6vmin;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.modal-action {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  border-radius: var(--radius, 10px);
+  padding: 1.6vmin 1.2vmin;
+  font-size: 2vmin;
+  font-weight: 600;
+  line-height: 1.2;
+  transition:
+    transform 110ms ease,
+    background 110ms ease,
+    box-shadow 110ms ease;
+}
+
+.modal-action::after {
+  border: 0;
+}
+
+.modal-action--ghost {
+  border: 1px solid var(--line-strong, #9cbfa9);
+  background: linear-gradient(180deg, #fdfefb 0%, #eef4ee 100%);
+  color: var(--ink, #272925);
+  box-shadow: 0 0.35vmin 0 rgb(156 191 169 / 70%);
+}
+
+.modal-action--primary {
+  border: 0;
+  background: var(--accent, #2f6a4c);
+  color: var(--accent-ink, #f5fbf6);
+  box-shadow: 0 0.4vmin 0 #1f4834;
+  font-weight: 700;
+}
+
+.modal-action.is-pressed {
+  transform: translateY(0.3vmin);
+  opacity: 1;
+}
+
+.modal-action--ghost.is-pressed {
+  box-shadow: 0 0.1vmin 0 rgb(156 191 169 / 70%);
+}
+
+.modal-action--primary.is-pressed {
+  box-shadow: 0 0.1vmin 0 #1f4834;
+}
+
+.modal-action[disabled] {
+  opacity: 0.5;
+}

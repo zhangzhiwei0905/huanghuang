@@ -38,41 +38,9 @@
   animation: profile-rise 260ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
 }
 
-/* Top-right close affordance replaces the heavy 关闭 button that used to sit
-   in the action row — a small circular × is the standard modal pattern and
-   removes one chunky jade button from the footer. */
-.profile-modal__close {
-  position: absolute;
-  top: 1.6vmin;
-  right: 1.6vmin;
-  z-index: 2;
-  width: 5.2vmin;
-  height: 5.2vmin;
-  min-width: 30px;
-  min-height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 70%);
-  box-shadow: 0 0.3vmin 0.9vmin rgb(0 0 0 / 12%);
-  transition:
-    transform 110ms ease,
-    background 110ms ease;
-}
-
-.profile-modal__close.is-pressed {
-  transform: scale(0.9);
-  background: rgb(255 255 255 / 92%);
-}
-
-.profile-modal__close-icon {
-  color: var(--muted, #5f625b);
-  font-size: 3.6vmin;
-  line-height: 1;
-  font-weight: 400;
-}
-
+/* Close × and footer action buttons use the shared .modal-close /
+   .modal-action classes from theme.scss so every popover in the app shares
+   one button family instead of each re-declaring its own. */
 .profile-modal__scroll {
   min-height: 0;
   flex: 1;
@@ -278,61 +246,6 @@
   flex: none;
   gap: 1vmin;
   margin-top: 1.5vmin;
-}
-
-/* Lightweight footer buttons — flat, token-driven, with a physical sink on
-   press. Replaces the chunky jade .btn-ghost/.btn-friend that made the old
-   footer read as heavy. Two secondary actions sit side by side for the self
-   case; a single full-width primary fills the row for the friend-action case. */
-.profile-modal__action {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  border-radius: var(--radius, 10px);
-  padding: 1.6vmin 1.2vmin;
-  font-size: 2vmin;
-  font-weight: 600;
-  line-height: 1.2;
-  transition:
-    transform 110ms ease,
-    background 110ms ease,
-    box-shadow 110ms ease;
-}
-
-.profile-modal__action::after {
-  border: 0;
-}
-
-.profile-modal__action--ghost {
-  border: 1px solid var(--line-strong, #9cbfa9);
-  background: linear-gradient(180deg, #fdfefb 0%, #eef4ee 100%);
-  color: var(--ink, #272925);
-  box-shadow: 0 0.35vmin 0 rgb(156 191 169 / 70%);
-}
-
-.profile-modal__action--primary {
-  border: 0;
-  background: var(--accent, #2f6a4c);
-  color: var(--accent-ink, #f5fbf6);
-  box-shadow: 0 0.4vmin 0 #1f4834;
-  font-weight: 700;
-}
-
-.profile-modal__action.is-pressed {
-  transform: translateY(0.3vmin);
-  opacity: 1;
-}
-
-.profile-modal__action--ghost.is-pressed {
-  box-shadow: 0 0.1vmin 0 rgb(156 191 169 / 70%);
-}
-
-.profile-modal__action--primary.is-pressed {
-  box-shadow: 0 0.1vmin 0 #1f4834;
-}
-
-.profile-modal__action[disabled] {
-  opacity: 0.5;
 }
 
 /* Full-screen avatar zoom layer — sits above the modal backdrop so a tap on

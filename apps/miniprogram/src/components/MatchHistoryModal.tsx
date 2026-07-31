@@ -85,6 +85,9 @@ export function MatchHistoryModal({ onClose }: MatchHistoryModalProps) {
   return (
     <View className="history-backdrop" onClick={onClose}>
       <View className="history-modal" catchMove onClick={(e) => e.stopPropagation()}>
+        <View className="modal-close" hoverClass="is-pressed" onClick={onClose} ariaLabel="关闭">
+          <Text className="modal-close-icon">×</Text>
+        </View>
         <Text className="history-modal__title">历史战绩</Text>
         <ScrollView className="history-modal__scroll" scrollY enhanced showScrollbar={false}>
           {loading ? (
@@ -98,7 +101,9 @@ export function MatchHistoryModal({ onClose }: MatchHistoryModalProps) {
               {entries.map((entry) => (
                 <View key={entry.matchId} className={`history-row history-row--${entry.outcome}`}>
                   <View className="history-row__outcome">
-                    <Text className="history-row__outcome-label">{OUTCOME_LABEL[entry.outcome]}</Text>
+                    <Text className="history-row__outcome-label">
+                      {OUTCOME_LABEL[entry.outcome]}
+                    </Text>
                     <Text className="history-row__time">{formatSettledAt(entry.settledAt)}</Text>
                   </View>
                   <Text className="history-row__multiplier">
@@ -114,7 +119,7 @@ export function MatchHistoryModal({ onClose }: MatchHistoryModalProps) {
           ) : null}
           {nextCursor !== null ? (
             <Button
-              className="btn-ghost history-modal__more"
+              className="modal-action modal-action--ghost history-modal__more"
               hoverClass="is-pressed"
               disabled={loadingMore}
               onClick={loadMore}
@@ -123,13 +128,6 @@ export function MatchHistoryModal({ onClose }: MatchHistoryModalProps) {
             </Button>
           ) : null}
         </ScrollView>
-        <Button
-          className="btn-ghost history-modal__close"
-          hoverClass="is-pressed"
-          onClick={onClose}
-        >
-          关闭
-        </Button>
       </View>
     </View>
   );

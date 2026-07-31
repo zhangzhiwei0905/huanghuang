@@ -55,8 +55,8 @@ export function NicknameEditModal({ currentNickname, onDone, onClose }: Nickname
       <View className="nickname-modal" catchMove onClick={(event) => event.stopPropagation()}>
         <View className="nickname-modal__head">
           <Text className="nickname-modal__title">修改昵称</Text>
-          <View className="nickname-modal__close" hoverClass="is-pressed" onClick={onClose}>
-            <Text className="nickname-modal__close-icon">×</Text>
+          <View className="modal-close" hoverClass="is-pressed" onClick={onClose}>
+            <Text className="modal-close-icon">×</Text>
           </View>
         </View>
         <Form className="nickname-modal__form" onSubmit={(event) => void submit(event)}>
@@ -82,7 +82,7 @@ export function NicknameEditModal({ currentNickname, onDone, onClose }: Nickname
           ) : null}
           <View className="nickname-modal__actions">
             <Button
-              className="nickname-modal__action nickname-modal__action--ghost"
+              className="modal-action modal-action--ghost"
               hoverClass="is-pressed"
               disabled={busy}
               onClick={onClose}
@@ -91,7 +91,7 @@ export function NicknameEditModal({ currentNickname, onDone, onClose }: Nickname
             </Button>
             <Button
               formType="submit"
-              className="nickname-modal__action nickname-modal__action--primary"
+              className="modal-action modal-action--primary"
               hoverClass="is-pressed"
               disabled={busy}
             >
