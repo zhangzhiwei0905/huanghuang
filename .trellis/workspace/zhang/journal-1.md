@@ -1200,3 +1200,38 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: 组队排位与个人信息页体验优化
+
+**Date**: 2026-07-31
+**Task**: 组队排位与个人信息页体验优化
+**Branch**: `miniprogram`
+
+### Summary
+
+历史战绩入口失败态提示、段位徽章跨段位尺寸统一、个人信息/历史战绩弹窗改用 ScrollView 修复无法滑动、匹配算法统一为不考虑段位+随机机器人补位、组队排位续局丢队伍修复（新增 origin party 追踪与房间码回退）；后端已构建镜像 huanghuang-app:68f1c5c 部署上线（v1.0.6），小程序端已重新编译，等待人工通过微信开发者工具提审。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e121987` | (see git log) |
+| `922cf72` | (see git log) |
+| `68f1c5c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
