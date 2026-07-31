@@ -1,0 +1,32 @@
+{
+  "id": "profile-and-matchmaking-fixes",
+  "name": "profile-and-matchmaking-fixes",
+  "title": "组队排位与个人信息页体验优化",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "zhang",
+  "assignee": "zhang",
+  "createdAt": "2026-07-31",
+  "completedAt": "2026-07-31",
+  "branch": null,
+  "base_branch": "miniprogram",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-31-match-history-entry-feedback",
+    "07-31-rank-badge-size-unify",
+    "07-31-profile-modal-scrollable",
+    "07-31-team-matchmaking-bot-fill",
+    "07-31-ranked-continue-team-bug"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
