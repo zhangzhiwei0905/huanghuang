@@ -35,12 +35,12 @@
 
 .history-modal {
   width: min(84vw, 78vmin);
-  max-height: calc(100vh - 6vmin);
-  overflow-y: auto;
+  height: calc(100vh - 6vmin);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 1.6vmin;
+  overflow: hidden;
   border: 1px solid #d8d4c4;
   border-radius: 2vmin;
   padding: 3vmin;
@@ -51,9 +51,18 @@
 }
 
 .history-modal__title {
+  flex: none;
   font-size: 2.6vmin;
   font-weight: 700;
   text-align: center;
+}
+
+.history-modal__scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1.6vmin;
+  min-height: 0;
 }
 
 .history-modal__empty {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Image, Text, View } from "@tarojs/components";
+import { Button, Image, ScrollView, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import type { PublicCompetitiveProfile } from "@huanghuang/protocol";
 import { API_BASE } from "../config";
@@ -16,6 +16,7 @@ export type PlayerProfileModalProps = {
   isOwner?: boolean;
   playerId?: string | null;
   competitiveProfile: PublicCompetitiveProfile | null;
+  competitiveProfileError?: string | null;
   friendActionLabel?: string | null;
   friendActionDisabled?: boolean;
   onFriendAction?: () => void;
@@ -39,6 +40,7 @@ export function PlayerProfileModal({
   isOwner = false,
   playerId = null,
   competitiveProfile,
+  competitiveProfileError = null,
   friendActionLabel = null,
   friendActionDisabled = false,
   onFriendAction,
@@ -77,6 +79,7 @@ export function PlayerProfileModal({
             </View>
           </View>
 
+          <ScrollView className="profile-modal__scroll" scrollY enhanced showScrollbar={false}>
           <View className="profile-modal__body">
             <Text className="profile-modal__name">{nickname}</Text>
             {playerId !== null ? (
@@ -100,7 +103,13 @@ export function PlayerProfileModal({
 
           <View className="profile-modal__competitive">
             {competitiveProfile === null ? (
-              <Text className="profile-modal__competitive-empty">无永久竞技战绩</Text>
+              isSelf && competitiveProfileError !== null ? (
+                <Text className="profile-modal__competitive-empty is-error">
+                  竞技战绩加载失败：{competitiveProfileError}
+                </Text>
+              ) : (
+                <Text className="profile-modal__competitive-empty">无永久竞技战绩</Text>
+              )
             ) : (
               <>
                 <View className="profile-modal__rank">
@@ -145,6 +154,7 @@ export function PlayerProfileModal({
             <Text className="profile-modal__score-label">牌桌积分</Text>
             <Text className="profile-modal__score-value">{score}</Text>
           </View>
+          </ScrollView>
 
           <View className="profile-modal__actions">
             {isSelf && competitiveProfile !== null && onViewMatchHistory !== undefined ? (

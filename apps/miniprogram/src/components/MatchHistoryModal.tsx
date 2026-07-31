@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Text, View } from "@tarojs/components";
+import { Button, ScrollView, Text, View } from "@tarojs/components";
 import type { CompetitiveMatchHistoryEntry } from "@huanghuang/protocol";
 import { ApiError, competitiveApi } from "../api/http";
 import { errorLabel } from "../lib/errors";
@@ -86,41 +86,43 @@ export function MatchHistoryModal({ onClose }: MatchHistoryModalProps) {
     <View className="history-backdrop" onClick={onClose}>
       <View className="history-modal" catchMove onClick={(e) => e.stopPropagation()}>
         <Text className="history-modal__title">历史战绩</Text>
-        {loading ? (
-          <Text className="history-modal__empty">加载中…</Text>
-        ) : error !== null && entries.length === 0 ? (
-          <Text className="history-modal__empty">{error}</Text>
-        ) : entries.length === 0 ? (
-          <Text className="history-modal__empty">暂无历史战绩</Text>
-        ) : (
-          <View className="history-modal__list">
-            {entries.map((entry) => (
-              <View key={entry.matchId} className={`history-row history-row--${entry.outcome}`}>
-                <View className="history-row__outcome">
-                  <Text className="history-row__outcome-label">{OUTCOME_LABEL[entry.outcome]}</Text>
-                  <Text className="history-row__time">{formatSettledAt(entry.settledAt)}</Text>
+        <ScrollView className="history-modal__scroll" scrollY enhanced showScrollbar={false}>
+          {loading ? (
+            <Text className="history-modal__empty">加载中…</Text>
+          ) : error !== null && entries.length === 0 ? (
+            <Text className="history-modal__empty">{error}</Text>
+          ) : entries.length === 0 ? (
+            <Text className="history-modal__empty">暂无历史战绩</Text>
+          ) : (
+            <View className="history-modal__list">
+              {entries.map((entry) => (
+                <View key={entry.matchId} className={`history-row history-row--${entry.outcome}`}>
+                  <View className="history-row__outcome">
+                    <Text className="history-row__outcome-label">{OUTCOME_LABEL[entry.outcome]}</Text>
+                    <Text className="history-row__time">{formatSettledAt(entry.settledAt)}</Text>
+                  </View>
+                  <Text className="history-row__multiplier">
+                    {entry.multiplier !== null ? `${entry.multiplier}×` : "—"}
+                  </Text>
+                  <Text className="history-row__delta">{formatRankDelta(entry)}</Text>
                 </View>
-                <Text className="history-row__multiplier">
-                  {entry.multiplier !== null ? `${entry.multiplier}×` : "—"}
-                </Text>
-                <Text className="history-row__delta">{formatRankDelta(entry)}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-        {error !== null && entries.length > 0 ? (
-          <Text className="history-modal__error">{error}</Text>
-        ) : null}
-        {nextCursor !== null ? (
-          <Button
-            className="btn-ghost history-modal__more"
-            hoverClass="is-pressed"
-            disabled={loadingMore}
-            onClick={loadMore}
-          >
-            {loadingMore ? "正在加载…" : "加载更多"}
-          </Button>
-        ) : null}
+              ))}
+            </View>
+          )}
+          {error !== null && entries.length > 0 ? (
+            <Text className="history-modal__error">{error}</Text>
+          ) : null}
+          {nextCursor !== null ? (
+            <Button
+              className="btn-ghost history-modal__more"
+              hoverClass="is-pressed"
+              disabled={loadingMore}
+              onClick={loadMore}
+            >
+              {loadingMore ? "正在加载…" : "加载更多"}
+            </Button>
+          ) : null}
+        </ScrollView>
         <Button
           className="btn-ghost history-modal__close"
           hoverClass="is-pressed"

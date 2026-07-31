@@ -287,6 +287,7 @@ export default function IndexPage() {
   const [turnTimeoutSeconds, setTurnTimeoutSeconds] = useState<TurnTimeoutSeconds>(20);
   const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>("HIGH");
   const [competitiveProfile, setCompetitiveProfile] = useState<SelfCompetitiveProfile | null>(null);
+  const [competitiveProfileError, setCompetitiveProfileError] = useState<string | null>(null);
   const [matchmaking, setMatchmaking] = useState<MatchmakingState>({ status: "IDLE" });
   const [matchmakingNow, setMatchmakingNow] = useState(Date.now());
   const [pendingMatchNavigation, setPendingMatchNavigation] = useState<{
@@ -412,10 +413,13 @@ export default function IndexPage() {
       .then(([profile, response]) => {
         if (disposed) return;
         setCompetitiveProfile(profile);
+        setCompetitiveProfileError(null);
         applyMatchmakingResponse(response);
       })
       .catch((cause) => {
-        if (!disposed) setMatchmakingError(describeSubmitError(cause));
+        if (disposed) return;
+        setMatchmakingError(describeSubmitError(cause));
+        setCompetitiveProfileError(describeSubmitError(cause));
       });
     return () => {
       disposed = true;
@@ -1043,6 +1047,7 @@ export default function IndexPage() {
           connected
           isSelf
           competitiveProfile={competitiveProfile}
+          competitiveProfileError={competitiveProfileError}
           onViewMatchHistory={() => setMatchHistoryOpen(true)}
           onClose={() => setProfileOpen(false)}
         />
