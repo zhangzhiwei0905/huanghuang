@@ -21,6 +21,7 @@ export type PlayerProfileModalProps = {
   friendActionDisabled?: boolean;
   onFriendAction?: () => void;
   onViewMatchHistory?: () => void;
+  onEditNickname?: () => void;
   onClose: () => void;
 };
 
@@ -45,6 +46,7 @@ export function PlayerProfileModal({
   friendActionDisabled = false,
   onFriendAction,
   onViewMatchHistory,
+  onEditNickname,
   onClose,
 }: PlayerProfileModalProps) {
   const [avatarZoomed, setAvatarZoomed] = useState(false);
@@ -63,6 +65,14 @@ export function PlayerProfileModal({
     <>
       <View className="profile-backdrop" onClick={onClose}>
         <View className="profile-modal" catchMove onClick={(e) => e.stopPropagation()}>
+          <View
+            className="profile-modal__close"
+            hoverClass="is-pressed"
+            onClick={onClose}
+            ariaLabel="关闭"
+          >
+            <Text className="profile-modal__close-icon">×</Text>
+          </View>
           <View className="profile-modal__header">
             <View
               className={`profile-avatar${hasAvatar ? " is-tappable" : ""}`}
@@ -80,91 +90,104 @@ export function PlayerProfileModal({
           </View>
 
           <ScrollView className="profile-modal__scroll" scrollY enhanced showScrollbar={false}>
-          <View className="profile-modal__body">
-            <Text className="profile-modal__name">{nickname}</Text>
-            {playerId !== null ? (
-              <Text
-                className="profile-modal__player-id"
-                onClick={() => void Taro.setClipboardData({ data: playerId })}
-              >
-                ID {playerId} · 点击复制
-              </Text>
-            ) : null}
-            {chips.length > 0 ? (
-              <View className="profile-modal__chips">
-                {chips.map((chip) => (
-                  <Text key={chip} className="profile-modal__chip">
-                    {chip}
-                  </Text>
-                ))}
-              </View>
-            ) : null}
-          </View>
-
-          <View className="profile-modal__competitive">
-            {competitiveProfile === null ? (
-              isSelf && competitiveProfileError !== null ? (
-                <Text className="profile-modal__competitive-empty is-error">
-                  竞技战绩加载失败：{competitiveProfileError}
+            <View className="profile-modal__body">
+              <Text className="profile-modal__name">{nickname}</Text>
+              {playerId !== null ? (
+                <Text
+                  className="profile-modal__player-id"
+                  onClick={() => void Taro.setClipboardData({ data: playerId })}
+                >
+                  ID {playerId} · 点击复制
                 </Text>
-              ) : (
-                <Text className="profile-modal__competitive-empty">无永久竞技战绩</Text>
-              )
-            ) : (
-              <>
-                <View className="profile-modal__rank">
-                  <Text className="profile-modal__rank-label">当前段位</Text>
-                  <RankBadge rank={competitiveProfile.rankDisplay} size="large" />
+              ) : null}
+              {chips.length > 0 ? (
+                <View className="profile-modal__chips">
+                  {chips.map((chip) => (
+                    <Text key={chip} className="profile-modal__chip">
+                      {chip}
+                    </Text>
+                  ))}
                 </View>
-                <View className="profile-modal__achievements">
-                  <View>
-                    <Text>放赖</Text>
-                    <Text>{competitiveProfile.achievements.releaseWildcard}</Text>
-                  </View>
-                  <View>
-                    <Text>明杠</Text>
-                    <Text>{competitiveProfile.achievements.exposedKong}</Text>
-                  </View>
-                  <View>
-                    <Text>碰亮牌</Text>
-                    <Text>{competitiveProfile.achievements.indicatorPongKong}</Text>
-                  </View>
-                  <View>
-                    <Text>补杠</Text>
-                    <Text>{competitiveProfile.achievements.addedKong}</Text>
-                  </View>
-                  <View>
-                    <Text>暗杠</Text>
-                    <Text>{competitiveProfile.achievements.concealedKong}</Text>
-                  </View>
-                  <View>
-                    <Text>硬来由</Text>
-                    <Text>{competitiveProfile.achievements.hardLaiyou}</Text>
-                  </View>
-                  <View>
-                    <Text>软来由</Text>
-                    <Text>{competitiveProfile.achievements.softLaiyou}</Text>
-                  </View>
-                </View>
-              </>
-            )}
-          </View>
+              ) : null}
+            </View>
 
-          <View className="profile-modal__score">
-            <Text className="profile-modal__score-label">牌桌积分</Text>
-            <Text className="profile-modal__score-value">{score}</Text>
-          </View>
+            <View className="profile-modal__competitive">
+              {competitiveProfile === null ? (
+                isSelf && competitiveProfileError !== null ? (
+                  <Text className="profile-modal__competitive-empty is-error">
+                    竞技战绩加载失败：{competitiveProfileError}
+                  </Text>
+                ) : (
+                  <Text className="profile-modal__competitive-empty">无永久竞技战绩</Text>
+                )
+              ) : (
+                <>
+                  <View className="profile-modal__rank">
+                    <Text className="profile-modal__rank-label">当前段位</Text>
+                    <RankBadge rank={competitiveProfile.rankDisplay} size="large" />
+                  </View>
+                  <View className="profile-modal__achievements">
+                    <View>
+                      <Text>放赖</Text>
+                      <Text>{competitiveProfile.achievements.releaseWildcard}</Text>
+                    </View>
+                    <View>
+                      <Text>明杠</Text>
+                      <Text>{competitiveProfile.achievements.exposedKong}</Text>
+                    </View>
+                    <View>
+                      <Text>碰亮牌</Text>
+                      <Text>{competitiveProfile.achievements.indicatorPongKong}</Text>
+                    </View>
+                    <View>
+                      <Text>补杠</Text>
+                      <Text>{competitiveProfile.achievements.addedKong}</Text>
+                    </View>
+                    <View>
+                      <Text>暗杠</Text>
+                      <Text>{competitiveProfile.achievements.concealedKong}</Text>
+                    </View>
+                    <View>
+                      <Text>硬来由</Text>
+                      <Text>{competitiveProfile.achievements.hardLaiyou}</Text>
+                    </View>
+                    <View>
+                      <Text>软来由</Text>
+                      <Text>{competitiveProfile.achievements.softLaiyou}</Text>
+                    </View>
+                  </View>
+                </>
+              )}
+            </View>
+
+            <View className="profile-modal__score">
+              <Text className="profile-modal__score-label">牌桌积分</Text>
+              <Text className="profile-modal__score-value">{score}</Text>
+            </View>
           </ScrollView>
 
-          <View className="profile-modal__actions">
+          <View className="profile-modal__footer">
+            {isSelf && onEditNickname !== undefined ? (
+              <Button
+                className="profile-modal__action profile-modal__action--ghost"
+                hoverClass="is-pressed"
+                onClick={onEditNickname}
+              >
+                修改昵称
+              </Button>
+            ) : null}
             {isSelf && competitiveProfile !== null && onViewMatchHistory !== undefined ? (
-              <Button className="btn-ghost" hoverClass="is-pressed" onClick={onViewMatchHistory}>
+              <Button
+                className="profile-modal__action profile-modal__action--ghost"
+                hoverClass="is-pressed"
+                onClick={onViewMatchHistory}
+              >
                 历史战绩
               </Button>
             ) : null}
             {friendActionLabel !== null && onFriendAction !== undefined ? (
               <Button
-                className="btn-friend"
+                className="profile-modal__action profile-modal__action--primary"
                 hoverClass="is-pressed"
                 disabled={friendActionDisabled}
                 onClick={onFriendAction}
@@ -172,9 +195,6 @@ export function PlayerProfileModal({
                 {friendActionLabel}
               </Button>
             ) : null}
-            <Button className="btn-ghost" hoverClass="is-pressed" onClick={onClose}>
-              关闭
-            </Button>
           </View>
         </View>
       </View>

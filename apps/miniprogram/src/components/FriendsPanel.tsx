@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { Button, Image, Input, ScrollView, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import type { PlayerSearchResult, SocialPlayer } from "@huanghuang/protocol";
+import type { FriendSummary, PlayerSearchResult, SocialPlayer } from "@huanghuang/protocol";
 import { API_BASE } from "../config";
 import type { SocialController } from "../hooks/useSocial";
+import { rankScore } from "../lib/rankScore";
+import { RankBadge } from "./RankBadge";
 import "./FriendsPanel.scss";
 
 type FriendsPanelProps = {
@@ -94,6 +96,31 @@ export function FriendsPanel({ social, roomCode, onClose }: FriendsPanelProps) {
       social.snapshot?.friendRequests.filter((request) => request.direction === "OUTGOING") ?? [],
     [social.snapshot],
   );
+  // Friends ranked by competitive rank (段位) descending. Online is only a
+  // tiebreaker within the same rank so it never overrides the rank order the
+  // user asked for; playerId is the final stable tiebreaker. Players with no
+  // competitive profile yet (rankScore === -1) sort last but stay in the list.
+  const rankedFriends = useMemo(() => {
+    const friends = [...(social.snapshot?.friends ?? [])];
+    friends.sort((a, b) => {
+      const byRank = rankScore(b.competitiveProfile) - rankScore(a.competitiveProfile);
+      if (byRank !== 0) return byRank;
+      if (a.online !== b.online) return a.online ? -1 : 1;
+      return a.playerId < b.playerId ? -1 : a.playerId > b.playerId ? 1 : 0;
+    });
+    // Assign 1/2/3 only to the top friends that actually have a rank. Friends
+    // without a competitive profile never receive a podium marker even when
+    // they sit in the first three rows because nobody else is ranked.
+    const podium = new Map<string, number>();
+    let place = 0;
+    for (const friend of friends) {
+      if (friend.competitiveProfile === null) continue;
+      place += 1;
+      if (place > 3) break;
+      podium.set(friend.playerId, place);
+    }
+    return { friends, podium };
+  }, [social.snapshot]);
 
   async function search() {
     const normalized = query.trim();
@@ -250,18 +277,40 @@ export function FriendsPanel({ social, roomCode, onClose }: FriendsPanelProps) {
                 <Text className="friends-section__empty-hint">用上方 4 位 ID 邀请第一位好友</Text>
               </View>
             ) : (
-              social.snapshot?.friends.map((friend) => {
+              rankedFriends.friends.map((friend) => {
                 const invited = invitedIds.has(friend.playerId);
+                const place = rankedFriends.podium.get(friend.playerId);
                 return (
-                  <View className="friends-row" key={friend.playerId}>
+                  <View
+                    className={`friends-row${place !== undefined ? ` is-podium is-podium--${place}` : ""}`}
+                    key={friend.playerId}
+                  >
+                    {place !== undefined ? (
+                      <View className={`friends-podium friends-podium--${place}`}>
+                        <Text className="friends-podium__num">{place}</Text>
+                      </View>
+                    ) : null}
                     <View className="friends-avatar-wrap">
                       <FriendAvatar player={friend} />
                       <View className={`friends-presence${friend.online ? " is-online" : ""}`} />
                     </View>
                     <View className="friends-row__copy">
-                      <Text className="friends-row__name">{friend.nickname}</Text>
+                      <View className="friends-row__name-row">
+                        <Text className="friends-row__name">{friend.nickname}</Text>
+                        {friend.competitiveProfile !== null ? (
+                          <RankBadge
+                            rank={friend.competitiveProfile.rankDisplay}
+                            size="compact"
+                            showLabel={false}
+                            className="friends-row__rank"
+                          />
+                        ) : null}
+                      </View>
                       <Text className="friends-row__id">
                         ID {friend.playerId} · {friend.online ? "在线" : "离线"}
+                        {friend.competitiveProfile !== null
+                          ? ` · ${friend.competitiveProfile.rankDisplay.displayName}`
+                          : ""}
                       </Text>
                     </View>
                     {roomCode !== undefined ? (

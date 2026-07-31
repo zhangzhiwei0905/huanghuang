@@ -22,6 +22,7 @@ import {
 import { API_BASE, APP_BUILT_AT, APP_VERSION } from "../../config";
 import { PlayerProfileModal } from "../../components/PlayerProfileModal";
 import { MatchHistoryModal } from "../../components/MatchHistoryModal";
+import { NicknameEditModal } from "../../components/NicknameEditModal";
 import { FriendsPanel } from "../../components/FriendsPanel";
 import { RankBadge } from "../../components/RankBadge";
 import { useSocial } from "../../hooks/useSocial";
@@ -308,13 +309,16 @@ export default function IndexPage() {
   const [backendVersionError, setBackendVersionError] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [matchHistoryOpen, setMatchHistoryOpen] = useState(false);
+  const [nicknameEditOpen, setNicknameEditOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const social = useSocial(identityState === "loggedIn" && identity !== null, (reason) => {
     // The server pushes this the instant matchmaking.tick() finds a match, so
     // acting on it immediately shortcuts the up-to-1s HTTP poll interval below
     // (which still runs unconditionally as a fallback if this push is missed).
     if (reason !== "MATCHMAKING") return;
-    void refreshMatchmakingStatus().catch((cause) => setMatchmakingError(describeSubmitError(cause)));
+    void refreshMatchmakingStatus().catch((cause) =>
+      setMatchmakingError(describeSubmitError(cause)),
+    );
   });
 
   useEffect(() => {
@@ -1049,11 +1053,20 @@ export default function IndexPage() {
           competitiveProfile={competitiveProfile}
           competitiveProfileError={competitiveProfileError}
           onViewMatchHistory={() => setMatchHistoryOpen(true)}
+          onEditNickname={() => setNicknameEditOpen(true)}
           onClose={() => setProfileOpen(false)}
         />
       ) : null}
-      {matchHistoryOpen ? (
-        <MatchHistoryModal onClose={() => setMatchHistoryOpen(false)} />
+      {matchHistoryOpen ? <MatchHistoryModal onClose={() => setMatchHistoryOpen(false)} /> : null}
+      {nicknameEditOpen ? (
+        <NicknameEditModal
+          currentNickname={identity.nickname}
+          onDone={(updated) => {
+            setIdentity(updated);
+            setNicknameEditOpen(false);
+          }}
+          onClose={() => setNicknameEditOpen(false)}
+        />
       ) : null}
       {latestRoomInvite !== null && !friendsOpen ? (
         <View className="mp-room-invite">

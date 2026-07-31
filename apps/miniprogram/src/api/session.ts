@@ -136,6 +136,43 @@ export async function wechatLogin(nickname: string, avatarUrl: string | null): P
 }
 
 /**
+ * Update the logged-in player's own nickname. Sends the existing session
+ * token; the server does NOT rotate it (unlike wechatLogin). The returned
+ * identity replaces the in-memory one — a follow-up resolveIdentity() is
+ * not needed.
+ */
+export async function updateNickname(nickname: string): Promise<Identity> {
+  const trimmed = nickname.trim();
+  if (trimmed.length === 0) throw new Error("NICKNAME_EMPTY");
+  const response = await Taro.request({
+    url: `${API_BASE}/api/auth/profile`,
+    method: "PATCH",
+    data: { nickname: trimmed },
+    header: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+  });
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    const error =
+      typeof response.data === "object" &&
+      response.data !== null &&
+      "error" in response.data &&
+      typeof response.data.error === "string"
+        ? response.data.error
+        : null;
+    throw new Error(error ?? `PROFILE_UPDATE_HTTP_${String(response.statusCode)}`);
+  }
+  const data = response.data as {
+    nickname: string;
+    playerId: string | null;
+    avatarUrl: string | null;
+  };
+  if (data.playerId === null) throw new Error("PLAYER_ID_NOT_ASSIGNED");
+  return { nickname: data.nickname, playerId: data.playerId, avatarUrl: data.avatarUrl };
+}
+
+/**
  * Resume a profile previously linked to the current WeChat openid.
  * First-time users return null and continue through explicit profile capture.
  */

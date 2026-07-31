@@ -12,6 +12,7 @@ import {
   readyRoomSchema,
   removeRoomBotSchema,
   teamMatchmakingInputSchema,
+  updateProfileInputSchema,
   updateRoomSettingsSchema,
 } from "@huanghuang/protocol";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
@@ -362,6 +363,28 @@ app.post("/api/auth/wechat", async (request, reply) => {
     nickname: session.nickname,
     avatarUrl: session.avatarUrl ?? null,
     sessionToken: token,
+  };
+});
+
+/**
+ * Update the currently authenticated player's own profile (nickname for now).
+ * Does NOT rotate the session token — unlike /api/auth/wechat, this is a
+ * profile mutation on an already-authenticated session, not a re-login.
+ * Returns the same shape as GET /api/session so the client can update its
+ * in-memory identity without a follow-up round-trip.
+ */
+app.patch("/api/auth/profile", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const parsed = updateProfileInputSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
+  database.updateSession({ ...session, nickname: parsed.data.nickname });
+  return {
+    sessionId: session.id,
+    playerId: session.playerId ?? null,
+    nickname: parsed.data.nickname,
+    avatarUrl: session.avatarUrl ?? null,
+    wechatLinked: session.wechatOpenId !== null && session.wechatOpenId !== undefined,
   };
 });
 

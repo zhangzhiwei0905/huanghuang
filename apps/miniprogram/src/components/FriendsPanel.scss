@@ -408,6 +408,78 @@
   color: #2f6a4c;
 }
 
+/* Rank podium markers for the top 3 ranked friends. Only friends with a
+   competitive profile receive one, so the markers always reflect real rank
+   standing — never a default placeholder. Gold/silver/bronze tints stay
+   distinct from the jade accent. */
+.friends-podium {
+  flex: 0 0 auto;
+  width: 5.2vmin;
+  height: 5.2vmin;
+  min-width: 30px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: 0 0.35vmin 0 rgb(0 0 0 / 18%);
+  color: #fffaf0;
+  font-size: clamp(13px, 2.6vmin, 18px);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.friends-podium--1 {
+  background: linear-gradient(180deg, #e8b54a 0%, #c8902f 100%);
+  box-shadow: 0 0.4vmin 0 #946a1f, 0 0 1.6vmin rgb(200 144 47 / 30%);
+}
+
+.friends-podium--2 {
+  background: linear-gradient(180deg, #cfd2cf 0%, #aeb2ad 100%);
+  box-shadow: 0 0.4vmin 0 #80847c;
+}
+
+.friends-podium--3 {
+  background: linear-gradient(180deg, #c98a5a 0%, #a86a3f 100%);
+  box-shadow: 0 0.4vmin 0 #7c4a2a;
+}
+
+/* A ranked friend's row gets a subtle left edge accent so the podium
+   winners read as a leaderboard, not just decorated rows. */
+.friends-row.is-podium {
+  background: rgb(255 252 241 / 92%);
+}
+
+.friends-row.is-podium--1::before {
+  background: #c8902f;
+}
+
+.friends-row.is-podium--2::before {
+  background: #aeb2ad;
+}
+
+.friends-row.is-podium--3::before {
+  background: #a86a3f;
+}
+
+.friends-row__name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7vmin;
+  min-width: 0;
+}
+
+.friends-row__rank {
+  flex: 0 0 auto;
+}
+
+.friends-row__rank .rank-badge__image {
+  width: 4.4vmin;
+  height: 5vmin;
+  min-width: 22px;
+  min-height: 25px;
+}
+
 .friends-mini-btn {
   min-width: max(7.8vmin, 42px);
   padding: 1.1vmin 1.25vmin;
