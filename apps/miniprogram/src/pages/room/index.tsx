@@ -682,6 +682,11 @@ export default function RoomPage() {
       null;
     if (originRoomCode !== null) {
       try {
+        // Must acknowledge the just-settled match before leaving, or it stays
+        // "current" server-side and the origin room's next matchmaking poll
+        // mistakes it for a freshly matched game — showing a countdown that
+        // loops back to this same settlement screen instead of a new match.
+        await competitiveApi.acknowledge(matchId);
         const originRoom = await roomApi.get(originRoomCode);
         Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
         roomCtrl.clearLastSettlement();
