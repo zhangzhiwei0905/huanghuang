@@ -140,6 +140,86 @@ acknowledge(result);
 
 `RoomService.execute` reuses a stored result when `(session_id, request_id)` was already processed, so retries with the **same** `requestId` are safe. A newer request against a stale `expectedVersion` is rejected with `VERSION_CONFLICT`.
 
+## Scenario: Owner kick in team-ranked waiting rooms (`POST /api/rooms/:code/kick`)
+
+### 1. Scope / Trigger
+
+- Lets a `TEAM_MATCH` room owner evict an idle member (e.g. someone who强退 and
+  never acknowledges a settlement), so the room can re-match instead of staying
+  locked. Part of the unified ranked continue-room flow (task
+  `08-01-unify-ranked-continue-room-flow`, R4).
+
+### 2. Signatures
+
+```ts
+POST /api/rooms/:code/kick
+Body: { targetSeat: Seat } // Seat = 0 | 1 | 2 | 3
+
+// apps/server/src/room-service.ts
+kickMember(hostSessionId, code, targetSeat):
+  RoomState | "FORBIDDEN" | "NOT_A_MEMBER" | "ACTION_NOT_AVAILABLE" | null
+
+// apps/miniprogram/src/api/http.ts
+roomApi.kick(roomCode, targetSeat): Promise<RoomProjection>
+```
+
+### 3. Contracts
+
+- Kicks by **seat**, never by session id: `LobbySeatProjection` deliberately
+  hides other members' session ids because a session id is the bearer
+  credential. The server resolves the target session from the seat.
+- Only `mode === "TEAM_MATCH"` rooms in `stage === "WAITING"`; only the owner;
+  the target must be a human seat and cannot be the owner themselves.
+- Only while idle: `teamQueueStartedAt === null`, no matchmaking party
+  entries, and no member has a current match. Queued/matched rooms reject.
+- The target is removed through the shared `leaveRoom` path: seat becomes
+  `EMPTY` in WAITING, the ready list is cleaned, ownership stays put, and the
+  room broadcasts `room:update` to the remaining members.
+
+### 4. Validation & Error Matrix
+
+| Condition | HTTP | Body |
+|---|---|---|
+| Missing authentication | 401 | `UNAUTHENTICATED` |
+| Body is not `{ targetSeat }` | 400 | `INVALID_INPUT` |
+| Room missing / target not a member | 404 | `ROOM_NOT_FOUND` / `NOT_A_MEMBER` |
+| Requester is not the owner | 403 | `OWNER_ONLY` |
+| Owner kicks self / queued / matched | 409 | `ACTION_NOT_AVAILABLE` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: owner kicks a stuck member from an idle team room → seat freed, the
+  member loses membership (next interaction follows the non-member path), and
+  the room can start a new queue.
+- Base: the kicked member is the last non-owner member → `leaveRoom` runs its
+  normal EMPTY_ROOM / ownership fallback as if the member left voluntarily.
+- Bad: kicking by session id, which forces the projection to leak every other
+  member's bearer token to the room (session hijacking).
+
+### 6. Tests Required
+
+- `apps/server/src/room-service.test.ts`: owner kick succeeds; non-owner gets
+  `FORBIDDEN`; kick-self and queued/matched rooms get `ACTION_NOT_AVAILABLE`;
+  empty/bot seats and unknown rooms get the 404 family; the kicked member's
+  seat is released and `hasMember` turns false.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```ts
+// Requires projecting every member's session id — a bearer credential —
+// to every client in the room.
+kickMember(hostSessionId, code, targetSessionId);
+```
+
+Correct:
+
+```ts
+// The client only knows a seat; the server resolves the session id.
+kickMember(hostSessionId, code, targetSeat);
+```
+
 ## Deployment version endpoint
 
 `GET /api/version` returns `{ version, builtAt, updatedAt, revision }` so the

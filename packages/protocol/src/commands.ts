@@ -72,6 +72,15 @@ export const removeRoomBotSchema = z.object({
   seat: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
 });
 
+/**
+ * Owner-only kick in a team-ranked waiting room. Identifies the target by
+ * seat (not session id): room projections intentionally never expose other
+ * members' session ids — a session id is the bearer credential itself.
+ */
+export const kickMemberInputSchema = z.object({
+  targetSeat: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+});
+
 export const chatMessageInputSchema = z.object({
   roomCode: roomCodeSchema,
   message: z.string().trim().min(1).max(60),
@@ -86,6 +95,7 @@ export type ReadyRoomInput = z.infer<typeof readyRoomSchema>;
 export type TeamMatchmakingInput = z.infer<typeof teamMatchmakingInputSchema>;
 export type UpdateRoomSettingsInput = z.infer<typeof updateRoomSettingsSchema>;
 export type RemoveRoomBotInput = z.infer<typeof removeRoomBotSchema>;
+export type KickMemberInput = z.infer<typeof kickMemberInputSchema>;
 export type ChatMessageInput = z.infer<typeof chatMessageInputSchema>;
 
 export type CommandResult = {

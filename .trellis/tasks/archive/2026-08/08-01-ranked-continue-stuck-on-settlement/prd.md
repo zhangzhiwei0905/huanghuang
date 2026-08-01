@@ -31,3 +31,4 @@ Commit: `73a7688` (apps/miniprogram/src/pages/room/index.tsx, +5 行)
 
 - 部署：仅前端改动，无需重新部署后端 docker 容器；小程序需要重新编译并提交微信审核。
 - 单人排位是否独立存在同款问题，需要用户在这次修复上线后单独复测确认；如仍复现，怀疑点在 `matchmakingResponse()`（`index.ts:139-160`）里 `rooms.hasMember()` 校验的潜在时序竞态。
+- 后续架构统一见任务 `08-01-unify-ranked-continue-room-flow`（已实施）：acknowledge 同步解锁房间（R2）、统一继续/返回路径（R1）、10 秒自动兜底（R3）、房主踢人（R4）。本次 acknowledge 缺失修复本身被保留，作为统一流程的前置基础。

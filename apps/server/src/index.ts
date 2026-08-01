@@ -8,6 +8,7 @@ import {
   createRoomSchema,
   createRoomInviteInputSchema,
   joinRoomSchema,
+  kickMemberInputSchema,
   matchmakingQueueInputSchema,
   readyRoomSchema,
   removeRoomBotSchema,
@@ -628,6 +629,21 @@ app.post<{ Params: { matchId: string } }>(
     if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
     try {
       matchmaking.acknowledgeResult(session.id, request.params.matchId);
+      // R2: synchronously unlock the team-ranked staging room this player's
+      // party queued from, instead of waiting up to ~1s for the next
+      // reconcileTeamMatchQueues tick. All members acknowledging makes
+      // currentTeamCompetitiveMatch(room) null, which is exactly the unlock
+      // condition — no other action needed from the other party members.
+      const partyId = database.getCompetitiveMatchPlayer(
+        request.params.matchId,
+        session.id,
+      )?.partyId;
+      if (partyId !== null && partyId !== undefined) {
+        const partyRoom = rooms.getRoomById(partyId);
+        if (partyRoom !== null && rooms.reconcileTeamMatchQueueForRoom(partyRoom)) {
+          sockets.to(partyRoom.id).emit("room:update", { version: partyRoom.version });
+        }
+      }
       return matchmakingResponse(session.id);
     } catch (cause) {
       if (cause instanceof Error && cause.message === "MATCH_RESULT_NOT_AVAILABLE") {
@@ -876,6 +892,22 @@ app.post<{ Params: { code: string } }>("/api/rooms/:code/dissolve", (request, re
   }
   sockets.to(room.id).emit("room:update", { version: room.version });
   return rooms.project(room, session.id);
+});
+
+app.post<{ Params: { code: string } }>("/api/rooms/:code/kick", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  const parsed = kickMemberInputSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
+  const result = rooms.kickMember(session.id, request.params.code, parsed.data.targetSeat);
+  if (result === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
+  if (result === "FORBIDDEN") return reply.code(403).send({ error: "OWNER_ONLY" });
+  if (result === "NOT_A_MEMBER") return reply.code(404).send({ error: "NOT_A_MEMBER" });
+  if (result === "ACTION_NOT_AVAILABLE") {
+    return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
+  }
+  sockets.to(result.id).emit("room:update", { version: result.version });
+  return rooms.project(result, session.id);
 });
 
 app.delete<{ Params: { code: string } }>("/api/rooms/:code", (request, reply) => {

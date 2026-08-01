@@ -41,6 +41,7 @@ type RoomController = {
   updateBotDifficulty: (difficulty: BotDifficulty) => Promise<void>;
   addBot: () => Promise<void>;
   removeBot: (seat: Seat) => Promise<void>;
+  kick: (seat: Seat) => Promise<void>;
   continueBot: () => Promise<void>;
   send: (type: CommandEnvelope["type"], payload?: Record<string, unknown>) => Promise<void>;
   refresh: () => Promise<void>;
@@ -442,6 +443,21 @@ export function useRoom(): RoomController {
     [replaceProjection, runExclusive],
   );
 
+  const kick = useCallback(
+    async (seat: Seat) => {
+      const current = roomRef.current;
+      if (current === null) return;
+      await runExclusive(null, async () => {
+        try {
+          replaceProjection(await roomApi.kick(current.roomCode, seat));
+        } catch (cause) {
+          setError(errorLabel(cause instanceof ApiError ? cause.code : "UNKNOWN_ERROR"));
+        }
+      });
+    },
+    [replaceProjection, runExclusive],
+  );
+
   const continueBot = useCallback(async () => {
     const current = roomRef.current;
     if (current === null) return;
@@ -511,6 +527,7 @@ export function useRoom(): RoomController {
     updateBotDifficulty,
     addBot,
     removeBot,
+    kick,
     continueBot,
     send,
     refresh,

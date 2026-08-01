@@ -1597,24 +1597,36 @@ export class RoomService {
     return room;
   }
 
+  /**
+   * Unlocks a single TEAM_MATCH waiting room when the previous round is
+   * fully acknowledged: clears the last round's ready/queue markers so the
+   * party can immediately start a new match. Used both by the background
+   * `reconcileTeamMatchQueues` tick (fallback for non-acknowledge paths such
+   * as a member directly leaving) and synchronously inside the acknowledge
+   * request (R2), so players don't wait up to ~1s for the next tick.
+   */
+  reconcileTeamMatchQueueForRoom(room: RoomState): boolean {
+    if (
+      room.status !== "ACTIVE" ||
+      room.mode !== "TEAM_MATCH" ||
+      room.teamQueueStartedAt === null ||
+      this.database.listMatchmakingPartyEntries(room.id).length > 0 ||
+      this.currentTeamCompetitiveMatch(room) !== null
+    ) {
+      return false;
+    }
+    room.readySessionIds = [];
+    room.teamQueueStartedAt = null;
+    room.waitingExpiresAt = new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString();
+    room.version += 1;
+    this.save(room);
+    return true;
+  }
+
   reconcileTeamMatchQueues(): RoomState[] {
     const changed: RoomState[] = [];
     for (const room of this.roomsByCode.values()) {
-      if (
-        room.status !== "ACTIVE" ||
-        room.mode !== "TEAM_MATCH" ||
-        room.teamQueueStartedAt === null ||
-        this.database.listMatchmakingPartyEntries(room.id).length > 0 ||
-        this.currentTeamCompetitiveMatch(room) !== null
-      ) {
-        continue;
-      }
-      room.readySessionIds = [];
-      room.teamQueueStartedAt = null;
-      room.waitingExpiresAt = new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString();
-      room.version += 1;
-      this.save(room);
-      changed.push(room);
+      if (this.reconcileTeamMatchQueueForRoom(room)) changed.push(room);
     }
     return changed;
   }
@@ -1798,6 +1810,37 @@ export class RoomService {
     this.refreshDeadline(room);
     this.save(room);
     return room;
+  }
+
+  /**
+   * Owner-only kick for team-ranked waiting rooms (R4). Reuses
+   * {@link leaveRoom} on the target's behalf, so seat release, ownership
+   * handling and the room:update broadcast stay on one code path. Only
+   * available while the room is idle (not queued / not matched); the target
+   * is addressed by seat because projections never expose session ids.
+   */
+  kickMember(
+    hostSessionId: string,
+    code: string,
+    targetSeat: Seat,
+  ): RoomState | "FORBIDDEN" | "NOT_A_MEMBER" | "ACTION_NOT_AVAILABLE" | null {
+    const room = this.roomsByCode.get(code);
+    if (room?.status !== "ACTIVE") return null;
+    if (room.mode !== "TEAM_MATCH" || room.stage !== "WAITING") return "ACTION_NOT_AVAILABLE";
+    if (room.ownerSessionId !== hostSessionId) return "FORBIDDEN";
+    const targetSessionId = room.seats[targetSeat].sessionId;
+    if (targetSessionId === null || room.seats[targetSeat].controller !== "HUMAN") {
+      return "NOT_A_MEMBER";
+    }
+    if (targetSessionId === hostSessionId) return "ACTION_NOT_AVAILABLE";
+    if (
+      room.teamQueueStartedAt !== null ||
+      this.database.listMatchmakingPartyEntries(room.id).length > 0 ||
+      this.currentTeamCompetitiveMatch(room) !== null
+    ) {
+      return "ACTION_NOT_AVAILABLE";
+    }
+    return this.leaveRoom(targetSessionId, code);
   }
 
   private projectCompetitiveSettlement(

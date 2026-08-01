@@ -53,6 +53,15 @@ indivisible unit.
   after a restart or expiry. Clients consume only the room projection.
 - Once matched, the party room projects `MATCHED` with the created match room
   code. The client then enters the formal `MATCH` room.
+- Acknowledge of a settled match synchronously unlocks the staging room (R2):
+  when every party member has acknowledged, `reconcileTeamMatchQueueForRoom`
+  clears `readySessionIds`/`teamQueueStartedAt` inside the acknowledge request
+  itself instead of waiting for the ~1s background tick. The
+  `reconcileTeamMatchQueues` tick stays as a fallback for non-acknowledge
+  paths (e.g. a member directly leaving the room).
+- The owner may kick an idle human member (`POST /api/rooms/:code/kick`,
+  see error-handling.md) to free a seat held by a stuck teammate; kicking is
+  rejected while the room is queued or matched.
 
 ## 4. Validation and Error Matrix
 

@@ -1783,7 +1783,7 @@ describe("RoomService", () => {
     expect(service.getRoom(room.code)).toBe(room);
   });
 
-  it("resolves originRoomCode to the still-open team-ranked staging room for its party members only", () => {
+  it("resolves originRoomCode to the still-open team-ranked staging room for party and solo entries alike", () => {
     const database = new GameDatabase(":memory:");
     databases.push(database);
     const partySessions: AnonymousSession[] = [0, 1].map((index) => ({
@@ -1814,9 +1814,17 @@ describe("RoomService", () => {
       partySessions.map((session) => ({ sessionId: session.id, rankLevelSnapshot: 0 })),
       "2026-07-31T00:00:00.000Z",
     );
-    for (const session of soloSessions) {
-      database.upsertMatchmakingEntry({ sessionId: session.id, rankLevelSnapshot: 0 });
-    }
+    // Solo ranked also queues through a party-of-one TEAM_MATCH staging room
+    // (the real entry path), so solo players get an originRoomCode too.
+    const soloRooms = soloSessions.map((session) => {
+      const soloRoom = service.createRoom(session, 10, "TEAM_MATCH", 30, "HIGH");
+      database.enqueueMatchmakingParty(
+        soloRoom.id,
+        [{ sessionId: session.id, rankLevelSnapshot: 0 }],
+        "2026-07-31T00:00:00.000Z",
+      );
+      return soloRoom;
+    });
     const entries = sessions.map((session) => {
       const entry = database.getMatchmakingEntry(session.id);
       if (entry === null) throw new Error(`Missing matchmaking entry for ${session.id}`);
@@ -1830,14 +1838,186 @@ describe("RoomService", () => {
     const soloProjection = service.project(matchRoom, soloSessions[0]?.id ?? "");
     expect(partyOwnerProjection.competitiveMatch?.originRoomCode).toBe(stagingRoom.code);
     expect(partyMemberProjection.competitiveMatch?.originRoomCode).toBe(stagingRoom.code);
-    expect(soloProjection.competitiveMatch?.originRoomCode).toBeNull();
+    expect(soloProjection.competitiveMatch?.originRoomCode).toBe(soloRooms[0]?.code ?? null);
 
-    // Once the staging room is gone (dissolved, evicted, ...), "continue"
+    // Once the staging rooms are gone (dissolved, evicted, ...), "continue"
     // must fall back gracefully instead of pointing at a dead room.
-    (service as unknown as { roomsByCode: Map<string, RoomState> }).roomsByCode.delete(
-      stagingRoom.code,
-    );
+    const roomsByCode = (service as unknown as { roomsByCode: Map<string, RoomState> }).roomsByCode;
+    roomsByCode.delete(stagingRoom.code);
+    roomsByCode.delete(soloRooms[0]?.code ?? "");
     expect(service.project(matchRoom, partyOwner.id).competitiveMatch?.originRoomCode).toBeNull();
+    expect(
+      service.project(matchRoom, soloSessions[0]?.id ?? "").competitiveMatch?.originRoomCode,
+    ).toBeNull();
+  });
+
+  it("unlocks the team-ranked staging room synchronously once all party members acknowledge", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const partySessions: AnonymousSession[] = [0, 1].map((index) => ({
+      id: `sync-party-player-${index}`,
+      nickname: `同步解锁队员${index}`,
+      wechatOpenId: `sync-openid-party-player-${index}`,
+    }));
+    const fillSessions: AnonymousSession[] = [0, 1].map((index) => ({
+      id: `sync-fill-player-${index}`,
+      nickname: `同步补位${index}`,
+      wechatOpenId: `sync-openid-fill-player-${index}`,
+    }));
+    const sessions = [...partySessions, ...fillSessions];
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `sync-token-${index}`);
+      database.ensureCompetitiveProfile(session.id);
+    }
+    const service = new RoomService(database);
+    const [partyOwner, partyMember] = partySessions;
+    if (partyOwner === undefined || partyMember === undefined) {
+      throw new Error("Missing party fixture");
+    }
+    const stagingRoom = service.createRoom(partyOwner, 10, "TEAM_MATCH", 30, "HIGH");
+    expect(service.joinRoom(partyMember, stagingRoom.code)).toBe(stagingRoom);
+    expect(service.setReady(partyMember.id, stagingRoom.code, true)).toBe(stagingRoom);
+    database.enqueueMatchmakingParty(
+      stagingRoom.id,
+      partySessions.map((session) => ({ sessionId: session.id, rankLevelSnapshot: 0 })),
+      "2026-08-01T00:00:00.000Z",
+    );
+    service.touchTeamMatch(stagingRoom.code);
+    expect(stagingRoom.teamQueueStartedAt).not.toBeNull();
+    for (const session of fillSessions) {
+      database.upsertMatchmakingEntry({ sessionId: session.id, rankLevelSnapshot: 0 });
+    }
+    const entries = sessions.map((session) => {
+      const entry = database.getMatchmakingEntry(session.id);
+      if (entry === null) throw new Error(`Missing matchmaking entry for ${session.id}`);
+      return entry;
+    });
+
+    const matchRoom = service.createCompetitiveMatch(sessions, entries);
+    // The matchmaker consumes the queue atomically once a match is created.
+    database.cancelMatchmakingParty(stagingRoom.id);
+
+    const round = activeRound(matchRoom);
+    round.phase = "ROUND_OVER";
+    round.outcome = { kind: "DRAW", nextDealerSeat: 0 };
+    matchRoom.stage = "ROUND_RESULT";
+    const terminal = (
+      service as unknown as {
+        competitiveTerminalSettlement(target: RoomState): {
+          settlement: NonNullable<
+            Parameters<GameDatabase["saveAcceptedTransition"]>[0]["terminalSettlement"]
+          >;
+        } | null;
+      }
+    ).competitiveTerminalSettlement(matchRoom);
+    if (terminal === null || matchRoom.competitiveMatch === null) {
+      throw new Error("Expected competitive settlement");
+    }
+    database.saveAcceptedTransition({
+      room: matchRoom,
+      stateJson: JSON.stringify(matchRoom),
+      terminalSettlement: terminal.settlement,
+    });
+
+    // Before every party member acknowledges, the staging room stays locked:
+    // the still-unacknowledged match keeps currentTeamCompetitiveMatch non-null.
+    database.acknowledgeCompetitiveMatchResult(matchRoom.competitiveMatch.matchId, partyOwner.id);
+    const serviceWithReconcile = service as unknown as {
+      reconcileTeamMatchQueueForRoom(room: RoomState): boolean;
+    };
+    expect(serviceWithReconcile.reconcileTeamMatchQueueForRoom(stagingRoom)).toBe(false);
+    expect(stagingRoom.teamQueueStartedAt).not.toBeNull();
+
+    // Once every party member acknowledges, a direct single-room reconcile
+    // (no tick, no full reconcileTeamMatchQueues pass) unlocks immediately.
+    database.acknowledgeCompetitiveMatchResult(matchRoom.competitiveMatch.matchId, partyMember.id);
+    const versionBefore = stagingRoom.version;
+    expect(serviceWithReconcile.reconcileTeamMatchQueueForRoom(stagingRoom)).toBe(true);
+    expect(stagingRoom.readySessionIds).toEqual([]);
+    expect(stagingRoom.teamQueueStartedAt).toBeNull();
+    expect(stagingRoom.version).toBe(versionBefore + 1);
+    expect(service.project(stagingRoom, partyOwner.id).teamMatchmaking).toEqual({
+      status: "IDLE",
+    });
+  });
+
+  it("lets the team-ranked owner kick an idle human member only", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const sessions: AnonymousSession[] = [0, 1].map((index) => ({
+      id: `kick-player-${index}`,
+      nickname: `踢人玩家${index}`,
+      wechatOpenId: `kick-openid-${index}`,
+    }));
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `kick-token-${index}`);
+      database.ensureCompetitiveProfile(session.id);
+    }
+    const service = new RoomService(database);
+    const [host, member] = sessions;
+    if (host === undefined || member === undefined) throw new Error("Missing kick fixture");
+    const room = service.createRoom(host, 10, "TEAM_MATCH", 30, "HIGH");
+    expect(service.joinRoom(member, room.code)).toBe(room);
+    const seatOf = (target: RoomState, sessionId: string) =>
+      ([0, 1, 2, 3] as const).find((seat) => target.seats[seat].sessionId === sessionId);
+    const memberSeat = seatOf(room, member.id);
+    if (memberSeat === undefined) throw new Error("Member has no seat");
+
+    // A non-owner cannot kick anyone.
+    expect(service.kickMember(member.id, room.code, 0)).toBe("FORBIDDEN");
+    // The owner cannot kick themselves.
+    expect(service.kickMember(host.id, room.code, 0)).toBe("ACTION_NOT_AVAILABLE");
+    // The owner cannot kick an empty (or bot) seat.
+    expect(service.kickMember(host.id, room.code, 2)).toBe("NOT_A_MEMBER");
+    // Unknown rooms resolve to a 404-style null.
+    expect(service.kickMember(host.id, "9999", 0)).toBeNull();
+
+    // The owner kicks the member: seat releases and membership is lost.
+    const versionBefore = room.version;
+    expect(service.kickMember(host.id, room.code, memberSeat)).toBe(room);
+    expect(room.seats[memberSeat].controller).toBe("EMPTY");
+    expect(room.seats[memberSeat].sessionId).toBeNull();
+    expect(room.readySessionIds).not.toContain(member.id);
+    expect(room.version).toBe(versionBefore + 1);
+    expect(service.hasMember(member.id, room.code)).toBe(false);
+    // Kicking the now-empty seat fails with NOT_A_MEMBER.
+    expect(service.kickMember(host.id, room.code, memberSeat)).toBe("NOT_A_MEMBER");
+  });
+
+  it("rejects kicking while the team-ranked room is queued or matched", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const sessions: AnonymousSession[] = [0, 1].map((index) => ({
+      id: `kick-queued-player-${index}`,
+      nickname: `排队踢人玩家${index}`,
+      wechatOpenId: `kick-queued-openid-${index}`,
+    }));
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `kick-queued-token-${index}`);
+      database.ensureCompetitiveProfile(session.id);
+    }
+    const service = new RoomService(database);
+    const [host, member] = sessions;
+    if (host === undefined || member === undefined) throw new Error("Missing kick fixture");
+    const room = service.createRoom(host, 10, "TEAM_MATCH", 30, "HIGH");
+    expect(service.joinRoom(member, room.code)).toBe(room);
+    const seatOf = (target: RoomState, sessionId: string) =>
+      ([0, 1, 2, 3] as const).find((seat) => target.seats[seat].sessionId === sessionId);
+    const memberSeat = seatOf(room, member.id);
+    if (memberSeat === undefined) throw new Error("Member has no seat");
+    expect(service.setReady(member.id, room.code, true)).toBe(room);
+
+    database.enqueueMatchmakingParty(
+      room.id,
+      sessions.map((session) => ({ sessionId: session.id, rankLevelSnapshot: 0 })),
+      "2026-08-01T00:00:00.000Z",
+    );
+    service.touchTeamMatch(room.code);
+    expect(service.kickMember(host.id, room.code, memberSeat)).toBe("ACTION_NOT_AVAILABLE");
+
+    database.cancelMatchmakingParty(room.id);
+    service.resetTeamMatch(room.code);
+    expect(service.kickMember(host.id, room.code, memberSeat)).toBe(room);
   });
 
   it("does not register a competitive room when atomic creation rejects a stale queue entry", () => {

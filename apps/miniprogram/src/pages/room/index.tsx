@@ -20,6 +20,7 @@ import {
   setStoredMatchmakingAllowBots,
 } from "../../api/http";
 import { API_BASE } from "../../config";
+import { resolveIdentity } from "../../api/session";
 import { ActionDock } from "../../components/ActionDock";
 import { PlayerProfileModal } from "../../components/PlayerProfileModal";
 import { FriendsPanel } from "../../components/FriendsPanel";
@@ -147,6 +148,7 @@ function LobbySeat({
   onRemoveBot,
   onShowProfile,
   onInviteEmpty,
+  onKick,
 }: {
   seat: LobbySeatProjection;
   positionClass: (typeof POSITION_CLASS)[number];
@@ -157,6 +159,7 @@ function LobbySeat({
   onRemoveBot: () => void;
   onShowProfile: () => void;
   onInviteEmpty?: () => void;
+  onKick?: () => void;
 }) {
   const displayName = seat.occupied ? (seat.nickname ?? "玩家") : "等待加入";
   const status = !seat.occupied
@@ -241,6 +244,18 @@ function LobbySeat({
             onClick={onRemoveBot}
           >
             移除
+          </Button>
+        </View>
+      ) : null}
+      {onKick !== undefined ? (
+        <View className="lobby-seat__state-row">
+          <Button
+            className="lobby-seat-kick-button"
+            hoverClass="is-pressed"
+            disabled={busy}
+            onClick={onKick}
+          >
+            踢出
           </Button>
         </View>
       ) : null}
@@ -501,6 +516,21 @@ export default function RoomPage() {
   }, [actionDeadlineAt]);
 
   useEffect(() => {
+    // R3: if the player never taps either settlement button within 10 seconds,
+    // auto-trigger the "返回房间" path (acknowledge → sync unlock → back to the
+    // origin room / fresh room), without auto-ready or auto-start. The timer
+    // is torn down on unmount, which is exactly what happens when either
+    // button reLaunches the room page — no extra "already acted" flag needed.
+    if (room?.roundSettlement === null || room?.mode !== "MATCH") return;
+    const matchId = room.competitiveMatch?.matchId;
+    if (matchId === undefined) return;
+    const timer = setTimeout(() => {
+      void settleAndReturnToRoom(matchId, { autoReady: false, autoStartIfOwner: false });
+    }, 10_000);
+    return () => clearTimeout(timer);
+  }, [room?.roundSettlement, room?.competitiveMatch?.matchId]);
+
+  useEffect(() => {
     if (!teamMatchActive) return;
     const clock = setInterval(() => setTeamMatchNow(Date.now()), 1_000);
     let disposed = false;
@@ -666,68 +696,83 @@ export default function RoomPage() {
     await roomCtrl.send(action);
   }
 
-  async function continueCompetitiveMatch(matchIdOverride?: string) {
+  /**
+   * Unified post-settlement path (R1) for solo and team ranked alike:
+   * acknowledge the settled match → resolve the origin staging room (the
+   * server unlocks it synchronously on acknowledge, R2) → fall back to a
+   * freshly created TEAM_MATCH room when the origin is gone → then optionally
+   * auto-ready (non-owner) and auto-start (owner, best-effort). The legacy
+   * direct `queue()` re-entry branch is removed: every ranked match now
+   * remembers its staging room, so "继续游戏" always regroups in a room first.
+   */
+  async function settleAndReturnToRoom(
+    matchIdOverride: string | undefined,
+    options: { autoReady: boolean; autoStartIfOwner: boolean },
+  ) {
     // Accepts an explicit matchId so the empty-shell page (room === null,
     // relying on roomCtrl.lastSettlement) can still drive this action once
     // `room.competitiveMatch` itself is gone.
     const matchId = matchIdOverride ?? room?.competitiveMatch?.matchId;
     if (matchId === undefined) return;
-    // A team-ranked match remembers the staging room its party queued from.
-    // Sending the player back there (instead of the solo requeue below) lets
-    // them regroup with the same teammates — and re-invite friends — rather
-    // than being silently dropped into solo ranked.
-    const originRoomCode =
-      room?.competitiveMatch?.originRoomCode ??
-      roomCtrl.lastSettlement?.competitiveMatch.originRoomCode ??
-      null;
-    if (originRoomCode !== null) {
-      try {
-        // Must acknowledge the just-settled match before leaving, or it stays
-        // "current" server-side and the origin room's next matchmaking poll
-        // mistakes it for a freshly matched game — showing a countdown that
-        // loops back to this same settlement screen instead of a new match.
-        await competitiveApi.acknowledge(matchId);
-        const originRoom = await roomApi.get(originRoomCode);
-        Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
-        roomCtrl.clearLastSettlement();
-        Taro.setStorageSync("huanghuang_open_room", originRoom);
-        await Taro.reLaunch({ url: "/pages/room/index" });
-        return;
-      } catch {
-        // Origin room is gone (dissolved, expired, etc.) — fall through to
-        // the ordinary solo requeue below instead of leaving the player
-        // stuck on a dead "继续游戏" button.
-      }
-    }
     try {
       Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
-      const response = await competitiveApi.queue({
-        previousMatchId: matchId,
-        allowBots: getStoredMatchmakingAllowBots(),
-      });
+      // Must acknowledge the just-settled match before leaving, or it stays
+      // "current" server-side and the origin room's next matchmaking poll
+      // mistakes it for a freshly matched game — showing a countdown that
+      // loops back to this same settlement screen instead of a new match.
+      await competitiveApi.acknowledge(matchId);
+      const originRoomCode =
+        room?.competitiveMatch?.originRoomCode ??
+        roomCtrl.lastSettlement?.competitiveMatch.originRoomCode ??
+        null;
+      const targetRoom =
+        originRoomCode === null ? null : await roomApi.get(originRoomCode).catch(() => null);
+      const nextRoom = targetRoom ?? (await createFallbackTeamRoom());
       roomCtrl.clearLastSettlement();
-      if (response.room !== null) {
-        Taro.setStorageSync("huanghuang_open_room", response.room);
-        await Taro.reLaunch({ url: "/pages/room/index" });
-      } else {
-        await Taro.reLaunch({ url: "/pages/index/index" });
+      Taro.setStorageSync("huanghuang_open_room", nextRoom);
+      await Taro.reLaunch({ url: "/pages/room/index" });
+      if (options.autoReady && !nextRoom.isOwner) {
+        // The owner's readiness is implicit (prepareTeamMatch only checks
+        // non-owner members), so only non-owner members explicitly ready up.
+        void roomApi.ready(nextRoom.roomCode, true).catch(() => {});
+      }
+      if (options.autoStartIfOwner && nextRoom.isOwner) {
+        // Best-effort auto-start: teammates may not be ready yet (NOT_ALL_READY)
+        // — deliberately swallow the failure so the owner lands on the normal
+        // "waiting for friends to ready" lobby instead of an error toast.
+        void roomApi
+          .startTeamMatchmaking(nextRoom.roomCode, getStoredMatchmakingAllowBots())
+          .catch(() => {});
       }
     } catch {
-      await Taro.showToast({ title: "继续匹配失败，请重试", icon: "none" });
+      await Taro.showToast({ title: "操作失败，请重试", icon: "none" });
     }
   }
 
-  async function returnFromCompetitiveMatch(matchIdOverride?: string) {
-    const matchId = matchIdOverride ?? room?.competitiveMatch?.matchId;
-    if (matchId === undefined) return;
-    try {
-      Taro.removeStorageSync(TRUSTEE_MATCH_STORAGE_KEY);
-      await competitiveApi.acknowledge(matchId);
-      roomCtrl.clearLastSettlement();
-      await Taro.reLaunch({ url: "/pages/index/index" });
-    } catch {
-      await Taro.showToast({ title: "返回大厅失败，请重试", icon: "none" });
+  /** R4: owner-only kick with a second confirmation modal before executing. */
+  async function confirmKick(targetSeat: Seat) {
+    const target = room?.lobbySeats.find((candidate) => candidate.seat === targetSeat);
+    const result = await Taro.showModal({
+      title: "踢出成员？",
+      content: `确定将 ${target?.nickname ?? "该成员"} 移出房间吗？`,
+      confirmText: "踢出",
+      cancelText: "取消",
+    });
+    if (!result.confirm) return;
+    await roomCtrl.kick(targetSeat);
+  }
+
+  /** Fresh TEAM_MATCH room for the "origin room is gone" fallback (R1). */
+  async function createFallbackTeamRoom() {
+    const selfSeat = room?.lobbySeats.find((candidate) => candidate.isSelf);
+    let nickname = selfSeat?.nickname ?? null;
+    if (nickname === null) {
+      const identity = await resolveIdentity();
+      nickname = identity?.nickname ?? "玩家";
     }
+    // Same creation call as the home page's ranked entry, so solo and team
+    // continue fall back to an identical TEAM_MATCH room shape.
+    return roomApi.create(nickname, 2, "TEAM_MATCH", 20, "LOW");
   }
 
   async function leaveCurrentRoom() {
@@ -795,16 +840,26 @@ export default function RoomPage() {
               <Button
                 className="btn-accent"
                 hoverClass="is-pressed"
-                onClick={() => void continueCompetitiveMatch(pendingMatchId)}
+                onClick={() =>
+                  void settleAndReturnToRoom(pendingMatchId, {
+                    autoReady: true,
+                    autoStartIfOwner: true,
+                  })
+                }
               >
-                继续匹配
+                继续游戏
               </Button>
               <Button
                 className="btn-accent"
                 hoverClass="is-pressed"
-                onClick={() => void returnFromCompetitiveMatch(pendingMatchId)}
+                onClick={() =>
+                  void settleAndReturnToRoom(pendingMatchId, {
+                    autoReady: false,
+                    autoStartIfOwner: false,
+                  })
+                }
               >
-                回主页
+                返回房间
               </Button>
             </>
           ) : (
@@ -1038,6 +1093,16 @@ export default function RoomPage() {
                   onInviteEmpty={
                     room.mode === "TEAM_MATCH" && !teamMatchActive
                       ? () => setFriendsOpen(true)
+                      : undefined
+                  }
+                  onKick={
+                    room.mode === "TEAM_MATCH" &&
+                    room.isOwner &&
+                    !teamMatchActive &&
+                    seat.occupied &&
+                    seat.controller === "HUMAN" &&
+                    !seat.isOwner
+                      ? () => void confirmKick(seat.seat)
                       : undefined
                   }
                 />
@@ -1490,10 +1555,20 @@ export default function RoomPage() {
                 mode={room.mode}
                 busy={roomCtrl.busy}
                 onContinue={() =>
-                  void (room.mode === "MATCH" ? continueCompetitiveMatch() : roomCtrl.continueBot())
+                  void (room.mode === "MATCH"
+                    ? settleAndReturnToRoom(room.competitiveMatch?.matchId, {
+                        autoReady: true,
+                        autoStartIfOwner: true,
+                      })
+                    : roomCtrl.continueBot())
                 }
                 onLeave={() =>
-                  void (room.mode === "MATCH" ? returnFromCompetitiveMatch() : leaveCurrentRoom())
+                  void (room.mode === "MATCH"
+                    ? settleAndReturnToRoom(room.competitiveMatch?.matchId, {
+                        autoReady: false,
+                        autoStartIfOwner: false,
+                      })
+                    : leaveCurrentRoom())
                 }
               />
             ) : null}

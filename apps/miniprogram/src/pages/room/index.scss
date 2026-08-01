@@ -748,6 +748,22 @@
   font-size: 11px !important;
 }
 
+.lobby-seat-kick-button {
+  flex-shrink: 0;
+  margin: 0 !important;
+  min-width: 52px !important;
+  width: 52px !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  padding: 0 !important;
+  border: 1px solid #c98f8f !important;
+  border-radius: 10px !important;
+  background: #f9efec !important;
+  color: #a43d35 !important;
+  font-size: 11px !important;
+}
+
 .seat-avatar {
   border-radius: 50%;
   background: #fff;

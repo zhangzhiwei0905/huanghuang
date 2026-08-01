@@ -198,6 +198,12 @@ export const roomApi = {
   continueBot(roomCode: string): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/continue`, { method: "POST", data: {} });
   },
+  kick(roomCode: string, targetSeat: Seat): Promise<RoomProjection> {
+    return request(`/api/rooms/${roomCode}/kick`, {
+      method: "POST",
+      data: { targetSeat },
+    });
+  },
   dissolve(roomCode: string): Promise<RoomProjection> {
     return request(`/api/rooms/${roomCode}/dissolve`, { method: "POST", data: {} });
   },

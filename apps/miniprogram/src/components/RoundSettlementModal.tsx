@@ -208,7 +208,7 @@ export function RoundSettlementModal({
                 disabled={busy}
                 onClick={onLeave}
               >
-                {mode === "MATCH" ? "返回大厅" : "退出到主页"}
+                {mode === "MATCH" ? "返回房间" : "退出到主页"}
               </Button>
               <Button
                 className="btn-accent"
@@ -216,7 +216,7 @@ export function RoundSettlementModal({
                 disabled={busy}
                 onClick={onContinue}
               >
-                {mode === "MATCH" ? "继续匹配" : "继续游戏"}
+                继续游戏
               </Button>
             </View>
           ) : null}
