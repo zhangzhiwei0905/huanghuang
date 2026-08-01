@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button, Image, Input, ScrollView, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import type { FriendSummary, PlayerSearchResult, SocialPlayer } from "@huanghuang/protocol";
@@ -13,6 +13,19 @@ type FriendsPanelProps = {
   roomCode?: string;
   onClose: () => void;
 };
+
+type RankedFriend = {
+  player: FriendSummary | SocialPlayer;
+  isSelf: boolean;
+  online: boolean;
+  place: number;
+  isPodium: boolean;
+};
+
+const FRIEND_DELETE_REVEAL_WIDTH = 82;
+
+type TouchPoint = { clientX: number; clientY: number };
+type TouchEventPayload = { touches?: TouchPoint[]; changedTouches?: TouchPoint[] };
 
 function FriendAvatar({ player }: { player: SocialPlayer }) {
   return (
@@ -80,6 +93,157 @@ function SearchAction({
   );
 }
 
+function FriendListRow({
+  entry,
+  roomCode,
+  invited,
+  busy,
+  onInvite,
+  onDelete,
+}: {
+  entry: RankedFriend;
+  roomCode?: string;
+  invited: boolean;
+  busy: boolean;
+  onInvite: () => void;
+  onDelete: () => Promise<void>;
+}) {
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressClick = useRef(false);
+  const isDeleteEnabled = roomCode === undefined && !entry.isSelf;
+
+  function handleTouchStart(event: unknown) {
+    if (!isDeleteEnabled) return;
+    const touch = (event as TouchEventPayload).touches?.[0];
+    if (touch === undefined) return;
+    touchStart.current = { x: touch.clientX, y: touch.clientY };
+  }
+
+  function handleTouchMove(event: unknown) {
+    if (!isDeleteEnabled || touchStart.current === null) return;
+    const touch = (event as TouchEventPayload).touches?.[0];
+    if (touch === undefined) return;
+    const deltaX = touch.clientX - touchStart.current.x;
+    const deltaY = touch.clientY - touchStart.current.y;
+    if (Math.abs(deltaY) > Math.abs(deltaX) || deltaX >= 0) return;
+    setSwipeOffset(Math.min(FRIEND_DELETE_REVEAL_WIDTH, Math.abs(deltaX)));
+  }
+
+  function handleTouchEnd(event: unknown) {
+    if (!isDeleteEnabled || touchStart.current === null) return;
+    const touch = (event as TouchEventPayload).changedTouches?.[0];
+    if (touch === undefined) return;
+    const deltaX = touch.clientX - touchStart.current.x;
+    const deltaY = touch.clientY - touchStart.current.y;
+    touchStart.current = null;
+    if (Math.abs(deltaX) > Math.abs(deltaY) && deltaX < -36) {
+      setSwipeOffset(FRIEND_DELETE_REVEAL_WIDTH);
+      suppressClick.current = true;
+      return;
+    }
+    if (Math.abs(deltaX) > 12) {
+      setSwipeOffset(0);
+      suppressClick.current = true;
+    }
+  }
+
+  function handleRowClick() {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    if (swipeOffset > 0) setSwipeOffset(0);
+  }
+
+  async function handleLongPress() {
+    if (!isDeleteEnabled) return;
+    suppressClick.current = true;
+    await onDelete();
+  }
+
+  const rank = entry.player.competitiveProfile;
+  const rowClass = [
+    "friends-row",
+    "friends-row--friend",
+    entry.isPodium ? "is-podium" : "",
+    entry.isPodium ? `is-podium--${entry.place}` : "",
+    entry.isSelf ? "is-self" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <View className="friends-swipe" catchMove={isDeleteEnabled}>
+      {isDeleteEnabled && swipeOffset > 0 ? (
+        <Button
+          className="friends-swipe__delete"
+          ariaLabel={`删除好友 ${entry.player.nickname}`}
+          disabled={busy}
+          onClick={(event) => {
+            event.stopPropagation();
+            setSwipeOffset(0);
+            void onDelete();
+          }}
+        >
+          删除
+        </Button>
+      ) : null}
+      <View
+        className={rowClass}
+        style={{ transform: `translateX(-${swipeOffset}px)` }}
+        onClick={handleRowClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onLongTap={() => void handleLongPress()}
+      >
+        <View
+          className={`friends-ranking${entry.isPodium ? ` friends-ranking--${entry.place}` : " friends-ranking--other"}`}
+        >
+          <Text className="friends-ranking__number">{entry.place}</Text>
+        </View>
+        <View className="friends-avatar-wrap">
+          <FriendAvatar player={entry.player} />
+          <View className={`friends-presence${entry.online ? " is-online" : ""}`} />
+        </View>
+        <View className="friends-row__copy">
+          <View className="friends-row__name-row">
+            <Text className="friends-row__name">{entry.player.nickname}</Text>
+            {entry.isSelf ? <Text className="friends-row__self-label">我</Text> : null}
+          </View>
+          <Text className="friends-row__id">
+            ID {entry.player.playerId} · {entry.online ? "在线" : "离线"}
+            {rank !== null ? ` · ${rank.rankDisplay.displayName}` : " · 暂无段位"}
+          </Text>
+        </View>
+        {roomCode !== undefined && !entry.isSelf ? (
+          <Button
+            className="friends-mini-btn"
+            disabled={busy || !entry.online || invited}
+            onClick={(event) => {
+              event.stopPropagation();
+              onInvite();
+            }}
+          >
+            {invited ? "已邀请" : entry.online ? "邀请" : "离线"}
+          </Button>
+        ) : null}
+        <View className={`friends-row__rank${rank === null ? " is-empty" : ""}`}>
+          {rank !== null ? (
+            <RankBadge
+              rank={rank.rankDisplay}
+              size="compact"
+              showLabel={false}
+              className="friends-row__rank-badge"
+            />
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function FriendsPanel({ social, roomCode, onClose }: FriendsPanelProps) {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -96,30 +260,41 @@ export function FriendsPanel({ social, roomCode, onClose }: FriendsPanelProps) {
       social.snapshot?.friendRequests.filter((request) => request.direction === "OUTGOING") ?? [],
     [social.snapshot],
   );
-  // Friends ranked by competitive rank (段位) descending. Online is only a
-  // tiebreaker within the same rank so it never overrides the rank order the
-  // user asked for; playerId is the final stable tiebreaker. Players with no
-  // competitive profile yet (rankScore === -1) sort last but stay in the list.
+  // Rank the player list by competitive rank, including the current player so
+  // the visible place is the player's actual position among friends.
   const rankedFriends = useMemo(() => {
-    const friends = [...(social.snapshot?.friends ?? [])];
-    friends.sort((a, b) => {
-      const byRank = rankScore(b.competitiveProfile) - rankScore(a.competitiveProfile);
+    const players: Array<{
+      player: FriendSummary | SocialPlayer;
+      isSelf: boolean;
+      online: boolean;
+    }> =
+      social.snapshot === null
+        ? []
+        : [
+            { player: social.snapshot.self, isSelf: true, online: true },
+            ...social.snapshot.friends.map((friend) => ({
+              player: friend,
+              isSelf: false,
+              online: friend.online,
+            })),
+          ];
+    players.sort((a, b) => {
+      const byRank =
+        rankScore(b.player.competitiveProfile) - rankScore(a.player.competitiveProfile);
       if (byRank !== 0) return byRank;
       if (a.online !== b.online) return a.online ? -1 : 1;
-      return a.playerId < b.playerId ? -1 : a.playerId > b.playerId ? 1 : 0;
+      return a.player.playerId < b.player.playerId
+        ? -1
+        : a.player.playerId > b.player.playerId
+          ? 1
+          : 0;
     });
-    // Assign 1/2/3 only to the top friends that actually have a rank. Friends
-    // without a competitive profile never receive a podium marker even when
-    // they sit in the first three rows because nobody else is ranked.
-    const podium = new Map<string, number>();
-    let place = 0;
-    for (const friend of friends) {
-      if (friend.competitiveProfile === null) continue;
-      place += 1;
-      if (place > 3) break;
-      podium.set(friend.playerId, place);
-    }
-    return { friends, podium };
+    const ranked = players.map((entry, index): RankedFriend => ({
+      ...entry,
+      place: index + 1,
+      isPodium: entry.player.competitiveProfile !== null && index < 3,
+    }));
+    return { friends: ranked };
   }, [social.snapshot]);
 
   async function search() {
@@ -260,7 +435,9 @@ export function FriendsPanel({ social, roomCode, onClose }: FriendsPanelProps) {
           ) : null}
 
           <View className="friends-section">
-            <Text className="friends-section__title">好友</Text>
+            <Text className="friends-section__title">
+              好友排行 · {social.snapshot?.friends.length ?? 0} 位好友 + 我
+            </Text>
             {social.loading ? (
               <View className="friends-section__empty">
                 <View className="friends-section__empty-tile">
@@ -268,69 +445,19 @@ export function FriendsPanel({ social, roomCode, onClose }: FriendsPanelProps) {
                 </View>
                 <Text>正在整理牌友名册</Text>
               </View>
-            ) : social.snapshot?.friends.length === 0 ? (
-              <View className="friends-section__empty">
-                <View className="friends-section__empty-tile">
-                  <Text>友</Text>
-                </View>
-                <Text>茶馆里还没有牌友</Text>
-                <Text className="friends-section__empty-hint">用上方 4 位 ID 邀请第一位好友</Text>
-              </View>
             ) : (
               rankedFriends.friends.map((friend) => {
-                const invited = invitedIds.has(friend.playerId);
-                const place = rankedFriends.podium.get(friend.playerId);
+                const invited = invitedIds.has(friend.player.playerId);
                 return (
-                  <View
-                    className={`friends-row${place !== undefined ? ` is-podium is-podium--${place}` : ""}`}
-                    key={friend.playerId}
-                  >
-                    {place !== undefined ? (
-                      <View className={`friends-podium friends-podium--${place}`}>
-                        <Text className="friends-podium__num">{place}</Text>
-                      </View>
-                    ) : null}
-                    <View className="friends-avatar-wrap">
-                      <FriendAvatar player={friend} />
-                      <View className={`friends-presence${friend.online ? " is-online" : ""}`} />
-                    </View>
-                    <View className="friends-row__copy">
-                      <View className="friends-row__name-row">
-                        <Text className="friends-row__name">{friend.nickname}</Text>
-                        {friend.competitiveProfile !== null ? (
-                          <RankBadge
-                            rank={friend.competitiveProfile.rankDisplay}
-                            size="compact"
-                            showLabel={false}
-                            className="friends-row__rank"
-                          />
-                        ) : null}
-                      </View>
-                      <Text className="friends-row__id">
-                        ID {friend.playerId} · {friend.online ? "在线" : "离线"}
-                        {friend.competitiveProfile !== null
-                          ? ` · ${friend.competitiveProfile.rankDisplay.displayName}`
-                          : ""}
-                      </Text>
-                    </View>
-                    {roomCode !== undefined ? (
-                      <Button
-                        className="friends-mini-btn"
-                        disabled={social.busy || !friend.online || invited}
-                        onClick={() => void invite(friend.playerId)}
-                      >
-                        {invited ? "已邀请" : friend.online ? "邀请" : "离线"}
-                      </Button>
-                    ) : (
-                      <Button
-                        className="friends-mini-btn is-danger"
-                        disabled={social.busy}
-                        onClick={() => void removeFriend(friend.playerId, friend.nickname)}
-                      >
-                        删除
-                      </Button>
-                    )}
-                  </View>
+                  <FriendListRow
+                    key={friend.player.playerId}
+                    entry={friend}
+                    roomCode={roomCode}
+                    invited={invited}
+                    busy={social.busy}
+                    onInvite={() => void invite(friend.player.playerId)}
+                    onDelete={() => removeFriend(friend.player.playerId, friend.player.nickname)}
+                  />
                 );
               })
             )}

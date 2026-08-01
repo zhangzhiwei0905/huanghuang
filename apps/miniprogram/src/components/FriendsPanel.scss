@@ -301,6 +301,41 @@
   background: rgb(255 252 241 / 82%);
 }
 
+.friends-swipe {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 0.65vmin;
+  border-radius: 1vmin 0.55vmin 0.55vmin 1vmin;
+}
+
+.friends-swipe .friends-row {
+  margin-bottom: 0;
+  transition: transform 180ms ease;
+}
+
+.friends-swipe__delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: max(12vmin, 72px);
+  margin: 0;
+  border: 0;
+  border-radius: 0 0.55vmin 0.55vmin 0;
+  background: #a45449;
+  color: #fffaf0;
+  font-size: clamp(10px, 1.7vmin, 12px);
+  font-weight: 750;
+}
+
+.friends-swipe__delete::after {
+  border: 0;
+}
+
+.friends-swipe__delete:active {
+  filter: brightness(0.94);
+}
+
 .friends-row::before {
   position: absolute;
   inset: 0 auto 0 0;
@@ -408,11 +443,7 @@
   color: #2f6a4c;
 }
 
-/* Rank podium markers for the top 3 ranked friends. Only friends with a
-   competitive profile receive one, so the markers always reflect real rank
-   standing — never a default placeholder. Gold/silver/bronze tints stay
-   distinct from the jade accent. */
-.friends-podium {
+.friends-ranking {
   flex: 0 0 auto;
   width: 5.2vmin;
   height: 5.2vmin;
@@ -429,23 +460,37 @@
   line-height: 1;
 }
 
-.friends-podium--1 {
-  background: linear-gradient(180deg, #e8b54a 0%, #c8902f 100%);
-  box-shadow: 0 0.4vmin 0 #946a1f, 0 0 1.6vmin rgb(200 144 47 / 30%);
+.friends-ranking--other {
+  width: 4.4vmin;
+  height: 4.4vmin;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 0.65vmin;
+  background: #e8eee5;
+  box-shadow: inset 0 0 0 1px #d0dccd;
+  color: #68806c;
+  font-size: clamp(10px, 1.8vmin, 13px);
 }
 
-.friends-podium--2 {
+.friends-ranking--1 {
+  background: linear-gradient(180deg, #e8b54a 0%, #c8902f 100%);
+  box-shadow:
+    0 0.4vmin 0 #946a1f,
+    0 0 1.6vmin rgb(200 144 47 / 30%);
+}
+
+.friends-ranking--2 {
   background: linear-gradient(180deg, #cfd2cf 0%, #aeb2ad 100%);
   box-shadow: 0 0.4vmin 0 #80847c;
 }
 
-.friends-podium--3 {
+.friends-ranking--3 {
   background: linear-gradient(180deg, #c98a5a 0%, #a86a3f 100%);
   box-shadow: 0 0.4vmin 0 #7c4a2a;
 }
 
-/* A ranked friend's row gets a subtle left edge accent so the podium
-   winners read as a leaderboard, not just decorated rows. */
+/* Keep the top three visibly tied to the leaderboard without styling the
+   right-side rank badge or its surrounding area. */
 .friends-row.is-podium {
   background: rgb(255 252 241 / 92%);
 }
@@ -469,8 +514,29 @@
   min-width: 0;
 }
 
-.friends-row__rank {
+.friends-row__self-label {
   flex: 0 0 auto;
+  border-radius: 0.45vmin;
+  padding: 0.25vmin 0.55vmin;
+  background: #dceadf;
+  color: #39704e;
+  font-size: clamp(8px, 1.3vmin, 10px);
+  font-weight: 800;
+}
+
+.friends-row__rank {
+  width: max(5.4vmin, 24px);
+  min-width: max(5.4vmin, 24px);
+  flex: 0 0 max(5.4vmin, 24px);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.friends-row__rank.is-empty {
+  opacity: 0.35;
 }
 
 .friends-row__rank .rank-badge__image {
@@ -525,7 +591,8 @@
 
   .friends-panel__close,
   .friends-search__button,
-  .friends-mini-btn {
+  .friends-mini-btn,
+  .friends-swipe .friends-row {
     transition-duration: 1ms;
   }
 }
