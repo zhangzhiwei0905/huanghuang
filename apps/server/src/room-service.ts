@@ -127,6 +127,7 @@ type PersistedRoomState = {
   competitiveMatch?: { matchId: string; ruleVersion: number } | null;
   teamQueueStartedAt?: string | null;
   pendingRoundId?: string | null;
+  doubleDecision?: { sessionId: string; deadlineAt: string } | null;
 };
 
 export type RoomState = {
@@ -173,6 +174,11 @@ export type RoomState = {
    * enter. startRound consumes it so the live round matches the DB row.
    */
   pendingRoundId: string | null;
+  /**
+   * 胡牌加倍卡决策门：胡牌结算前等待赢家选择是否用卡。非 null 时排位结算
+   * 挂起，deadline 到期按不用卡结算（tick 兑底）。
+   */
+  doubleDecision: { sessionId: string; deadlineAt: string } | null;
 };
 
 export type JoinRoomResult =
@@ -199,6 +205,8 @@ const randomIntFromCrypto = (max: number): number => randomInt(max);
 const BOT_DELAY_MS = 650;
 const RESPONSE_TIMEOUT_MS = 5_000;
 const ROUND_RESULT_MS = 4_000;
+// 胡牌加倍卡选择窗口：超时视为不使用（产品定调）。
+const DOUBLE_CARD_DECISION_MS = 10_000;
 /**
  * Friend-room start countdown: once every seated player is ready the round
  * starts this many milliseconds later. Matches the client-side
@@ -634,6 +642,7 @@ export class RoomService {
         competitiveMatch: persisted.competitiveMatch ?? null,
         teamQueueStartedAt: persisted.teamQueueStartedAt ?? null,
         pendingRoundId: stage === "WAITING" ? (persisted.pendingRoundId ?? null) : null,
+        doubleDecision: stage === "WAITING" ? null : (persisted.doubleDecision ?? null),
       };
     }
 
@@ -708,6 +717,7 @@ export class RoomService {
         competitiveMatch: null,
         teamQueueStartedAt: null,
         pendingRoundId: null,
+        doubleDecision: null,
       };
     }
 
@@ -742,6 +752,7 @@ export class RoomService {
       competitiveMatch: persisted.competitiveMatch ?? null,
       teamQueueStartedAt: null,
       pendingRoundId: null,
+      doubleDecision: persisted.doubleDecision ?? null,
     };
   }
 
@@ -964,11 +975,15 @@ export class RoomService {
     };
   }
 
-  private competitiveTerminalSettlement(room: RoomState): {
+  private competitiveTerminalSettlement(
+    room: RoomState,
+    options: { useDoubleCard?: boolean; settledAt?: string } = {},
+  ): {
     settlement: {
       matchId: string;
       resultJson: string;
       players: CompetitivePlayerSettlementInput[];
+      settledAt: string;
     };
     transitions: Record<string, CompetitiveRankTransition>;
   } | null {
@@ -981,6 +996,8 @@ export class RoomService {
     ) {
       return null;
     }
+    const settledAt = options.settledAt ?? new Date().toISOString();
+    const useDoubleCard = options.useDoubleCard === true;
     const outcome = round.outcome;
     const profiles = new Map<string, CompetitiveProfileRow>();
     for (const seat of SEATS) {
@@ -1014,12 +1031,24 @@ export class RoomService {
         transition = applyCompetitiveRankTransition(profile, { kind: "DRAW" });
       } else if (seat === winnerSeat && winnerMultiplier !== null) {
         multiplier = winnerMultiplier;
-        transition = applyCompetitiveRankTransition(profile, { kind: "WIN", multiplier });
+        transition = applyCompetitiveRankTransition(profile, {
+          kind: "WIN",
+          multiplier,
+          ...(useDoubleCard ? { doubleCard: true } : {}),
+        });
       } else {
         const payment = outcome.scoreDeltas.find((delta) => delta.seat === seat && delta.delta < 0);
         if (payment === undefined) throw new Error(`Missing competitive payment for seat ${seat}`);
         multiplier = competitiveMultiplier(-payment.delta / round.baseScore);
-        transition = applyCompetitiveRankTransition(profile, { kind: "LOSS", multiplier });
+        // 排位保护卡按结算时刻判定生效；生效时扣星先减半再抵保星卡。
+        const protectionHalved =
+          profileRow.rankProtectionActiveUntil !== null &&
+          Date.parse(profileRow.rankProtectionActiveUntil) > Date.parse(settledAt);
+        transition = applyCompetitiveRankTransition(profile, {
+          kind: "LOSS",
+          multiplier,
+          ...(protectionHalved ? { protectionHalved: true } : {}),
+        });
       }
       transitions[sessionId] = competitiveRankTransitionSchema.parse(transition);
       return {
@@ -1032,6 +1061,12 @@ export class RoomService {
         protectionCardsAfter: transition.protectionCardsAfter,
         protectionCardsConsumed: transition.protectionCardsConsumed,
         protectionCardsGranted: transition.protectionCardsGranted,
+        winDoubleCardUsed: transition.winDoubleCardUsed,
+        rankProtectionApplied: transition.rankProtectionApplied,
+        // 用卡时与结算同事务扣减余额（DB 层带乐观锁前置校验）。
+        ...(transition.winDoubleCardUsed
+          ? { winDoubleCardsAfter: profileRow.winDoubleCards - 1 }
+          : {}),
         multiplier,
       };
     });
@@ -1040,9 +1075,69 @@ export class RoomService {
         matchId: room.competitiveMatch.matchId,
         resultJson: JSON.stringify(transitions),
         players,
+        settledAt,
       },
       transitions,
     };
+  }
+
+  /**
+   * 胡牌结算前的加倍卡决策门：排位局胡牌且赢家持有加倍卡时挂起结算，
+   * 等赢家在限时内选择；返回 true 表示已开门，调用方不再立即结算。
+   */
+  private openDoubleDecisionIfDue(room: RoomState, now: number): boolean {
+    if (
+      room.mode !== "MATCH" ||
+      room.competitiveMatch === null ||
+      room.doubleDecision !== null
+    ) {
+      return false;
+    }
+    const outcome = room.round?.outcome;
+    if (outcome?.kind !== "WIN") return false;
+    const winnerSessionId = room.seats[outcome.winnerSeat].sessionId;
+    if (winnerSessionId === null) return false;
+    const profile = this.database.getCompetitiveProfile(winnerSessionId);
+    if (profile === null || profile.winDoubleCards < 1) return false;
+    room.doubleDecision = {
+      sessionId: winnerSessionId,
+      deadlineAt: new Date(now + DOUBLE_CARD_DECISION_MS).toISOString(),
+    };
+    return true;
+  }
+
+  /**
+   * 提交加倍卡决策后的最终结算（赢家确认或 tick 超时兑底），同事务清空
+   * 决策门并落库。
+   */
+  private commitDoubleDecision(
+    room: RoomState,
+    useDoubleCard: boolean,
+    options: {
+      now?: number;
+      processedRequest?: { sessionId: string; requestId: string; resultJson: string };
+    } = {},
+  ): boolean {
+    const now = options.now ?? Date.now();
+    if (room.doubleDecision === null) return false;
+    const nextRoom = structuredClone(room);
+    const terminal = this.competitiveTerminalSettlement(nextRoom, {
+      useDoubleCard,
+      settledAt: new Date(now).toISOString(),
+    })?.settlement;
+    if (terminal === undefined) return false;
+    nextRoom.doubleDecision = null;
+    nextRoom.version += 1;
+    this.database.saveAcceptedTransition({
+      room: nextRoom,
+      stateJson: JSON.stringify(nextRoom),
+      ...(options.processedRequest === undefined
+        ? {}
+        : { processedRequest: options.processedRequest }),
+      terminalSettlement: terminal,
+    });
+    Object.assign(room, nextRoom);
+    return true;
   }
 
   private commitAcceptedRule(
@@ -1057,8 +1152,11 @@ export class RoomService {
     const nextRoom = structuredClone(room);
     const achievementEvent = this.competitiveAchievementEvent(room, result);
     if (!this.acceptRule(nextRoom, result, now)) return false;
+    // 胡牌且赢家持有加倍卡时挂起结算，等 CONFIRM_DOUBLE_CARD 或超时兑底。
+    const gateOpened =
+      nextRoom.pendingEffectTransition === null && this.openDoubleDecisionIfDue(nextRoom, now);
     const terminal =
-      nextRoom.pendingEffectTransition === null
+      nextRoom.pendingEffectTransition === null && !gateOpened
         ? this.competitiveTerminalSettlement(nextRoom)?.settlement
         : undefined;
     this.database.saveAcceptedTransition({
@@ -1187,7 +1285,11 @@ export class RoomService {
         nextRoom.pendingEffectTransition = null;
         nextRoom.version += 1;
         this.refreshDeadline(nextRoom, now);
-        const terminalSettlement = this.competitiveTerminalSettlement(nextRoom)?.settlement;
+        // 转场完成后同样先过加倍卡决策门，再决定是否立即结算。
+        const gateOpened = this.openDoubleDecisionIfDue(nextRoom, now);
+        const terminalSettlement = gateOpened
+          ? undefined
+          : this.competitiveTerminalSettlement(nextRoom)?.settlement;
         this.database.saveAcceptedTransition({
           room: nextRoom,
           stateJson: JSON.stringify(nextRoom),
@@ -1235,6 +1337,16 @@ export class RoomService {
         continue;
       }
       if (room.stage === "ROUND_RESULT") {
+        if (
+          room.doubleDecision !== null &&
+          Date.parse(room.doubleDecision.deadlineAt) <= now
+        ) {
+          // 超时视为不使用加倍卡，直接结算。
+          if (this.commitDoubleDecision(room, false, { now })) {
+            updates.push({ roomId: room.id, version: room.version });
+          }
+          continue;
+        }
         if (
           room.mode === "FRIEND" &&
           room.nextRoundAt !== null &&
@@ -1364,6 +1476,7 @@ export class RoomService {
       competitiveMatch: null,
       teamQueueStartedAt: null,
       pendingRoundId: null,
+      doubleDecision: null,
     };
     if (mode === "BOT") this.startRound(room);
     this.roomsByCode.set(room.code, room);
@@ -1430,6 +1543,7 @@ export class RoomService {
       competitiveMatch: { matchId, ruleVersion: COMPETITIVE_RULE_VERSION },
       teamQueueStartedAt: null,
       pendingRoundId: roundId,
+      doubleDecision: null,
     };
     this.database.createCompetitiveMatch({
       match: {
@@ -1576,6 +1690,7 @@ export class RoomService {
       competitiveMatch: { matchId, ruleVersion: COMPETITIVE_RULE_VERSION },
       teamQueueStartedAt: null,
       pendingRoundId: roundId,
+      doubleDecision: null,
     };
     this.database.createCompetitiveMatchWithBots({
       match: {
@@ -2213,6 +2328,13 @@ export class RoomService {
 
     return {
       schemaVersion: 10,
+      doubleDecision:
+        room.doubleDecision === null
+          ? null
+          : {
+              deadlineAt: room.doubleDecision.deadlineAt,
+              isSelf: room.doubleDecision.sessionId === sessionId,
+            },
       roomId: room.id,
       roomCode: room.code,
       version: room.version,
@@ -2291,6 +2413,47 @@ export class RoomService {
     };
   }
 
+  /**
+   * CONFIRM_DOUBLE_CARD：仅接受决策门指定的赢家本人在限时内的选择；
+   * 用卡前再校验一次余额，扣卡在结算同事务内完成。
+   */
+  private executeDoubleCardConfirmation(
+    sessionId: string,
+    room: RoomState,
+    command: CommandEnvelope,
+  ): CommandResult {
+    const decision = room.doubleDecision;
+    if (decision === null) {
+      return this.storeRejected(sessionId, command, room.version, "ACTION_NOT_AVAILABLE");
+    }
+    if (decision.sessionId !== sessionId || Date.parse(decision.deadlineAt) <= Date.now()) {
+      return this.storeRejected(sessionId, command, room.version, "ACTION_NOT_AVAILABLE");
+    }
+    const useDoubleCard = command.payload.use === true;
+    if (useDoubleCard) {
+      const profile = this.database.getCompetitiveProfile(sessionId);
+      if (profile === null || profile.winDoubleCards < 1) {
+        return this.storeRejected(sessionId, command, room.version, "ACTION_NOT_AVAILABLE");
+      }
+    }
+    const response: CommandResult = {
+      accepted: true,
+      requestId: command.requestId,
+      serverVersion: room.version + 1,
+      errorCode: null,
+      message: null,
+    };
+    const committed = this.commitDoubleDecision(room, useDoubleCard, {
+      processedRequest: {
+        sessionId,
+        requestId: command.requestId,
+        resultJson: JSON.stringify(response),
+      },
+    });
+    if (!committed) throw new Error("Double card decision was not committed");
+    return response;
+  }
+
   execute(sessionId: string, command: CommandEnvelope): CommandResult {
     const previous = this.database.getProcessedRequest(sessionId, command.requestId);
     if (previous !== null) return JSON.parse(previous) as CommandResult;
@@ -2300,6 +2463,10 @@ export class RoomService {
     if (room === undefined) return this.storeRejected(sessionId, command, 0, "ROOM_NOT_FOUND");
     if (command.expectedVersion !== room.version) {
       return this.storeRejected(sessionId, command, room.version, "VERSION_CONFLICT");
+    }
+    // 加倍卡决策发生在 ROUND_RESULT 阶段，不走回合内指令通道。
+    if (command.type === "CONFIRM_DOUBLE_CARD") {
+      return this.executeDoubleCardConfirmation(sessionId, room, command);
     }
     const seat = sessionSeat(room, sessionId);
     if (seat === null) return this.storeRejected(sessionId, command, room.version, "NOT_A_MEMBER");

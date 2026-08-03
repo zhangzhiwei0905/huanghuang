@@ -49,6 +49,12 @@ export type CompetitiveProfileRow = {
   rankLevel: number;
   highestMajorIndex: number;
   protectionCards: number;
+  /** 胡牌加倍卡剩余张数。 */
+  winDoubleCards: number;
+  /** 排位保护卡剩余张数。 */
+  rankProtectionCards: number;
+  /** 排位保护卡生效截止时间（ISO）；null 表示未生效。 */
+  rankProtectionActiveUntil: string | null;
   exposedKongCount: number;
   indicatorPongKongCount: number;
   addedKongCount: number;
@@ -147,6 +153,10 @@ export type CompetitiveMatchPlayerRow = {
   protectionCardsAfter: number | null;
   protectionCardsConsumed: number | null;
   protectionCardsGranted: number | null;
+  /** 该场是否消耗了胡牌加倍卡（0/1，旧行为 null）。 */
+  winDoubleCardUsed: 0 | 1 | null;
+  /** 该场是否应用了排位保护卡扣星减半（0/1，旧行为 null）。 */
+  rankProtectionApplied: 0 | 1 | null;
   multiplier: number | null;
   acknowledgedAt: string | null;
 };
@@ -171,6 +181,14 @@ export type RoomSnapshotInput = {
   code: string;
   status: string;
   version: number;
+};
+
+/** 每周签到记录：signed_dates 为本周已签到的北京日期（升序）。 */
+export type CheckInRecordRow = {
+  sessionId: string;
+  weekStart: string;
+  signedDates: string[];
+  updatedAt: string;
 };
 
 export type CreateCompetitiveMatchInput = {
@@ -245,6 +263,15 @@ export type CompetitivePlayerSettlementInput = {
   protectionCardsAfter: number;
   protectionCardsConsumed: number;
   protectionCardsGranted: number;
+  /** 审计列：是否消耗胡牌加倍卡。 */
+  winDoubleCardUsed: boolean;
+  /** 审计列：是否应用排位保护卡扣星减半。 */
+  rankProtectionApplied: boolean;
+  /**
+   * 使用胡牌加倍卡后的新余额；仅赢家实际用卡时传入，与结算同事务扣减
+   * （带乐观锁前置校验）。未用卡时省略。
+   */
+  winDoubleCardsAfter?: number;
   multiplier: number | null;
 };
 
@@ -360,6 +387,9 @@ export class GameDatabase {
         rank_level INTEGER NOT NULL DEFAULT 0 CHECK (rank_level >= 0),
         highest_major_index INTEGER NOT NULL DEFAULT 0 CHECK (highest_major_index >= 0),
         protection_cards INTEGER NOT NULL DEFAULT 0 CHECK (protection_cards >= 0),
+        win_double_cards INTEGER NOT NULL DEFAULT 0 CHECK (win_double_cards >= 0),
+        rank_protection_cards INTEGER NOT NULL DEFAULT 0 CHECK (rank_protection_cards >= 0),
+        rank_protection_active_until TEXT,
         exposed_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (exposed_kong_count >= 0),
         indicator_pong_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (indicator_pong_kong_count >= 0),
         added_kong_count INTEGER NOT NULL DEFAULT 0 CHECK (added_kong_count >= 0),
@@ -405,6 +435,8 @@ export class GameDatabase {
         protection_cards_after INTEGER CHECK (protection_cards_after >= 0),
         protection_cards_consumed INTEGER CHECK (protection_cards_consumed >= 0),
         protection_cards_granted INTEGER CHECK (protection_cards_granted >= 0),
+        win_double_card_used INTEGER,
+        rank_protection_applied INTEGER,
         multiplier INTEGER CHECK (multiplier IN (1, 2, 4, 8, 16, 32, 64)),
         acknowledged_at TEXT,
         PRIMARY KEY (match_id, session_id),
@@ -484,6 +516,15 @@ export class GameDatabase {
         FOREIGN KEY (inviter_session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE,
         FOREIGN KEY (invitee_session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS check_in_records (
+        session_id TEXT NOT NULL,
+        week_start TEXT NOT NULL,
+        signed_dates TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (session_id, week_start),
+        FOREIGN KEY (session_id) REFERENCES anonymous_sessions (id) ON DELETE CASCADE
+      );
     `);
     // Additive columns for WeChat login — wrapped so re-running on a database
     // that already has them (every startup after the first) doesn't throw.
@@ -507,6 +548,13 @@ export class GameDatabase {
       // Friend rooms record achievements through the same competitive match
       // tables; `kind` keeps those rows out of every ranked-only query.
       "ALTER TABLE competitive_matches ADD COLUMN kind TEXT NOT NULL DEFAULT 'RANKED' CHECK (kind IN ('RANKED','FRIEND'))",
+      // 签到活动与道具体系：两类新道具卡 + 排位保护卡生效期。
+      "ALTER TABLE competitive_profiles ADD COLUMN win_double_cards INTEGER NOT NULL DEFAULT 0 CHECK (win_double_cards >= 0)",
+      "ALTER TABLE competitive_profiles ADD COLUMN rank_protection_cards INTEGER NOT NULL DEFAULT 0 CHECK (rank_protection_cards >= 0)",
+      "ALTER TABLE competitive_profiles ADD COLUMN rank_protection_active_until TEXT",
+      // 结算审计列：旧行保持 null。
+      "ALTER TABLE competitive_match_players ADD COLUMN win_double_card_used INTEGER",
+      "ALTER TABLE competitive_match_players ADD COLUMN rank_protection_applied INTEGER",
     ]) {
       try {
         this.connection.exec(statement);
@@ -646,6 +694,9 @@ export class GameDatabase {
     rank_level AS rankLevel,
     highest_major_index AS highestMajorIndex,
     protection_cards AS protectionCards,
+    win_double_cards AS winDoubleCards,
+    rank_protection_cards AS rankProtectionCards,
+    rank_protection_active_until AS rankProtectionActiveUntil,
     exposed_kong_count AS exposedKongCount,
     indicator_pong_kong_count AS indicatorPongKongCount,
     added_kong_count AS addedKongCount,
@@ -701,6 +752,8 @@ export class GameDatabase {
     protection_cards_after AS protectionCardsAfter,
     protection_cards_consumed AS protectionCardsConsumed,
     protection_cards_granted AS protectionCardsGranted,
+    win_double_card_used AS winDoubleCardUsed,
+    rank_protection_applied AS rankProtectionApplied,
     multiplier,
     acknowledged_at AS acknowledgedAt`;
 
@@ -2109,13 +2162,16 @@ export class GameDatabase {
       `UPDATE competitive_match_players
        SET post_rank_level = ?, raw_rank_delta = ?, final_rank_delta = ?,
          protection_cards_before = ?, protection_cards_after = ?,
-         protection_cards_consumed = ?, protection_cards_granted = ?, multiplier = ?
+         protection_cards_consumed = ?, protection_cards_granted = ?,
+         win_double_card_used = ?, rank_protection_applied = ?, multiplier = ?
        WHERE match_id = ? AND session_id = ? AND post_rank_level IS NULL`,
     );
     const updateProfile = this.connection.prepare(
       `UPDATE competitive_profiles
-       SET rank_level = ?, highest_major_index = ?, protection_cards = ?, updated_at = ?
-       WHERE session_id = ? AND rank_level = ? AND protection_cards = ?`,
+       SET rank_level = ?, highest_major_index = ?, protection_cards = ?,
+         win_double_cards = ?, updated_at = ?
+       WHERE session_id = ? AND rank_level = ? AND protection_cards = ?
+         AND win_double_cards = ?`,
     );
     for (const result of settlement.players) {
       const persistedPlayer = existingPlayers.find(
@@ -2133,7 +2189,9 @@ export class GameDatabase {
           result.protectionCardsBefore -
             result.protectionCardsConsumed +
             result.protectionCardsGranted ||
-        result.highestMajorIndex < profile.highestMajorIndex
+        result.highestMajorIndex < profile.highestMajorIndex ||
+        (result.winDoubleCardsAfter !== undefined &&
+          result.winDoubleCardsAfter + 1 !== profile.winDoubleCards)
       ) {
         throw new Error(`Competitive settlement precondition failed for ${result.sessionId}`);
       }
@@ -2145,6 +2203,8 @@ export class GameDatabase {
         result.protectionCardsAfter,
         result.protectionCardsConsumed,
         result.protectionCardsGranted,
+        result.winDoubleCardUsed ? 1 : 0,
+        result.rankProtectionApplied ? 1 : 0,
         result.multiplier,
         settlement.matchId,
         result.sessionId,
@@ -2153,10 +2213,12 @@ export class GameDatabase {
         result.postRankLevel,
         result.highestMajorIndex,
         result.protectionCardsAfter,
+        result.winDoubleCardsAfter ?? profile.winDoubleCards,
         settledAt,
         result.sessionId,
         profile.rankLevel,
         profile.protectionCards,
+        profile.winDoubleCards,
       ).changes;
       if (playerChanges !== 1 || profileChanges !== 1) {
         throw new Error(`Competitive settlement could not update ${result.sessionId}`);
@@ -2171,6 +2233,90 @@ export class GameDatabase {
       .run(settlement.resultJson, settledAt, settlement.matchId).changes;
     if (matchChanges !== 1) throw new Error("Competitive match was already settled");
     return true;
+  }
+
+  getCheckInRecord(sessionId: string, weekStart: string): CheckInRecordRow | null {
+    const row = this.connection
+      .prepare(
+        `SELECT session_id AS sessionId, week_start AS weekStart,
+           signed_dates AS signedDates, updated_at AS updatedAt
+         FROM check_in_records
+         WHERE session_id = ? AND week_start = ?`,
+      )
+      .get(sessionId, weekStart) as
+      | { sessionId: string; weekStart: string; signedDates: string; updatedAt: string }
+      | undefined;
+    if (row === undefined) return null;
+    return { ...row, signedDates: JSON.parse(row.signedDates) as string[] };
+  }
+
+  upsertCheckInRecord(record: {
+    sessionId: string;
+    weekStart: string;
+    signedDates: readonly string[];
+    updatedAt?: string;
+  }): void {
+    this.connection
+      .prepare(
+        `INSERT INTO check_in_records (session_id, week_start, signed_dates, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (session_id, week_start)
+         DO UPDATE SET signed_dates = excluded.signed_dates, updated_at = excluded.updated_at`,
+      )
+      .run(
+        record.sessionId,
+        record.weekStart,
+        JSON.stringify(record.signedDates),
+        record.updatedAt ?? new Date().toISOString(),
+      );
+  }
+
+  /**
+   * 签到发放：在调用方事务内增量发放三类道具（未传或 0 的列不动）。
+   * 返回更新后的 profile；profile 不存在时抛错。
+   */
+  addProfileItems(
+    sessionId: string,
+    deltas: { protectionCards?: number; winDoubleCards?: number; rankProtectionCards?: number },
+  ): CompetitiveProfileRow {
+    const changed = this.connection
+      .prepare(
+        `UPDATE competitive_profiles
+         SET protection_cards = protection_cards + ?,
+           win_double_cards = win_double_cards + ?,
+           rank_protection_cards = rank_protection_cards + ?,
+           updated_at = ?
+         WHERE session_id = ?`,
+      )
+      .run(
+        deltas.protectionCards ?? 0,
+        deltas.winDoubleCards ?? 0,
+        deltas.rankProtectionCards ?? 0,
+        new Date().toISOString(),
+        sessionId,
+      ).changes;
+    if (changed !== 1) throw new Error(`Competitive profile is missing for ${sessionId}`);
+    const profile = this.getCompetitiveProfile(sessionId);
+    if (profile === null) throw new Error(`Competitive profile is missing for ${sessionId}`);
+    return profile;
+  }
+
+  /**
+   * 使用一张排位保护卡：余额 -1（乐观校验 >=1）并将生效期设为 activeUntil。
+   * 无卡或 profile 不存在时返回 null。
+   */
+  consumeRankProtectionCard(sessionId: string, activeUntil: string): CompetitiveProfileRow | null {
+    const changed = this.connection
+      .prepare(
+        `UPDATE competitive_profiles
+         SET rank_protection_cards = rank_protection_cards - 1,
+           rank_protection_active_until = ?,
+           updated_at = ?
+         WHERE session_id = ? AND rank_protection_cards >= 1`,
+      )
+      .run(activeUntil, new Date().toISOString(), sessionId).changes;
+    if (changed !== 1) return null;
+    return this.getCompetitiveProfile(sessionId);
   }
 
   saveRoom(room: RoomSnapshotInput, stateJson: string): void {

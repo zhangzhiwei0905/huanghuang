@@ -68,8 +68,19 @@ describe("competitive protocol", () => {
         achievements,
         rankLevel: 15,
         protectionCards: 2,
+        winDoubleCards: 1,
+        rankProtectionCards: 3,
+        rankProtectionActiveUntil: "2026-08-03T12:00:00.000Z",
       }),
-    ).toEqual({ rankDisplay, achievements, rankLevel: 15, protectionCards: 2 });
+    ).toEqual({
+      rankDisplay,
+      achievements,
+      rankLevel: 15,
+      protectionCards: 2,
+      winDoubleCards: 1,
+      rankProtectionCards: 3,
+      rankProtectionActiveUntil: "2026-08-03T12:00:00.000Z",
+    });
   });
 
   it("rejects invalid rank profile state", () => {
@@ -199,5 +210,38 @@ describe("competitive protocol", () => {
         protectionCardsAfter: 0,
       }).success,
     ).toBe(false);
+  });
+
+  it("defaults item flags on legacy transitions and honors explicit ones", () => {
+    const legacy = competitiveRankTransitionSchema.parse({
+      outcome: { kind: "WIN", multiplier: 8 },
+      beforeRankLevel: 20,
+      afterRankLevel: 24,
+      beforeHighestMajorIndex: 4,
+      afterHighestMajorIndex: 4,
+      rawDelta: 4,
+      appliedDelta: 4,
+      protectedLevels: 0,
+      protectionCardsBefore: 0,
+      protectionCardsConsumed: 0,
+      protectionCardsGranted: 0,
+      protectionCardsAfter: 0,
+    });
+    expect(legacy.winDoubleCardUsed).toBe(false);
+    expect(legacy.rankProtectionApplied).toBe(false);
+
+    const doubled = competitiveRankTransitionSchema.parse({
+      ...legacy,
+      outcome: { kind: "WIN", multiplier: 8, doubleCard: true },
+      winDoubleCardUsed: true,
+    });
+    expect(doubled.winDoubleCardUsed).toBe(true);
+
+    const halved = competitiveRankTransitionSchema.parse({
+      ...legacy,
+      outcome: { kind: "LOSS", multiplier: 16, protectionHalved: true },
+      rankProtectionApplied: true,
+    });
+    expect(halved.rankProtectionApplied).toBe(true);
   });
 });

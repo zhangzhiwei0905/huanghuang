@@ -1980,6 +1980,235 @@ describe("RoomService", () => {
     expect(room.pendingRoundId).toBeNull();
   });
 
+  type RoomServiceInternals = {
+    openDoubleDecisionIfDue(room: RoomState, now: number): boolean;
+    save(room: RoomState): void;
+    competitiveTerminalSettlement(
+      room: RoomState,
+      options?: { useDoubleCard?: boolean; settledAt?: string },
+    ): {
+      settlement: NonNullable<
+        Parameters<GameDatabase["saveAcceptedTransition"]>[0]["terminalSettlement"]
+      >;
+    } | null;
+  };
+
+  /** 直接构造一个排位局胡牌终局，供加倍卡/保护卡结算测试使用。 */
+  function forceCompetitiveWin(room: RoomState, winnerSeat: 0 | 1 | 2 | 3): void {
+    const round = activeRound(room);
+    round.players[winnerSeat].personalMultiplier = 4;
+    round.phase = "ROUND_OVER";
+    round.outcome = {
+      kind: "WIN",
+      winnerSeat,
+      winType: "SOFT",
+      laiyou: false,
+      nextDealerSeat: winnerSeat,
+      scoreDeltas: ([0, 1, 2, 3] as const).map((seat) => ({
+        seat,
+        delta: seat === winnerSeat ? 24 : -8,
+        reason: "SELF_DRAW" as const,
+      })),
+    };
+    room.stage = "ROUND_RESULT";
+  }
+
+  function confirmDoubleCard(
+    service: RoomService,
+    room: RoomState,
+    sessionId: string,
+    use: boolean,
+  ) {
+    return service.execute(sessionId, {
+      type: "CONFIRM_DOUBLE_CARD",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: null,
+      expectedVersion: room.version,
+      payload: { use },
+    });
+  }
+
+  it("suspends ranked settlement on the double-card gate and doubles stars on confirmation", () => {
+    const { database, room, service, sessions } = createCompetitiveFixture();
+    const internals = service as unknown as RoomServiceInternals;
+    const winnerId = room.seats[0].sessionId;
+    if (winnerId === null) throw new Error("Missing winner seat");
+    const winner = sessions.find((session) => session.id === winnerId);
+    const loser = sessions.find((session) => session.id !== winnerId);
+    if (winner === undefined || loser === undefined) throw new Error("Missing match fixture");
+    database.addProfileItems(winner.id, { winDoubleCards: 2 });
+
+    forceCompetitiveWin(room, 0);
+    const now = Date.now();
+    expect(internals.openDoubleDecisionIfDue(room, now)).toBe(true);
+    expect(room.doubleDecision).toMatchObject({ sessionId: winner.id });
+    internals.save(room);
+
+    // 决策门期间：双方都能在自己的投影里看到倒计时，但只有赢家 isSelf。
+    expect(service.project(room, winner.id).doubleDecision).toEqual({
+      deadlineAt: room.doubleDecision?.deadlineAt,
+      isSelf: true,
+    });
+    expect(service.project(room, loser.id).doubleDecision).toMatchObject({ isSelf: false });
+
+    // 非决策门本人的指令被拒。
+    expect(confirmDoubleCard(service, room, loser.id, true)).toMatchObject({
+      accepted: false,
+      errorCode: "ACTION_NOT_AVAILABLE",
+    });
+
+    // 赢家确认用卡：星星翻倍，扣卡与结算同事务完成。
+    expect(confirmDoubleCard(service, room, winner.id, true)).toMatchObject({ accepted: true });
+    expect(room.doubleDecision).toBeNull();
+    const profile = database.getCompetitiveProfile(winner.id);
+    expect(profile).toMatchObject({
+      rankLevel: 6, // magnitude 3 × 2
+      winDoubleCards: 1,
+      protectionCards: 2, // 首次升入青铜赠送 2 张保星卡
+    });
+    expect(
+      database.getCompetitiveMatchSettlement(room.competitiveMatch?.matchId ?? "")?.match.status,
+    ).toBe("SETTLED");
+
+    // 决策已提交后再次确认被拒。
+    expect(confirmDoubleCard(service, room, winner.id, false)).toMatchObject({
+      accepted: false,
+      errorCode: "ACTION_NOT_AVAILABLE",
+    });
+
+    // 决策门在服务重启后按持久化状态恢复（tick 兑底依然有效）。
+    forceCompetitiveWin(room, 0);
+    expect(internals.openDoubleDecisionIfDue(room, Date.now())).toBe(true);
+    internals.save(room);
+    // reloaded 与 service 共享同一内存库，无需重复注册清理。
+    const reloaded = new RoomService(database);
+    expect(reloaded.getRoom(room.code)?.doubleDecision).toMatchObject({ sessionId: winner.id });
+  });
+
+  it("settles without the double card when the decision deadline expires", () => {
+    const { database, room, service, sessions } = createCompetitiveFixture();
+    const internals = service as unknown as RoomServiceInternals;
+    const winnerId = room.seats[0].sessionId;
+    if (winnerId === null) throw new Error("Missing winner seat");
+    const winner = sessions.find((session) => session.id === winnerId);
+    if (winner === undefined) throw new Error("Missing match fixture");
+    database.addProfileItems(winner.id, { winDoubleCards: 1 });
+
+    forceCompetitiveWin(room, 0);
+    expect(internals.openDoubleDecisionIfDue(room, Date.now())).toBe(true);
+    internals.save(room);
+    const deadlineAt = room.doubleDecision?.deadlineAt;
+    if (deadlineAt === undefined) throw new Error("Expected a decision deadline");
+
+    // 超时视为不使用：按原始倍数结算，卡不扣。
+    service.tick(Date.parse(deadlineAt));
+    expect(room.doubleDecision).toBeNull();
+    expect(database.getCompetitiveProfile(winner.id)).toMatchObject({
+      rankLevel: 3, // magnitude 3，未加倍
+      winDoubleCards: 1,
+    });
+    expect(
+      database.getCompetitiveMatchSettlement(room.competitiveMatch?.matchId ?? "")?.match.status,
+    ).toBe("SETTLED");
+
+    // 门已关：迟到的确认指令被拒。
+    expect(confirmDoubleCard(service, room, winner.id, true)).toMatchObject({
+      accepted: false,
+      errorCode: "ACTION_NOT_AVAILABLE",
+    });
+  });
+
+  it("does not open the double-card gate for winners without a card or non-ranked rooms", () => {
+    const { room, service } = createCompetitiveFixture();
+    const internals = service as unknown as RoomServiceInternals;
+
+    forceCompetitiveWin(room, 0);
+    // 赢家没有加倍卡：不开门，正常立即结算路径不受影响。
+    expect(internals.openDoubleDecisionIfDue(room, Date.now())).toBe(false);
+    expect(room.doubleDecision).toBeNull();
+  });
+
+  it("halves ranked star losses while the rank protection card is active at settlement", () => {
+    // 自建 fixture：四位玩家开局前就升到非免疫段位（黄金Ⅰ，majorIndex 3），
+    // 保证 match_players.pre_rank_level 与结算时档案一致；座次随机，
+    // 所以开局后再从输家席挑两位发保护卡。
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const sessions: AnonymousSession[] = [0, 1, 2, 3].map((index) => ({
+      id: `shield-player-${index}`,
+      nickname: `保护卡玩家${index}`,
+      wechatOpenId: `openid-shield-player-${index}`,
+    }));
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `token-shield-player-${index}`);
+      database.ensureCompetitiveProfile(session.id);
+    }
+    database.connection
+      .prepare(
+        "UPDATE competitive_profiles SET rank_level = 16, highest_major_index = 3",
+      )
+      .run();
+    const entries = sessions.map((session, index) =>
+      database.upsertMatchmakingEntry({
+        sessionId: session.id,
+        rankLevelSnapshot: index,
+        enqueuedAt: new Date(index).toISOString(),
+      }),
+    );
+    const service = new RoomService(database);
+    const room = service.createCompetitiveMatch(sessions, entries);
+    for (const session of sessions) service.setRoomConnected(session.id, room.id, true);
+    const internals = service as unknown as RoomServiceInternals;
+    const loserIds = ([1, 2, 3] as const)
+      .map((seat) => room.seats[seat].sessionId)
+      .filter((sessionId): sessionId is string => sessionId !== null);
+    const [protectedLoserId, expiredLoserId] = loserIds;
+    if (protectedLoserId === undefined || expiredLoserId === undefined) {
+      throw new Error("Missing losing seats");
+    }
+
+    // 一张生效中、一张已过期，均按结算时刻判定。
+    const settledAt = "2026-08-03T10:00:00.000Z";
+    database.addProfileItems(protectedLoserId, { rankProtectionCards: 1 });
+    database.addProfileItems(expiredLoserId, { rankProtectionCards: 1 });
+    database.consumeRankProtectionCard(protectedLoserId, "2026-08-03T12:00:00.000Z");
+    database.consumeRankProtectionCard(expiredLoserId, "2026-08-03T09:00:00.000Z");
+
+    forceCompetitiveWin(room, 0);
+    const terminal = internals.competitiveTerminalSettlement(room, { settledAt });
+    if (terminal === null || room.competitiveMatch === null) {
+      throw new Error("Expected competitive settlement");
+    }
+    database.saveAcceptedTransition({
+      room,
+      stateJson: JSON.stringify(room),
+      terminalSettlement: terminal.settlement,
+    });
+
+    // 输家倍数 4 → magnitude 3：生效中减半为 1（16 → 15），已过期全额扣 3（16 → 13）。
+    expect(database.getCompetitiveProfile(protectedLoserId)?.rankLevel).toBe(15);
+    expect(database.getCompetitiveProfile(expiredLoserId)?.rankLevel).toBe(13);
+    const auditRows = database.connection
+      .prepare(
+        `SELECT session_id AS sessionId, rank_protection_applied AS rankProtectionApplied,
+           final_rank_delta AS finalRankDelta
+         FROM competitive_match_players
+         WHERE match_id = ? AND session_id IN (?, ?)
+         ORDER BY session_id`,
+      )
+      .all(room.competitiveMatch.matchId, protectedLoserId, expiredLoserId);
+    expect(auditRows).toEqual(
+      [protectedLoserId, expiredLoserId]
+        .sort()
+        .map((sessionId) =>
+          sessionId === protectedLoserId
+            ? { sessionId, rankProtectionApplied: 1, finalRankDelta: -1 }
+            : { sessionId, rankProtectionApplied: 0, finalRankDelta: -3 },
+        ),
+    );
+  });
+
   it("resolves originRoomCode to the still-open team-ranked staging room for party and solo entries alike", () => {
     const database = new GameDatabase(":memory:");
     databases.push(database);

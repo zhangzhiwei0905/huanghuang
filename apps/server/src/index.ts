@@ -23,6 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Server } from "socket.io";
 import { AvatarUploadError, decodeAvatarData, MAX_AVATAR_BASE64_LENGTH } from "./avatar-upload.js";
+import { CheckInService } from "./checkin-service.js";
 import { RANKED_BOTS, matchmakingBotsEnabled, rankedBotSession } from "./competitive-bots.js";
 import { GameDatabase } from "./database.js";
 import { MatchmakingService } from "./matchmaking-service.js";
@@ -117,6 +118,13 @@ await app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 } });
 // handler here needs reply.sendFile (avatars are served by prefix routing
 // alone), so it's safe for this one to skip the decoration.
 await app.register(fastifyStatic, { root: avatarDir, prefix: "/avatars/", decorateReply: false });
+// 道具卡图片（签到/背包页展示）：小程序主包有 2MB 体积限制，图片改为
+// 服务端静态托管，域名与 API 一致，无需额外配置下载白名单。
+await app.register(fastifyStatic, {
+  root: resolve(import.meta.dirname, "../static/cards"),
+  prefix: "/cards/",
+  decorateReply: false,
+});
 const sockets = new Server(app.server, {
   cors: { origin: true, credentials: true },
   connectionStateRecovery: {
@@ -125,6 +133,7 @@ const sockets = new Server(app.server, {
   },
 });
 const social = new SocialService(database, rooms, (sessionId) => presence.isConnected(sessionId));
+const checkin = new CheckInService(database);
 
 function socialChannel(sessionId: string): string {
   return `session:${sessionId}`;
@@ -546,6 +555,48 @@ app.get("/api/competitive/profile", (request, reply) => {
   } catch (cause) {
     if (cause instanceof Error && cause.message === "WECHAT_LINK_REQUIRED") {
       return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+    }
+    throw cause;
+  }
+});
+
+app.get("/api/checkin/status", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    return checkin.getStatus(session);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === "WECHAT_LINK_REQUIRED") {
+      return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+    }
+    throw cause;
+  }
+});
+
+app.post("/api/checkin/sign", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    return checkin.sign(session);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === "WECHAT_LINK_REQUIRED") {
+      return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+    }
+    throw cause;
+  }
+});
+
+app.post("/api/items/use-rank-protection", (request, reply) => {
+  const session = sessions.resolve(request);
+  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
+  try {
+    return checkin.useRankProtection(session);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === "WECHAT_LINK_REQUIRED") {
+      return reply.code(403).send({ error: "WECHAT_LINK_REQUIRED" });
+    }
+    if (cause instanceof Error && cause.message === "NO_RANK_PROTECTION_CARD") {
+      return reply.code(409).send({ error: "NO_RANK_PROTECTION_CARD" });
     }
     throw cause;
   }

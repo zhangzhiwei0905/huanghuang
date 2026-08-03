@@ -2,10 +2,13 @@ import Taro from "@tarojs/taro";
 import type {
   BaseScore,
   BotDifficulty,
+  CheckinSignResult,
+  CheckinStatusProjection,
   CommandEnvelope,
   CommandResult,
   CompetitiveMatchHistoryPage,
   MatchmakingState,
+  RankProtectionUseResult,
   RoomMode,
   RoomProjection,
   PlayerSearchResult,
@@ -124,6 +127,18 @@ export const competitiveApi = {
 };
 
 export type VersionInfo = { version: string; builtAt: string; updatedAt: string; revision: string };
+
+export const checkinApi = {
+  status(): Promise<CheckinStatusProjection> {
+    return request("/api/checkin/status");
+  },
+  sign(): Promise<CheckinSignResult> {
+    return request("/api/checkin/sign", { method: "POST", data: {} });
+  },
+  useRankProtection(): Promise<RankProtectionUseResult> {
+    return request("/api/items/use-rank-protection", { method: "POST", data: {} });
+  },
+};
 
 export const versionApi = {
   // Frontend and backend deploy independently, so during a transition period

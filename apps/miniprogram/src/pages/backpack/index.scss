@@ -1,0 +1,191 @@
+/* Item backpack: three item cards in a row on the table background.
+   Landscape-only, matches the home/check-in palette. */
+
+.mp-backpack {
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--page, #eef6f0);
+  overflow: hidden;
+}
+
+.mp-backpack__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.mp-backpack__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgb(238 246 240 / 14%);
+  pointer-events: none;
+}
+
+.mp-backpack__panel {
+  position: relative;
+  z-index: 2;
+  width: min(92vw, 780px);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  gap: 1.8vmin;
+  padding: 2.4vmin 2.8vmin;
+  box-sizing: border-box;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 2vmin;
+  background: rgb(248 251 246 / 97%);
+  box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 28%);
+}
+
+.mp-backpack__title {
+  color: var(--ink, #272925);
+  font-size: clamp(16px, 3.4vmin, 22px);
+  font-weight: 700;
+}
+
+.mp-backpack__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.4vmin;
+  padding: 3vmin 0;
+}
+
+.mp-backpack__empty-text {
+  color: rgb(37 42 38 / 70%);
+  font-size: clamp(11px, 2.4vmin, 14px);
+}
+
+.mp-backpack__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.6vmin;
+}
+
+.mp-backpack__card {
+  display: flex;
+  flex-direction: column;
+  gap: 1vmin;
+  padding: 1.6vmin;
+  box-sizing: border-box;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 1.6vmin;
+  background: #fff;
+}
+
+.mp-backpack__card-head {
+  display: flex;
+  align-items: center;
+  gap: 1.2vmin;
+}
+
+.mp-backpack__card-image {
+  width: 9vmin;
+  height: 11vmin;
+  min-width: 46px;
+  min-height: 56px;
+  flex-shrink: 0;
+}
+
+.mp-backpack__card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4vmin;
+  min-width: 0;
+}
+
+.mp-backpack__card-name {
+  color: var(--ink, #272925);
+  font-size: clamp(12px, 2.4vmin, 15px);
+  font-weight: 700;
+}
+
+.mp-backpack__card-count {
+  color: var(--accent, #2f6a4c);
+  font-size: clamp(10px, 2vmin, 13px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-backpack__card-effect {
+  color: rgb(37 42 38 / 72%);
+  font-size: clamp(9px, 1.9vmin, 12px);
+  line-height: 1.5;
+}
+
+.mp-backpack__card-action {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8vmin;
+  margin-top: auto;
+}
+
+.mp-backpack__countdown {
+  color: var(--accent, #2f6a4c);
+  font-size: clamp(10px, 2vmin, 13px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-backpack__error {
+  color: var(--danger, #7a4b45);
+  font-size: clamp(9px, 1.9vmin, 12px);
+}
+
+.mp-backpack__use {
+  margin: 0 !important;
+  min-width: 0;
+  min-height: max(7vmin, 34px) !important;
+  height: max(7vmin, 34px) !important;
+  padding: 0 2vmin !important;
+  line-height: max(7vmin, 34px) !important;
+  font-size: clamp(11px, 2.2vmin, 14px) !important;
+  font-weight: 700 !important;
+  border-radius: 1.8vmin !important;
+  border: 1px solid #1f4834 !important;
+  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%) !important;
+  color: var(--accent-ink, #f5fbf6) !important;
+  box-shadow:
+    0 0.5vmin 0 #1f4834,
+    0 0.9vmin 1.6vmin rgb(0 0 0 / 16%);
+}
+
+.mp-backpack__use.is-pressed {
+  transform: translateY(0.4vmin);
+  box-shadow:
+    0 0.1vmin 0 #1f4834,
+    0 0.3vmin 0.9vmin rgb(0 0 0 / 12%);
+}
+
+.mp-backpack__reload {
+  margin: 0 !important;
+  min-width: 18vmin;
+  min-height: max(8vmin, 36px) !important;
+  height: max(8vmin, 36px) !important;
+  padding: 0 3vmin !important;
+  line-height: max(8vmin, 36px) !important;
+  font-size: clamp(12px, 2.6vmin, 16px) !important;
+  font-weight: 700 !important;
+  border-radius: 2vmin !important;
+  border: 1px solid var(--line-strong, #9cbfa9) !important;
+  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%) !important;
+  color: var(--ink, #272925) !important;
+  box-shadow:
+    0 0.6vmin 0 rgb(122 148 130 / 70%),
+    0 1vmin 1.8vmin rgb(0 0 0 / 14%);
+}
+
+.mp-backpack__reload.is-pressed {
+  transform: translateY(0.5vmin);
+  box-shadow:
+    0 0.2vmin 0 rgb(122 148 130 / 70%),
+    0 0.4vmin 1vmin rgb(0 0 0 / 12%);
+}

@@ -21,6 +21,7 @@ export type PlayerProfileModalProps = {
   friendActionDisabled?: boolean;
   onFriendAction?: () => void;
   onViewMatchHistory?: () => void;
+  onViewBackpack?: () => void;
   onEditNickname?: () => void;
   onClose: () => void;
 };
@@ -46,6 +47,7 @@ export function PlayerProfileModal({
   friendActionDisabled = false,
   onFriendAction,
   onViewMatchHistory,
+  onViewBackpack,
   onEditNickname,
   onClose,
 }: PlayerProfileModalProps) {
@@ -169,6 +171,15 @@ export function PlayerProfileModal({
                 onClick={onEditNickname}
               >
                 修改昵称
+              </Button>
+            ) : null}
+            {isSelf && onViewBackpack !== undefined ? (
+              <Button
+                className="modal-action modal-action--ghost"
+                hoverClass="is-pressed"
+                onClick={onViewBackpack}
+              >
+                背包
               </Button>
             ) : null}
             {isSelf && competitiveProfile !== null && onViewMatchHistory !== undefined ? (

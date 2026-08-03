@@ -179,22 +179,28 @@ export function RoundSettlementModal({
                 </Text>
               </View>
               <View className="settlement-rank__details">
+                {settlement.competitiveSettlement.self.winDoubleCardUsed ? (
+                  <Text>胡牌加倍 ×2</Text>
+                ) : null}
+                {settlement.competitiveSettlement.self.rankProtectionApplied ? (
+                  <Text>排位保护生效 · 扣星减半</Text>
+                ) : null}
                 {settlement.competitiveSettlement.self.protectedLevels > 0 ? (
                   <Text>
                     已保护 {settlement.competitiveSettlement.self.protectedLevels} 级
                     {settlement.competitiveSettlement.self.protectionCardsConsumed > 0
-                      ? ` · 消耗 ${settlement.competitiveSettlement.self.protectionCardsConsumed} 张保护卡`
+                      ? ` · 消耗 ${settlement.competitiveSettlement.self.protectionCardsConsumed} 张保星卡`
                       : " · 低段免降"}
                   </Text>
                 ) : null}
                 {settlement.competitiveSettlement.self.protectionCardsGranted > 0 ? (
                   <Text>
                     晋升奖励 +{settlement.competitiveSettlement.self.protectionCardsGranted}{" "}
-                    张保护卡
+                    张保星卡
                   </Text>
                 ) : null}
                 <Text>
-                  保护卡余额 {settlement.competitiveSettlement.self.protectionCardsAfter} 张
+                  保星卡余额 {settlement.competitiveSettlement.self.protectionCardsAfter} 张
                 </Text>
               </View>
             </View>

@@ -61,6 +61,7 @@ function resultRoom(): RoomProjection {
   const players = ([0, 1, 2, 3] as const).map(player);
   return {
     schemaVersion: 10,
+    doubleDecision: null,
     roomId: "room-1",
     roomCode: "123456",
     version: 12,

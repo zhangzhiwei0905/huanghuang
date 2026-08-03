@@ -85,6 +85,9 @@ export class MatchmakingService {
     return {
       rankLevel: profile.rankLevel,
       protectionCards: profile.protectionCards,
+      winDoubleCards: profile.winDoubleCards,
+      rankProtectionCards: profile.rankProtectionCards,
+      rankProtectionActiveUntil: profile.rankProtectionActiveUntil,
       rankDisplay: formatRankLevel(profile.rankLevel),
       achievements: {
         exposedKong: profile.exposedKongCount,

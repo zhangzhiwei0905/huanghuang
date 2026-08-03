@@ -1016,10 +1016,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.mp-account__checkin,
 .mp-account__friends {
   position: relative;
   min-width: 9vmin;
-  margin: 0 0 0 auto;
   border: 0;
   border-radius: 999px;
   padding: 1vmin 1.8vmin;
@@ -1030,6 +1030,15 @@
   line-height: 1.2;
 }
 
+.mp-account__checkin {
+  margin: 0 0 0 auto;
+}
+
+.mp-account__friends {
+  margin: 0 0 0 1.6vmin;
+}
+
+.mp-account__checkin::after,
 .mp-account__friends::after {
   border: 0;
 }

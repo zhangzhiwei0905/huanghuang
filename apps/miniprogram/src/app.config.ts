@@ -1,5 +1,10 @@
 export default {
-  pages: ["pages/index/index", "pages/room/index"],
+  pages: [
+    "pages/index/index",
+    "pages/room/index",
+    "pages/checkin/index",
+    "pages/backpack/index",
+  ],
   lazyCodeLoading: "requiredComponents",
   window: {
     backgroundTextStyle: "light",

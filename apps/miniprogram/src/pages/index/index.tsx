@@ -793,6 +793,14 @@ export default function IndexPage() {
         </View>
         <Button
           hoverClass="is-pressed"
+          className="mp-account__checkin"
+          ariaLabel="每周签到"
+          onClick={() => void Taro.navigateTo({ url: "/pages/checkin/index" })}
+        >
+          签到
+        </Button>
+        <Button
+          hoverClass="is-pressed"
           className="mp-account__friends"
           ariaLabel="好友"
           onClick={() => setFriendsOpen(true)}
@@ -1057,6 +1065,10 @@ export default function IndexPage() {
           competitiveProfile={competitiveProfile}
           competitiveProfileError={competitiveProfileError}
           onViewMatchHistory={() => setMatchHistoryOpen(true)}
+          onViewBackpack={() => {
+            setProfileOpen(false);
+            void Taro.navigateTo({ url: "/pages/backpack/index" });
+          }}
           onEditNickname={() => setNicknameEditOpen(true)}
           onClose={() => setProfileOpen(false)}
         />

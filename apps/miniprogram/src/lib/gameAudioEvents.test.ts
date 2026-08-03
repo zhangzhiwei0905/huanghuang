@@ -63,6 +63,7 @@ function settlement(
 function room(overrides: Partial<RoomProjection> = {}): RoomProjection {
   return {
     schemaVersion: 10,
+    doubleDecision: null,
     roomId: "room-1",
     roomCode: "1234",
     version: 1,

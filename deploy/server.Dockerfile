@@ -48,6 +48,7 @@ COPY --from=build /app/package.json /app/pnpm-workspace.yaml ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=build /app/apps/server/dist ./apps/server/dist
+COPY --from=build /app/apps/server/static ./apps/server/static
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/packages ./packages

@@ -1,3 +1,4 @@
+export * from "./checkin.js";
 export * from "./commands.js";
 export * from "./competitive.js";
 export * from "./game.js";

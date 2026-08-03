@@ -176,6 +176,13 @@ export type RoomProjection = {
     | { kind: "DRAW"; nextDealerSeat: Seat }
     | null;
   roundSettlement: RoundSettlementProjection | null;
+  /**
+   * Winning-player double-card decision gate: non-null between round end and
+   * rank settlement when the winner holds at least one 胡牌加倍卡. Settlement
+   * is withheld until the winner confirms or the deadline elapses (treated as
+   * not using the card). `isSelf` is true only for the winner.
+   */
+  doubleDecision: { deadlineAt: string; isSelf: boolean } | null;
   effectCue: GameEffectCue | null;
   legalActions: string[];
   tingHints: DiscardTingProjection[];

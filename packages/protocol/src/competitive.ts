@@ -62,6 +62,12 @@ export const publicCompetitiveProfileSchema = z.object({
 export const selfCompetitiveProfileSchema = publicCompetitiveProfileSchema.extend({
   rankLevel: competitiveRankLevelSchema,
   protectionCards: protectionCardCountSchema,
+  /** 胡牌加倍卡剩余张数：胡牌结算前可选择使用一张，加星翻倍。 */
+  winDoubleCards: protectionCardCountSchema,
+  /** 排位保护卡剩余张数：在背包中使用，每张延长生效期 2 小时。 */
+  rankProtectionCards: protectionCardCountSchema,
+  /** 排位保护卡生效截止时间；null 表示未生效。 */
+  rankProtectionActiveUntil: z.iso.datetime({ offset: true }).nullable(),
 });
 
 export const competitiveRankStateSchema = z
@@ -76,8 +82,18 @@ export const competitiveRankStateSchema = z
   });
 
 export const competitiveRankOutcomeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("WIN"), multiplier: competitiveMultiplierSchema }),
-  z.object({ kind: z.literal("LOSS"), multiplier: competitiveMultiplierSchema }),
+  z.object({
+    kind: z.literal("WIN"),
+    multiplier: competitiveMultiplierSchema,
+    /** 赢家使用了胡牌加倍卡：加星在 magnitude 基础上翻倍。 */
+    doubleCard: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal("LOSS"),
+    multiplier: competitiveMultiplierSchema,
+    /** 结算时排位保护卡生效：扣星先减半（向下取整）再抵保星卡。 */
+    protectionHalved: z.boolean().optional(),
+  }),
   z.object({ kind: z.literal("DRAW") }),
 ]);
 
@@ -94,6 +110,10 @@ export const competitiveRankTransitionSchema = z.object({
   protectionCardsConsumed: protectionCardCountSchema,
   protectionCardsGranted: protectionCardCountSchema,
   protectionCardsAfter: protectionCardCountSchema,
+  /** 该次转场是否消耗了胡牌加倍卡（仅赢家可能为 true）。 */
+  winDoubleCardUsed: z.boolean().default(false),
+  /** 该次转场是否应用了排位保护卡的扣星减半（仅输家可能为 true）。 */
+  rankProtectionApplied: z.boolean().default(false),
 });
 
 export const competitiveMatchProjectionSchema = z.object({

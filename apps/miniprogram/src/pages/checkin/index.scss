@@ -1,0 +1,307 @@
+/* Weekly check-in page: full-bleed table art behind a cream panel with a
+   7-cell milestone strip. Landscape-only, matches the home page palette. */
+
+.mp-checkin {
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--page, #eef6f0);
+  overflow: hidden;
+}
+
+.mp-checkin__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.mp-checkin__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgb(238 246 240 / 14%);
+  pointer-events: none;
+}
+
+.mp-checkin__panel {
+  position: relative;
+  z-index: 2;
+  width: min(92vw, 760px);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  gap: 1.8vmin;
+  padding: 2.4vmin 2.8vmin;
+  box-sizing: border-box;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 2vmin;
+  background: rgb(248 251 246 / 97%);
+  box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 28%);
+}
+
+.mp-checkin__header {
+  display: flex;
+  align-items: baseline;
+  gap: 1.6vmin;
+}
+
+.mp-checkin__title {
+  color: var(--ink, #272925);
+  font-size: clamp(16px, 3.4vmin, 22px);
+  font-weight: 700;
+}
+
+.mp-checkin__week {
+  color: rgb(37 42 38 / 62%);
+  font-size: clamp(10px, 2vmin, 13px);
+}
+
+/* ---- Milestone grid ---- */
+
+.mp-checkin__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1.2vmin;
+}
+
+.mp-checkin__cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5vmin;
+  padding: 1.4vmin 0.8vmin;
+  box-sizing: border-box;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 1.4vmin;
+  background: #fff;
+}
+
+.mp-checkin__cell.is-achieved {
+  border-color: var(--accent, #2f6a4c);
+  background: linear-gradient(180deg, #f2faf4 0%, #dcefe3 100%);
+}
+
+.mp-checkin__cell.is-next {
+  border: 2px solid var(--accent, #2f6a4c);
+  box-shadow: 0 0.4vmin 1.4vmin rgb(47 106 76 / 24%);
+}
+
+.mp-checkin__cell.is-locked {
+  opacity: 0.62;
+}
+
+.mp-checkin__cell-weekday {
+  color: var(--ink, #272925);
+  font-size: clamp(10px, 2vmin, 13px);
+  font-weight: 700;
+}
+
+.mp-checkin__cell-date {
+  color: rgb(37 42 38 / 62%);
+  font-size: clamp(9px, 1.7vmin, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-checkin__cell-image {
+  width: 9vmin;
+  height: 11vmin;
+  min-width: 44px;
+  min-height: 54px;
+}
+
+.mp-checkin__cell-name {
+  color: var(--ink, #272925);
+  font-size: clamp(9px, 1.8vmin, 12px);
+  font-weight: 600;
+}
+
+.mp-checkin__cell-amount {
+  color: var(--accent, #2f6a4c);
+  font-size: clamp(10px, 2vmin, 13px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-checkin__cell-check {
+  position: absolute;
+  top: 0.6vmin;
+  right: 0.8vmin;
+  min-width: 2.6vmin;
+  height: 2.6vmin;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent, #2f6a4c);
+  color: #fff;
+  font-size: clamp(9px, 1.8vmin, 12px);
+  line-height: 1;
+}
+
+/* ---- Footer / sign button ---- */
+
+.mp-checkin__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1vmin;
+}
+
+.mp-checkin__error {
+  color: var(--danger, #7a4b45);
+  font-size: clamp(10px, 2.1vmin, 13px);
+}
+
+.mp-checkin__sign {
+  margin: 0 !important;
+  min-width: 26vmin;
+  min-height: max(9vmin, 40px) !important;
+  height: max(9vmin, 40px) !important;
+  padding: 0 3.6vmin !important;
+  line-height: max(9vmin, 40px) !important;
+  font-size: clamp(13px, 3vmin, 18px) !important;
+  font-weight: 700 !important;
+  border-radius: 2.2vmin !important;
+  border: 1px solid #1f4834 !important;
+  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%) !important;
+  color: var(--accent-ink, #f5fbf6) !important;
+  box-shadow:
+    0 0.7vmin 0 #1f4834,
+    0 1.2vmin 2vmin rgb(0 0 0 / 18%);
+}
+
+.mp-checkin__sign.is-pressed {
+  transform: translateY(0.5vmin);
+  box-shadow:
+    0 0.2vmin 0 #1f4834,
+    0 0.4vmin 1vmin rgb(0 0 0 / 12%);
+}
+
+.mp-checkin__reload {
+  margin: 0 !important;
+  min-width: 18vmin;
+  min-height: max(8vmin, 36px) !important;
+  height: max(8vmin, 36px) !important;
+  padding: 0 3vmin !important;
+  line-height: max(8vmin, 36px) !important;
+  font-size: clamp(12px, 2.6vmin, 16px) !important;
+  font-weight: 700 !important;
+  border-radius: 2vmin !important;
+  border: 1px solid var(--line-strong, #9cbfa9) !important;
+  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%) !important;
+  color: var(--ink, #272925) !important;
+  box-shadow:
+    0 0.6vmin 0 rgb(122 148 130 / 70%),
+    0 1vmin 1.8vmin rgb(0 0 0 / 14%);
+}
+
+.mp-checkin__reload.is-pressed {
+  transform: translateY(0.5vmin);
+  box-shadow:
+    0 0.2vmin 0 rgb(122 148 130 / 70%),
+    0 0.4vmin 1vmin rgb(0 0 0 / 12%);
+}
+
+.mp-checkin__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.4vmin;
+  padding: 3vmin 0;
+}
+
+.mp-checkin__empty-text {
+  color: rgb(37 42 38 / 70%);
+  font-size: clamp(11px, 2.4vmin, 14px);
+}
+
+/* ---- Reward modal ---- */
+
+.mp-checkin-reward {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mp-checkin-reward__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(20 24 22 / 72%);
+}
+
+.mp-checkin-reward__panel {
+  position: relative;
+  width: min(58vw, 360px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2vmin;
+  padding: 2.6vmin;
+  box-sizing: border-box;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 2vmin;
+  background: rgb(248 251 246 / 98%);
+  box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 28%);
+}
+
+.mp-checkin-reward__eyebrow {
+  color: var(--accent, #2f6a4c);
+  font-size: clamp(10px, 2vmin, 12px);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.mp-checkin-reward__title {
+  color: var(--ink, #272925);
+  font-size: clamp(14px, 3vmin, 19px);
+  font-weight: 700;
+}
+
+.mp-checkin-reward__image {
+  width: 14vmin;
+  height: 17vmin;
+  min-width: 68px;
+  min-height: 82px;
+}
+
+.mp-checkin-reward__effect {
+  color: rgb(37 42 38 / 72%);
+  font-size: clamp(10px, 2.1vmin, 13px);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.mp-checkin-reward__confirm {
+  margin: 0.6vmin 0 0 !important;
+  min-width: 18vmin;
+  min-height: max(8vmin, 36px) !important;
+  height: max(8vmin, 36px) !important;
+  padding: 0 3vmin !important;
+  line-height: max(8vmin, 36px) !important;
+  font-size: clamp(12px, 2.6vmin, 16px) !important;
+  font-weight: 700 !important;
+  border-radius: 2vmin !important;
+  border: 1px solid #1f4834 !important;
+  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%) !important;
+  color: var(--accent-ink, #f5fbf6) !important;
+  box-shadow:
+    0 0.6vmin 0 #1f4834,
+    0 1vmin 1.8vmin rgb(0 0 0 / 18%);
+}
+
+.mp-checkin-reward__confirm.is-pressed {
+  transform: translateY(0.5vmin);
+  box-shadow:
+    0 0.2vmin 0 #1f4834,
+    0 0.4vmin 1vmin rgb(0 0 0 / 12%);
+}

@@ -37,6 +37,8 @@ function settlement(
       protectionCardsConsumed: 0,
       protectionCardsGranted: 0,
       protectionCardsAfter: 0,
+      winDoubleCardUsed: false,
+      rankProtectionApplied: false,
     },
   };
 }

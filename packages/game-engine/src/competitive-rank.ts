@@ -100,15 +100,21 @@ export function applyCompetitiveRankTransition(
       protectionCardsConsumed: 0,
       protectionCardsGranted: 0,
       protectionCardsAfter: cardsBefore,
+      winDoubleCardUsed: false,
+      rankProtectionApplied: false,
     };
   }
 
   const magnitude = competitiveMultiplierToLevel(outcome.multiplier);
   if (outcome.kind === "LOSS") {
+    // 排位保护卡生效时扣星先减半（向下取整），再进入保星卡抵扣；
+    // 免疫段位优先，不扣不耗卡。
+    const rankProtectionApplied = outcome.protectionHalved === true;
+    const effectiveMagnitude = rankProtectionApplied ? Math.floor(magnitude / 2) : magnitude;
     const immune = majorIndexForRankLevel(profile.rankLevel) <= LOW_RANK_IMMUNITY_MAX_MAJOR_INDEX;
-    const protectionCardsConsumed = immune ? 0 : Math.min(cardsBefore, magnitude);
-    const protectedLevels = immune ? magnitude : protectionCardsConsumed;
-    const unprotectedLoss = immune ? 0 : magnitude - protectionCardsConsumed;
+    const protectionCardsConsumed = immune ? 0 : Math.min(cardsBefore, effectiveMagnitude);
+    const protectedLevels = immune ? effectiveMagnitude : protectionCardsConsumed;
+    const unprotectedLoss = immune ? 0 : effectiveMagnitude - protectionCardsConsumed;
     const afterRankLevel = Math.max(0, profile.rankLevel - unprotectedLoss);
 
     return {
@@ -124,10 +130,14 @@ export function applyCompetitiveRankTransition(
       protectionCardsConsumed,
       protectionCardsGranted: 0,
       protectionCardsAfter: cardsBefore - protectionCardsConsumed,
+      winDoubleCardUsed: false,
+      rankProtectionApplied,
     };
   }
 
-  const afterRankLevel = profile.rankLevel + magnitude;
+  const winDoubleCardUsed = outcome.doubleCard === true;
+  const appliedDelta = winDoubleCardUsed ? magnitude * 2 : magnitude;
+  const afterRankLevel = profile.rankLevel + appliedDelta;
   const afterMajorIndex = majorIndexForRankLevel(afterRankLevel);
   const newlyReachedMajorCount = Math.max(0, afterMajorIndex - profile.highestMajorIndex);
   const protectionCardsGranted = newlyReachedMajorCount * PROTECTION_CARDS_PER_NEW_MAJOR;
@@ -139,12 +149,14 @@ export function applyCompetitiveRankTransition(
     beforeHighestMajorIndex: profile.highestMajorIndex,
     afterHighestMajorIndex:
       afterMajorIndex > profile.highestMajorIndex ? afterMajorIndex : profile.highestMajorIndex,
-    rawDelta: magnitude,
-    appliedDelta: magnitude,
+    rawDelta: appliedDelta,
+    appliedDelta,
     protectedLevels: 0,
     protectionCardsBefore: cardsBefore,
     protectionCardsConsumed: 0,
     protectionCardsGranted,
     protectionCardsAfter: cardsBefore + protectionCardsGranted,
+    winDoubleCardUsed,
+    rankProtectionApplied: false,
   };
 }

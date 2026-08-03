@@ -306,6 +306,8 @@ describe("competitive rank transitions", () => {
       protectionCardsConsumed: 0,
       protectionCardsGranted: 0,
       protectionCardsAfter: 3,
+      winDoubleCardUsed: false,
+      rankProtectionApplied: false,
     });
   });
 
@@ -327,5 +329,155 @@ describe("competitive rank transitions", () => {
         multiplier: 1,
       }),
     ).toThrow(RangeError);
+  });
+});
+
+describe("win double card", () => {
+  it.each([
+    [1, 2],
+    [4, 8],
+    [7, 14],
+  ] as const)("doubles a %i-level win to %i levels", (delta, doubled) => {
+    const result = applyCompetitiveRankTransition(
+      { rankLevel: 20, highestMajorIndex: 4, protectionCards: 0 },
+      { kind: "WIN", multiplier: [1, 2, 4, 8, 16, 32, 64][delta - 1] as 1, doubleCard: true },
+    );
+    expect(result).toMatchObject({
+      afterRankLevel: 20 + doubled,
+      rawDelta: doubled,
+      appliedDelta: doubled,
+      winDoubleCardUsed: true,
+      rankProtectionApplied: false,
+    });
+  });
+
+  it("keeps the normal delta when doubleCard is omitted or false", () => {
+    const omitted = applyCompetitiveRankTransition(
+      { rankLevel: 20, highestMajorIndex: 4, protectionCards: 0 },
+      { kind: "WIN", multiplier: 8 },
+    );
+    expect(omitted).toMatchObject({ appliedDelta: 4, winDoubleCardUsed: false });
+
+    const declined = applyCompetitiveRankTransition(
+      { rankLevel: 20, highestMajorIndex: 4, protectionCards: 0 },
+      { kind: "WIN", multiplier: 8, doubleCard: false },
+    );
+    expect(declined).toMatchObject({ appliedDelta: 4, winDoubleCardUsed: false });
+  });
+
+  it("grants tier cards based on the doubled destination level", () => {
+    // 4 + 2*2 = 8 crosses 青铜V(5) — exactly what a plain 4x win would do,
+    // but a 1x doubled win from level 3 must cross too.
+    const result = applyCompetitiveRankTransition(
+      { rankLevel: 3, highestMajorIndex: 0, protectionCards: 0 },
+      { kind: "WIN", multiplier: 1, doubleCard: true },
+    );
+    expect(result).toMatchObject({
+      afterRankLevel: 5,
+      afterHighestMajorIndex: 1,
+      protectionCardsGranted: 2,
+      winDoubleCardUsed: true,
+    });
+  });
+});
+
+describe("rank protection card halving", () => {
+  it.each([
+    [4, 2],
+    [5, 2],
+    [6, 3],
+    [7, 3],
+  ] as const)("halves an unprotected %i-level loss (floor) to %i", (delta, halved) => {
+    const result = applyCompetitiveRankTransition(
+      { rankLevel: 30, highestMajorIndex: 6, protectionCards: 0 },
+      {
+        kind: "LOSS",
+        multiplier: [1, 2, 4, 8, 16, 32, 64][delta - 1] as 1,
+        protectionHalved: true,
+      },
+    );
+    expect(result).toMatchObject({
+      afterRankLevel: 30 - halved,
+      rawDelta: -delta,
+      appliedDelta: -halved,
+      protectedLevels: 0,
+      protectionCardsConsumed: 0,
+      winDoubleCardUsed: false,
+      rankProtectionApplied: true,
+    });
+  });
+
+  it("floors a 1-level loss to zero deduction", () => {
+    const result = applyCompetitiveRankTransition(
+      { rankLevel: 30, highestMajorIndex: 6, protectionCards: 0 },
+      { kind: "LOSS", multiplier: 1, protectionHalved: true },
+    );
+    expect(result).toMatchObject({
+      afterRankLevel: 30,
+      rawDelta: -1,
+      appliedDelta: 0,
+      rankProtectionApplied: true,
+    });
+  });
+
+  it("deducts protection cards after halving", () => {
+    // 4x loss = 5 levels -> halved to 2 -> 3 cards cover both levels.
+    const covered = applyCompetitiveRankTransition(
+      { rankLevel: 30, highestMajorIndex: 6, protectionCards: 3 },
+      { kind: "LOSS", multiplier: 16, protectionHalved: true },
+    );
+    expect(covered).toMatchObject({
+      afterRankLevel: 30,
+      appliedDelta: 0,
+      protectedLevels: 2,
+      protectionCardsConsumed: 2,
+      protectionCardsAfter: 1,
+      rankProtectionApplied: true,
+    });
+
+    // 6x loss = 6 levels -> halved to 3 -> 2 cards cover two, one applied.
+    const partial = applyCompetitiveRankTransition(
+      { rankLevel: 30, highestMajorIndex: 6, protectionCards: 2 },
+      { kind: "LOSS", multiplier: 32, protectionHalved: true },
+    );
+    expect(partial).toMatchObject({
+      afterRankLevel: 29,
+      rawDelta: -6,
+      appliedDelta: -1,
+      protectedLevels: 2,
+      protectionCardsConsumed: 2,
+      protectionCardsAfter: 0,
+      rankProtectionApplied: true,
+    });
+  });
+
+  it("keeps low-rank immunity priority over halving", () => {
+    const result = applyCompetitiveRankTransition(
+      { rankLevel: 14, highestMajorIndex: 2, protectionCards: 5 },
+      { kind: "LOSS", multiplier: 64, protectionHalved: true },
+    );
+    expect(result).toMatchObject({
+      afterRankLevel: 14,
+      rawDelta: -7,
+      appliedDelta: 0,
+      protectedLevels: 3,
+      protectionCardsConsumed: 0,
+      protectionCardsAfter: 5,
+      rankProtectionApplied: true,
+    });
+  });
+
+  it("keeps the normal deduction when protectionHalved is omitted or false", () => {
+    const omitted = applyCompetitiveRankTransition(
+      { rankLevel: 30, highestMajorIndex: 6, protectionCards: 0 },
+      { kind: "LOSS", multiplier: 8 },
+    );
+    expect(omitted).toMatchObject({ appliedDelta: -4, rankProtectionApplied: false });
+
+    const inactive = applyCompetitiveRankTransition(
+      { rankLevel: 30, highestMajorIndex: 6, protectionCards: 0 },
+      { kind: "LOSS", multiplier: 8, protectionHalved: false },
+    );
+    expect(inactive).toMatchObject({ appliedDelta: -4, rankProtectionApplied: false });
   });
 });

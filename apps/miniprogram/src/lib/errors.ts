@@ -29,6 +29,7 @@ const ERROR_LABELS: Record<string, string> = {
   NOT_FRIENDS: "对方已不在你的好友列表",
   FRIEND_OFFLINE: "好友当前不在线",
   ROOM_INVITE_NOT_AVAILABLE: "房间邀请已失效",
+  NO_RANK_PROTECTION_CARD: "没有可使用的排位保护卡",
 };
 
 export function errorLabel(code: string): string {

@@ -22,6 +22,7 @@ import {
 import { API_BASE } from "../../config";
 import { resolveIdentity } from "../../api/session";
 import { ActionDock } from "../../components/ActionDock";
+import { DoubleDecisionModal } from "../../components/DoubleDecisionModal";
 import { PlayerProfileModal } from "../../components/PlayerProfileModal";
 import { FriendsPanel } from "../../components/FriendsPanel";
 import { MahjongTile } from "../../components/MahjongTile";
@@ -1586,6 +1587,17 @@ export default function RoomPage() {
                     : leaveCurrentRoom())
                 }
               />
+            ) : null}
+            {room.doubleDecision !== null && room.doubleDecision.isSelf ? (
+              <DoubleDecisionModal
+                deadlineAt={room.doubleDecision.deadlineAt}
+                busy={roomCtrl.busy}
+                onDecide={(use) => void roomCtrl.send("CONFIRM_DOUBLE_CARD", { use })}
+              />
+            ) : room.doubleDecision !== null ? (
+              <View className="double-decision-waiting">
+                <Text>等待赢家选择道具…</Text>
+              </View>
             ) : null}
           </>
         )}

@@ -15,6 +15,7 @@ describe("normalizeRoomProjection", () => {
       effectCue: null,
       competitiveMatch: null,
       teamMatchmaking: null,
+      doubleDecision: null,
     });
   });
 
@@ -24,6 +25,7 @@ describe("normalizeRoomProjection", () => {
       effectCue: null,
       competitiveMatch: null,
       teamMatchmaking: null,
+      doubleDecision: null,
     } as unknown as RoomProjection;
 
     expect(normalizeRoomProjection(projection)).toBe(projection);

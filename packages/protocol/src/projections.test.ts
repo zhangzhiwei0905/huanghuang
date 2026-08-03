@@ -46,6 +46,8 @@ describe("competitive settlement projection", () => {
           protectionCardsConsumed: 0,
           protectionCardsGranted: 2,
           protectionCardsAfter: 2,
+          winDoubleCardUsed: false,
+          rankProtectionApplied: false,
         },
       },
     };

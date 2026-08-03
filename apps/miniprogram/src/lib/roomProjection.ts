@@ -38,12 +38,14 @@ export function normalizeRoomProjection(projection: RoomProjection): RoomProject
     effectCue?: RoomProjection["effectCue"];
     competitiveMatch?: RoomProjection["competitiveMatch"];
     teamMatchmaking?: RoomProjection["teamMatchmaking"];
+    doubleDecision?: RoomProjection["doubleDecision"];
   };
   if (
     projection.schemaVersion === 10 &&
     legacy.effectCue !== undefined &&
     legacy.competitiveMatch !== undefined &&
     legacy.teamMatchmaking !== undefined &&
+    legacy.doubleDecision !== undefined &&
     (!Array.isArray(projection.players) ||
       projection.players.every((player) => player.playerId !== undefined)) &&
     (!Array.isArray(projection.lobbySeats) ||
@@ -82,6 +84,7 @@ export function normalizeRoomProjection(projection: RoomProjection): RoomProject
     effectCue: legacy.effectCue ?? null,
     competitiveMatch: legacy.competitiveMatch ?? null,
     teamMatchmaking: legacy.teamMatchmaking ?? null,
+    doubleDecision: legacy.doubleDecision ?? null,
     ...(spectators === undefined ? {} : { spectators }),
     ...(players === undefined ? {} : { players }),
     ...(lobbySeats === undefined ? {} : { lobbySeats }),

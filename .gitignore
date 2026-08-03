@@ -17,4 +17,5 @@ test-results/
 .zcode/
 apps/miniprogram/dist/
 apps/miniprogram/.swc/
+apps/miniprogram/src/assets/cards/
 .workbuddy/

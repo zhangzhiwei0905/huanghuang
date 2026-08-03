@@ -29,6 +29,7 @@ export const commandTypeSchema = z.enum([
   "DECLARE_ADDED_KONG",
   "CLAIM_INDICATOR_PONG_KONG",
   "PASS_RESPONSE",
+  "CONFIRM_DOUBLE_CARD",
 ]);
 
 export const commandEnvelopeSchema = z.object({

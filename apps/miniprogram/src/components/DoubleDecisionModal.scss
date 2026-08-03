@@ -1,0 +1,150 @@
+/* Winner's timed double-card choice before competitive settlement.
+   Same layer (z-index 50) as the settlement modal it hands over to. */
+
+.double-decision {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.double-decision__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(20 24 22 / 72%);
+}
+
+.double-decision__panel {
+  position: relative;
+  width: min(56vw, 360px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2vmin;
+  padding: 2.6vmin;
+  box-sizing: border-box;
+  border: 1px solid var(--line, #cde0d3);
+  border-radius: 2vmin;
+  background: rgb(248 251 246 / 98%);
+  box-shadow: 0 1.2vmin 4vmin rgb(0 0 0 / 28%);
+}
+
+.double-decision__eyebrow {
+  color: var(--accent, #2f6a4c);
+  font-size: clamp(10px, 2vmin, 12px);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.double-decision__title {
+  color: var(--ink, #272925);
+  font-size: clamp(14px, 3vmin, 19px);
+  font-weight: 700;
+}
+
+.double-decision__copy {
+  color: rgb(37 42 38 / 72%);
+  font-size: clamp(10px, 2.1vmin, 13px);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.double-decision__timer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 1.2vmin;
+}
+
+.double-decision__timer-bar {
+  flex: 1;
+  height: 1vmin;
+  min-height: 5px;
+  border-radius: 999px;
+  background: rgb(37 42 38 / 12%);
+  overflow: hidden;
+}
+
+.double-decision__timer-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4a9067 0%, #2f6a4c 100%);
+  transition: width 250ms linear;
+}
+
+.double-decision__timer-text {
+  min-width: 5ch;
+  color: var(--ink, #272925);
+  font-size: clamp(10px, 2vmin, 13px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.double-decision__actions {
+  width: 100%;
+  display: flex;
+  gap: 1.4vmin;
+}
+
+.double-decision__action {
+  flex: 1;
+  margin: 0 !important;
+  min-width: 0;
+  min-height: max(8vmin, 38px) !important;
+  height: max(8vmin, 38px) !important;
+  padding: 0 2vmin !important;
+  line-height: max(8vmin, 38px) !important;
+  font-size: clamp(12px, 2.6vmin, 16px) !important;
+  font-weight: 700 !important;
+  border-radius: 2vmin !important;
+  border: 1px solid var(--line-strong, #9cbfa9) !important;
+  background: linear-gradient(180deg, #fdfefb 0%, #dcece1 100%) !important;
+  color: var(--ink, #272925) !important;
+  box-shadow:
+    0 0.6vmin 0 rgb(122 148 130 / 70%),
+    0 1vmin 1.8vmin rgb(0 0 0 / 14%);
+}
+
+.double-decision__action--primary {
+  border-color: #1f4834 !important;
+  background: linear-gradient(180deg, #4a9067 0%, #2f6a4c 100%) !important;
+  color: var(--accent-ink, #f5fbf6) !important;
+  box-shadow:
+    0 0.6vmin 0 #1f4834,
+    0 1vmin 1.8vmin rgb(0 0 0 / 18%);
+}
+
+.double-decision__action.is-pressed {
+  transform: translateY(0.4vmin);
+  box-shadow:
+    0 0.2vmin 0 rgb(122 148 130 / 70%),
+    0 0.4vmin 1vmin rgb(0 0 0 / 12%);
+}
+
+.double-decision__action--primary.is-pressed {
+  box-shadow:
+    0 0.2vmin 0 #1f4834,
+    0 0.4vmin 1vmin rgb(0 0 0 / 12%);
+}
+
+.double-decision__hint {
+  color: rgb(37 42 38 / 55%);
+  font-size: clamp(9px, 1.8vmin, 11px);
+}
+
+/* Lightweight waiting banner shown to the other three players. */
+.double-decision-waiting {
+  position: fixed;
+  z-index: 49;
+  top: calc(2vmin + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1vmin 2.4vmin;
+  border-radius: 999px;
+  background: rgb(20 24 22 / 68%);
+  color: #fff;
+  font-size: clamp(10px, 2.2vmin, 14px);
+}
