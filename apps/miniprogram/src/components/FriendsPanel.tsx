@@ -156,12 +156,6 @@ function FriendListRow({
     if (swipeOffset > 0) setSwipeOffset(0);
   }
 
-  async function handleLongPress() {
-    if (!isDeleteEnabled) return;
-    suppressClick.current = true;
-    await onDelete();
-  }
-
   const rank = entry.player.competitiveProfile;
   const rowClass = [
     "friends-row",
@@ -174,7 +168,11 @@ function FriendListRow({
     .join(" ");
 
   return (
-    <View className="friends-swipe" catchMove={isDeleteEnabled}>
+    // No catchMove here: catching touchmove inside the ScrollView would block
+    // vertical list scrolling. The row's own handlers ignore vertical drags,
+    // so the scroll view keeps them while horizontal drags reveal the delete
+    // button. Deletion is swipe-only — tap the revealed button, then confirm.
+    <View className="friends-swipe">
       {isDeleteEnabled && swipeOffset > 0 ? (
         <Button
           className="friends-swipe__delete"
@@ -196,7 +194,6 @@ function FriendListRow({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onLongTap={() => void handleLongPress()}
       >
         <View
           className={`friends-ranking${entry.isPodium ? ` friends-ranking--${entry.place}` : " friends-ranking--other"}`}

@@ -216,7 +216,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* WeChat's <button> is display:block with its own line-height, so a fixed
+   height leaves the label stuck at the top of the box; flex-center it and
+   never let the input squeeze it. */
 .friends-search__button {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 5.6vmin;
   min-height: 34px;
   padding: 0 2.1vmin;
@@ -318,6 +325,9 @@
   top: 0;
   right: 0;
   bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: max(12vmin, 72px);
   margin: 0;
   border: 0;
