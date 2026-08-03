@@ -1235,3 +1235,38 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: 排位赛结算续局流程统一与踢人功能
+
+**Date**: 2026-08-03
+**Task**: 排位赛结算续局流程统一与踢人功能
+**Branch**: `miniprogram`
+
+### Summary
+
+排查并修复组队排位'继续游戏'导致卡在结算页的根因(acknowledge缺失)，随后与用户共同设计并实现单人/组队排位续局逻辑的统一架构:结算页两按钮(返回房间/继续游戏)统一走acknowledge+同步解锁+回房间/新建房间路径,继续游戏额外自动准备/自动开局;新增结算页10秒自动兜底;新增房主踢出排位组队房闲置成员能力。后端已部署生产(revision 877b8d0, version 1.0.8),小程序已本地编译,微信审核提交与手工验证清单仍需用户完成。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `73a7688` | (see git log) |
+| `841fd38` | (see git log) |
+| `877b8d0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
