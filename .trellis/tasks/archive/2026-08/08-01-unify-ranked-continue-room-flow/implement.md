@@ -56,6 +56,17 @@
   - [ ] 房主踢出空闲成员 → 被踢者本地/下次交互提示非成员；排队中尝试踢人被拒绝
   - [ ] 人机对战（BOT）结算页"退出到主页/继续游戏"行为与改动前一致
 
+## Review 补充（提交前复查）
+
+- [x] 修复 `apps/server/src/index.ts` acknowledge 路由里 `partyId` 的 `null`/`undefined` 判断漏洞（`apps/server` 自己的 `tsc --noEmit` 之前没跑到）
+- [x] 补上遗漏项：`RoundSettlementModal.tsx` 结算弹窗本身的按钮文案（"返回大厅"/"继续匹配"）之前没有跟着改成"返回房间"/"继续游戏"，已修复并重新过 typecheck/build
+
+## 部署记录
+
+- Commit `877b8d0` 已提交（含 3 份任务文档 + spec 更新）
+- 生产后端已部署：`huanghuang-app:877b8d0`，`/api/version` 确认 `revision=877b8d0`，`version` 自动升级到 `1.0.8`，日志无异常；旧容器重命名为 `huanghuang-app-rollback-6542611-20260803-021952` 保留回滚
+- 小程序 `build:weapp` 已在本机重新编译通过；**上传/提交微信审核仍需用户在 WeChat DevTools 手动操作**（本环境没有 miniprogram-ci 之类的自动上传工具）
+
 ## Review Gate
 
-全部 Step 完成、全量测试通过、手工验证清单勾完后，进入 Trellis Phase 3（spec 更新 + commit），并同步更新 `08-01-ranked-continue-stuck-on-settlement`（已归档任务）的关联说明。
+全部 Step 完成、全量测试通过、代码已提交并部署。**手工验证清单仍未完成**（需要真机/开发者工具交互，本环境无法执行）——归档不代表这些场景已验证，用户上线后需要自行过一遍这份清单，如发现问题另开任务处理。已同步更新 `08-01-ranked-continue-stuck-on-settlement`（已归档任务）的关联说明。
