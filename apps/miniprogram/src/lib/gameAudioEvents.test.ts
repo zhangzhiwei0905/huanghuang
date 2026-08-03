@@ -277,8 +277,7 @@ describe("game audio projection events", () => {
   });
 
   it("maps quick voice-message text to its matching audio file", () => {
-    expect(voiceMessageAudioFileName("搞快点搞快点")).toBe("gaokuaidian.mp3");
-    expect(voiceMessageAudioFileName("我已经听牌啦")).toBe("woyijingtingle.mp3");
+    expect(voiceMessageAudioFileName("搞快点")).toBe("gkd-xmz.mp3");
     expect(voiceMessageAudioFileName("随便聊两句")).toBeNull();
   });
 

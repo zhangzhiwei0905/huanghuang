@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  MATCH_FOUND_COUNTDOWN_SECONDS,
   remainingRoundStartSeconds,
+  remainingSecondsUntilTarget,
   ROUND_START_COUNTDOWN_SECONDS,
   shouldShowRoundStart,
 } from "./roomTransitions";
@@ -44,5 +46,25 @@ describe("remainingRoundStartSeconds", () => {
     // being hidden for a while) — recomputing from the timestamp must still
     // report "done", not a stale mid-countdown or negative value.
     expect(remainingRoundStartSeconds(startedAt, startedAt + 60_000, 3)).toBe(0);
+  });
+});
+
+describe("remainingSecondsUntilTarget", () => {
+  it("counts the seconds left before a future target, rounding up", () => {
+    const targetAt = 100_000;
+    expect(remainingSecondsUntilTarget(targetAt, targetAt - 3_000, 3)).toBe(3);
+    expect(remainingSecondsUntilTarget(targetAt, targetAt - 2_001, 3)).toBe(3);
+    expect(remainingSecondsUntilTarget(targetAt, targetAt - 1_500, 3)).toBe(2);
+    expect(remainingSecondsUntilTarget(targetAt, targetAt, 3)).toBe(0);
+    expect(remainingSecondsUntilTarget(targetAt, targetAt + 5_000, 3)).toBe(0);
+  });
+
+  it("never displays more than the cap, even with clock skew or late delivery", () => {
+    // The bug this guards against: a server-armed 3s target compared against
+    // a lagging client clock used to render 11s countdowns.
+    expect(MATCH_FOUND_COUNTDOWN_SECONDS).toBe(5);
+    const targetAt = 100_000;
+    expect(remainingSecondsUntilTarget(targetAt, targetAt - 8_000, 3)).toBe(3);
+    expect(remainingSecondsUntilTarget(targetAt, targetAt - 60_000, 3)).toBe(3);
   });
 });

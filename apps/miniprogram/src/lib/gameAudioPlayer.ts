@@ -47,8 +47,7 @@ const AUDIO_FILE_NAMES: GameAudioFileName[] = [
   "chaotiangang.mp3",
   "yinghu.mp3",
   "ruanhu.mp3",
-  "gaokuaidian.mp3",
-  "woyijingtingle.mp3",
+  "gkd-xmz.mp3",
 ];
 
 // Bump this directory whenever the cache-writing contract changes. Older

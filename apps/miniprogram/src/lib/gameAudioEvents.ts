@@ -24,8 +24,7 @@ export type GameAudioFileName =
   | "yinghu.mp3"
   | "ruanhu.mp3"
   | "chaotiangang.mp3"
-  | "gaokuaidian.mp3"
-  | "woyijingtingle.mp3";
+  | "gkd-xmz.mp3";
 
 type PlayerAudioSnapshot = {
   discardIds: Set<string>;
@@ -91,8 +90,7 @@ function effectAudioFileName(cue: GameEffectCue): GameAudioFileName {
 }
 
 const VOICE_MESSAGE_AUDIO: Record<string, GameAudioFileName> = {
-  搞快点搞快点: "gaokuaidian.mp3",
-  我已经听牌啦: "woyijingtingle.mp3",
+  搞快点: "gkd-xmz.mp3",
 };
 
 export function voiceMessageAudioFileName(message: string): GameAudioFileName | null {
@@ -100,8 +98,7 @@ export function voiceMessageAudioFileName(message: string): GameAudioFileName | 
 }
 
 export const VOICE_MESSAGES: { label: string; text: string }[] = [
-  { label: "催", text: "搞快点搞快点" },
-  { label: "听牌", text: "我已经听牌啦" },
+  { label: "催", text: "搞快点" },
 ];
 
 export function createGameAudioSnapshot(room: RoomProjection): GameAudioSnapshot {

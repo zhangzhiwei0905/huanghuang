@@ -34,6 +34,10 @@ const OUTPUT_DIR = path.join(repoRoot, "huanghuang-audio", "mp3-trimmed");
  * winAudioFileName never return "action-win.mp3", and "laiyou.mp3" /
  * "pre-audio.mp3" don't appear in the codebase at all). They are dead
  * source assets — do not trim or upload them.
+ *
+ * `gkd-xmz.mp3` (the 搞快点 quick-message voice) was converted straight
+ * from the author's m4a recording and must NOT be trimmed — it is kept
+ * out of AUDIO_WINDOWS and uploaded to mp3-trimmed/ as-is.
  */
 const AUDIO_WINDOWS = {
   "action-added-kong.mp3": { startTime: 0.62, duration: 0.72 },
@@ -41,9 +45,7 @@ const AUDIO_WINDOWS = {
   "action-pong.mp3": { startTime: 0.83, duration: 0.33 },
   "action-release-wildcard.mp3": { startTime: 0.76, duration: 0.73 },
   "chaotiangang.mp3": { startTime: 0.62, duration: 0.7 },
-  "gaokuaidian.mp3": { startTime: 0, duration: 2.92 },
   "ruanhu.mp3": { startTime: 0, duration: 2.53 },
-  "woyijingtingle.mp3": { startTime: 0, duration: 3.44 },
   "yinghu.mp3": { startTime: 0, duration: 2.53 },
   "tile-tiao-1.mp3": { startTime: 0.79, duration: 0.54 },
   "tile-tiao-2.mp3": { startTime: 0.98, duration: 0.55 },

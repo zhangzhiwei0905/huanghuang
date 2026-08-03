@@ -126,6 +126,7 @@ type PersistedRoomState = {
   pendingEffectTransition?: PendingEffectTransition | null;
   competitiveMatch?: { matchId: string; ruleVersion: number } | null;
   teamQueueStartedAt?: string | null;
+  pendingRoundId?: string | null;
 };
 
 export type RoomState = {
@@ -166,6 +167,12 @@ export type RoomState = {
   pendingEffectTransition: PendingEffectTransition | null;
   competitiveMatch: { matchId: string; ruleVersion: number } | null;
   teamQueueStartedAt: string | null;
+  /**
+   * Matchmaking-gated start: the round id already written into the
+   * competitive match row while the room still waits for every human to
+   * enter. startRound consumes it so the live round matches the DB row.
+   */
+  pendingRoundId: string | null;
 };
 
 export type JoinRoomResult =
@@ -198,6 +205,14 @@ const ROUND_RESULT_MS = 4_000;
  * `ROUND_START_COUNTDOWN_SECONDS`.
  */
 export const FRIEND_ROUND_START_MS = 3_000;
+/**
+ * Matchmaking rooms wait for every human player to actually enter the table
+ * before the round starts (nobody should face a bot that already played its
+ * turn while the "匹配成功" screen was still up). If a player never shows,
+ * the round force-starts after this grace window and the usual turn timeouts
+ * take over for the absent seat.
+ */
+export const MATCH_ROOM_START_GRACE_MS = 30_000;
 const EFFECT_DURATION_MS = {
   PONG: 450,
   EXPOSED_KONG: 700,
@@ -602,15 +617,23 @@ export class RoomService {
         roundStartedAt: persisted.roundStartedAt ?? null,
         roundStartsAt: stage === "WAITING" ? (persisted.roundStartsAt ?? null) : null,
         waitingExpiresAt:
-          (mode === "FRIEND" || mode === "TEAM_MATCH") && stage === "WAITING"
-            ? (persisted.waitingExpiresAt ??
-              new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString())
-            : null,
+          stage !== "WAITING"
+            ? null
+            : mode === "MATCH"
+              ? // Matchmaking-gated rooms keep their grace deadline; a missing
+                // one (snapshot written before the gate existed) force-starts
+                // immediately on the next tick instead of lingering.
+                (persisted.waitingExpiresAt ?? new Date().toISOString())
+              : mode === "FRIEND" || mode === "TEAM_MATCH"
+                ? (persisted.waitingExpiresAt ??
+                  new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString())
+                : null,
         actionDeadlineAt: persisted.actionDeadlineAt ?? null,
         nextRoundAt: persisted.nextRoundAt ?? null,
         pendingEffectTransition: stage === "WAITING" ? null : persistedTransition,
         competitiveMatch: persisted.competitiveMatch ?? null,
         teamQueueStartedAt: persisted.teamQueueStartedAt ?? null,
+        pendingRoundId: stage === "WAITING" ? (persisted.pendingRoundId ?? null) : null,
       };
     }
 
@@ -684,6 +707,7 @@ export class RoomService {
         pendingEffectTransition: null,
         competitiveMatch: null,
         teamQueueStartedAt: null,
+        pendingRoundId: null,
       };
     }
 
@@ -717,6 +741,7 @@ export class RoomService {
       pendingEffectTransition: null,
       competitiveMatch: persisted.competitiveMatch ?? null,
       teamQueueStartedAt: null,
+      pendingRoundId: null,
     };
   }
 
@@ -777,7 +802,7 @@ export class RoomService {
     room.actionDeadlineAt = new Date(now + duration).toISOString();
   }
 
-  private startRound(room: RoomState, now = Date.now()): void {
+  private startRound(room: RoomState, now = Date.now(), roundId?: string): void {
     // `startRound` is the only place a round receives `startingScores`, so it is
     // also the single choke point for the one-shot full-table reset. Firing here
     // rather than when the fourth human takes a seat matters: a seat can turn
@@ -789,7 +814,7 @@ export class RoomService {
     }
     room.pendingEffectTransition = null;
     const round = createRound({
-      id: randomUUID(),
+      id: roundId ?? randomUUID(),
       dealerSeat: room.nextDealerSeat,
       baseScore: room.baseScore,
       startingScores: room.scores,
@@ -826,11 +851,37 @@ export class RoomService {
     }
     room.stage = "PLAYING";
     room.readySessionIds = [];
+    room.pendingRoundId = null;
     room.roundStartedAt = new Date(now).toISOString();
     room.roundStartsAt = null;
     room.waitingExpiresAt = null;
     room.nextRoundAt = null;
     this.refreshDeadline(room, now);
+  }
+
+  /**
+   * Matchmaking-created rooms sit in WAITING with every human seat marked
+   * disconnected until each player actually enters the table; only then does
+   * the round launch. This predicate identifies that gated state.
+   */
+  private isMatchmakingGatedRoom(room: RoomState): boolean {
+    return (
+      room.status === "ACTIVE" &&
+      room.stage === "WAITING" &&
+      (room.mode === "MATCH" || room.mode === "TEAM_MATCH") &&
+      room.competitiveMatch !== null &&
+      room.pendingRoundId !== null
+    );
+  }
+
+  private allMatchedHumansEntered(room: RoomState): boolean {
+    return SEATS.every((seat) => room.seats[seat].controller !== "HUMAN" || room.seats[seat].connected);
+  }
+
+  private launchGatedMatchmakingRound(room: RoomState, now = Date.now()): void {
+    this.startRound(room, now, room.pendingRoundId ?? undefined);
+    room.version += 1;
+    this.save(room);
   }
 
   private enterWaiting(room: RoomState, now = Date.now()): void {
@@ -1147,6 +1198,18 @@ export class RoomService {
         continue;
       }
       if (room.stage === "WAITING") {
+        if (this.isMatchmakingGatedRoom(room)) {
+          // Start the round the moment every matched human has entered; once
+          // the grace deadline passes, start anyway and let the turn timeouts
+          // cover whoever never showed up.
+          const graceExpired =
+            room.waitingExpiresAt !== null && Date.parse(room.waitingExpiresAt) <= now;
+          if (graceExpired || this.allMatchedHumansEntered(room)) {
+            this.launchGatedMatchmakingRound(room, now);
+            updates.push({ roomId: room.id, version: room.version });
+          }
+          continue;
+        }
         if (
           room.mode === "FRIEND" &&
           room.roundStartsAt !== null &&
@@ -1300,6 +1363,7 @@ export class RoomService {
       pendingEffectTransition: null,
       competitiveMatch: null,
       teamQueueStartedAt: null,
+      pendingRoundId: null,
     };
     if (mode === "BOT") this.startRound(room);
     this.roomsByCode.set(room.code, room);
@@ -1313,6 +1377,11 @@ export class RoomService {
   ): RoomState {
     const players = shuffledCompetitivePlayers(sessions, entries);
     const matchId = randomUUID();
+    // The round id is written into the competitive match row immediately even
+    // though the round itself only starts once every human has entered the
+    // table (see the WAITING gate in tick()/setRoomConnected).
+    const roundId = randomUUID();
+    const now = Date.now();
     const player0 = players[0];
     const player1 = players[1];
     const player2 = players[2];
@@ -1337,12 +1406,14 @@ export class RoomService {
       dissolveAfterRound: false,
       closeReason: null,
       mode: "MATCH",
-      stage: "PLAYING",
+      // Gated start: WAITING until every matched player enters the table, so
+      // nobody misses opening turns behind the "匹配成功" transition.
+      stage: "WAITING",
       seats: {
-        0: humanSeat(0, player0.session),
-        1: humanSeat(1, player1.session),
-        2: humanSeat(2, player2.session),
-        3: humanSeat(3, player3.session),
+        0: humanSeat(0, player0.session, false),
+        1: humanSeat(1, player1.session, false),
+        2: humanSeat(2, player2.session, false),
+        3: humanSeat(3, player3.session, false),
       },
       readySessionIds: [],
       spectators: [],
@@ -1352,21 +1423,19 @@ export class RoomService {
       round: null,
       roundStartedAt: null,
       roundStartsAt: null,
-      waitingExpiresAt: null,
+      waitingExpiresAt: new Date(now + MATCH_ROOM_START_GRACE_MS).toISOString(),
       actionDeadlineAt: null,
       nextRoundAt: null,
       pendingEffectTransition: null,
       competitiveMatch: { matchId, ruleVersion: COMPETITIVE_RULE_VERSION },
       teamQueueStartedAt: null,
+      pendingRoundId: roundId,
     };
-    this.startRound(room);
-    const round = room.round;
-    if (round === null) throw new Error("Competitive room failed to start its round");
     this.database.createCompetitiveMatch({
       match: {
         id: matchId,
         roomId: room.id,
-        roundId: round.id,
+        roundId,
         ruleVersion: COMPETITIVE_RULE_VERSION,
       },
       room,
@@ -1416,6 +1485,10 @@ export class RoomService {
       throw new Error("A competitive bot match requires at least one human session");
     }
     const matchId = randomUUID();
+    // Same gated-start contract as createCompetitiveMatch: the match row gets
+    // its round id up front, the round itself waits for every human to enter.
+    const roundId = randomUUID();
+    const now = Date.now();
     const entriesBySessionId = new Map(
       humanEntries.map((entry) => [entry.sessionId, entry] as const),
     );
@@ -1454,7 +1527,7 @@ export class RoomService {
         if (entry === undefined) {
           throw new Error(`Missing matchmaking entry for human ${identity.id}`);
         }
-        seats[seat] = humanSeat(seat, identity);
+        seats[seat] = humanSeat(seat, identity, false);
         humanPlayers.push({
           sessionId: identity.id,
           seat,
@@ -1485,7 +1558,8 @@ export class RoomService {
       dissolveAfterRound: false,
       closeReason: null,
       mode: "MATCH",
-      stage: "PLAYING",
+      // Gated start: WAITING until every human player enters the table.
+      stage: "WAITING",
       seats,
       readySessionIds: [],
       spectators: [],
@@ -1495,21 +1569,19 @@ export class RoomService {
       round: null,
       roundStartedAt: null,
       roundStartsAt: null,
-      waitingExpiresAt: null,
+      waitingExpiresAt: new Date(now + MATCH_ROOM_START_GRACE_MS).toISOString(),
       actionDeadlineAt: null,
       nextRoundAt: null,
       pendingEffectTransition: null,
       competitiveMatch: { matchId, ruleVersion: COMPETITIVE_RULE_VERSION },
       teamQueueStartedAt: null,
+      pendingRoundId: roundId,
     };
-    this.startRound(room);
-    const round = room.round;
-    if (round === null) throw new Error("Competitive bot room failed to start its round");
     this.database.createCompetitiveMatchWithBots({
       match: {
         id: matchId,
         roomId: room.id,
-        roundId: round.id,
+        roundId,
         ruleVersion: COMPETITIVE_RULE_VERSION,
       },
       room,
@@ -1940,6 +2012,12 @@ export class RoomService {
       const spectator = room.spectators[waitingIndex];
       if (spectator === undefined || spectator.connected === connected) return null;
       spectator.connected = connected;
+    }
+    // Matchmaking rooms gate their first round on every human entering the
+    // table, and this subscribe-driven flip is where that gate opens — so
+    // bots and early arrivals never start playing before the last player.
+    if (connected && this.isMatchmakingGatedRoom(room) && this.allMatchedHumansEntered(room)) {
+      this.launchGatedMatchmakingRound(room);
     }
     room.version += 1;
     this.refreshDeadline(room);

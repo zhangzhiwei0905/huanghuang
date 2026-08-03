@@ -45,8 +45,8 @@ import {
 } from "../../lib/matchmakingRecovery";
 import { matchmakingRangeLabel, matchmakingWaitSeconds } from "../../lib/matchmakingPresentation";
 import {
+  MATCH_FOUND_COUNTDOWN_SECONDS,
   remainingRoundStartSeconds,
-  ROUND_START_COUNTDOWN_SECONDS,
 } from "../../lib/roomTransitions";
 import { RoundStartOverlay } from "../../components/RoundStartOverlay";
 import "./index.scss";
@@ -504,7 +504,7 @@ export default function IndexPage() {
     const remaining = remainingRoundStartSeconds(
       pendingMatchNavigation.matchFoundAt,
       matchmakingNow,
-      ROUND_START_COUNTDOWN_SECONDS,
+      MATCH_FOUND_COUNTDOWN_SECONDS,
     );
     if (remaining > 0) return;
     const { navigationKey, room } = pendingMatchNavigation;
@@ -529,7 +529,7 @@ export default function IndexPage() {
       const remaining = remainingRoundStartSeconds(
         pendingMatchNavigation.matchFoundAt,
         Date.now(),
-        ROUND_START_COUNTDOWN_SECONDS,
+        MATCH_FOUND_COUNTDOWN_SECONDS,
       );
       if (remaining <= 0) {
         const { navigationKey, room } = pendingMatchNavigation;
@@ -740,7 +740,7 @@ export default function IndexPage() {
       : remainingRoundStartSeconds(
           pendingMatchNavigation.matchFoundAt,
           matchmakingNow,
-          ROUND_START_COUNTDOWN_SECONDS,
+          MATCH_FOUND_COUNTDOWN_SECONDS,
         );
   const pendingSocialCount =
     (social.snapshot?.friendRequests.filter((request) => request.direction === "INCOMING").length ??

@@ -60,8 +60,10 @@ import {
 } from "../../lib/gameAudioPreference";
 import { createGameAudioPlayer, type GameAudioPlayer } from "../../lib/gameAudioPlayer";
 import {
+  MATCH_FOUND_COUNTDOWN_SECONDS,
   ROUND_START_COUNTDOWN_SECONDS,
   remainingRoundStartSeconds,
+  remainingSecondsUntilTarget,
   shouldShowRoundStart,
 } from "../../lib/roomTransitions";
 import { isWildcardTile } from "../../lib/tileArt";
@@ -570,7 +572,7 @@ export default function RoomPage() {
     const remaining = remainingRoundStartSeconds(
       pendingTeamMatchNavigation.matchFoundAt,
       teamMatchFoundNow,
-      ROUND_START_COUNTDOWN_SECONDS,
+      MATCH_FOUND_COUNTDOWN_SECONDS,
     );
     if (remaining > 0) return;
     const { room: matchedRoom } = pendingTeamMatchNavigation;
@@ -635,7 +637,7 @@ export default function RoomPage() {
   const friendStartSecondsRemaining =
     friendRoundStartsAt === null
       ? null
-      : remainingRoundStartSeconds(
+      : remainingSecondsUntilTarget(
           Date.parse(friendRoundStartsAt),
           roundStartNow,
           ROUND_START_COUNTDOWN_SECONDS,
@@ -1582,7 +1584,7 @@ export default function RoomPage() {
           countdown={remainingRoundStartSeconds(
             pendingTeamMatchNavigation.matchFoundAt,
             teamMatchFoundNow,
-            ROUND_START_COUNTDOWN_SECONDS,
+            MATCH_FOUND_COUNTDOWN_SECONDS,
           )}
         />
       ) : friendStartSecondsRemaining !== null && friendStartSecondsRemaining > 0 ? (

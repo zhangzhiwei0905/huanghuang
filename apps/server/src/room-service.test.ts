@@ -13,6 +13,7 @@ import { GameDatabase, type AnonymousSession } from "./database.js";
 import {
   CLOSED_ROOM_EVICTION_MS,
   FRIEND_ROUND_START_MS,
+  MATCH_ROOM_START_GRACE_MS,
   MATCH_SETTLEMENT_RETENTION_MS,
   RoomService,
   WAITING_ROOM_TIMEOUT_MS,
@@ -49,7 +50,7 @@ describe("RoomService", () => {
     return new RoomService(database);
   }
 
-  function createCompetitiveFixture() {
+  function createCompetitiveFixture({ enterPlayers = true }: { enterPlayers?: boolean } = {}) {
     const database = new GameDatabase(":memory:");
     databases.push(database);
     const sessions: AnonymousSession[] = [0, 1, 2, 3].map((index) => ({
@@ -71,6 +72,10 @@ describe("RoomService", () => {
     );
     const service = new RoomService(database);
     const room = service.createCompetitiveMatch(sessions, entries);
+    if (enterPlayers) {
+      // Matchmaking rooms gate their round behind every player entering.
+      for (const session of sessions) service.setRoomConnected(session.id, room.id, true);
+    }
     return { database, entries, room, service, sessions };
   }
 
@@ -1897,7 +1902,7 @@ describe("RoomService", () => {
     expect(restoredService.project(restoredHumanRoom, owner.id).scoreResetPending).toBe(false);
   });
 
-  it("atomically creates and starts a fixed-config competitive room", () => {
+  it("creates a fixed-config competitive room that starts once every matched player enters", () => {
     const { database, entries, room, service, sessions } = createCompetitiveFixture();
     const round = activeRound(room);
 
@@ -1927,6 +1932,52 @@ describe("RoomService", () => {
       new Set(entries.map((entry) => entry.sessionId)),
     );
     expect(service.getRoom(room.code)).toBe(room);
+  });
+
+  it("keeps a matched room waiting until every player enters, then starts with the booked round id", () => {
+    const { database, room, service, sessions } = createCompetitiveFixture({
+      enterPlayers: false,
+    });
+
+    // Right after matchmaking: waiting room, no round, grace deadline armed.
+    expect(room.stage).toBe("WAITING");
+    expect(room.round).toBeNull();
+    expect(room.pendingRoundId).not.toBeNull();
+    const graceDeadline = Date.parse(room.waitingExpiresAt ?? "");
+    expect(graceDeadline).toBeGreaterThan(Date.now());
+    expect(graceDeadline - Date.now()).toBeLessThanOrEqual(MATCH_ROOM_START_GRACE_MS);
+
+    // Three of four entered: still waiting — nobody may play yet.
+    for (const session of sessions.slice(0, 3)) {
+      service.setRoomConnected(session.id, room.id, true);
+    }
+    expect(room.stage).toBe("WAITING");
+    expect(room.round).toBeNull();
+
+    // The last arrival launches the round, reusing the id booked in the
+    // competitive match row.
+    const last = sessions[3];
+    if (last === undefined) throw new Error("Expected four matched players");
+    const bookedRoundId = room.pendingRoundId;
+    service.setRoomConnected(last.id, room.id, true);
+    expect(room.stage).toBe("PLAYING");
+    expect(activeRound(room).id).toBe(bookedRoundId);
+    expect(room.pendingRoundId).toBeNull();
+    const persistedMatch = database.getCompetitiveMatchSettlement(
+      room.competitiveMatch?.matchId ?? "",
+    );
+    expect(persistedMatch?.match.roundId).toBe(bookedRoundId);
+  });
+
+  it("force-starts a gated matchmaking room once the entry grace deadline passes", () => {
+    const { room, service } = createCompetitiveFixture({ enterPlayers: false });
+    expect(room.stage).toBe("WAITING");
+    const bookedRoundId = room.pendingRoundId;
+
+    service.tick(Date.parse(room.waitingExpiresAt ?? ""));
+    expect(room.stage).toBe("PLAYING");
+    expect(activeRound(room).id).toBe(bookedRoundId);
+    expect(room.pendingRoundId).toBeNull();
   });
 
   it("resolves originRoomCode to the still-open team-ranked staging room for party and solo entries alike", () => {
@@ -2040,6 +2091,7 @@ describe("RoomService", () => {
     });
 
     const matchRoom = service.createCompetitiveMatch(sessions, entries);
+    for (const session of sessions) service.setRoomConnected(session.id, matchRoom.id, true);
     // The matchmaker consumes the queue atomically once a match is created.
     database.cancelMatchmakingParty(stagingRoom.id);
 
@@ -2599,6 +2651,8 @@ describe("RoomService", () => {
 
     const service = new RoomService(database);
     const room = service.createCompetitiveMatchWithBots([humanSession], [entry], botSessions);
+    // The gated start waits for the human only; bot seats never block it.
+    service.setRoomConnected(humanSession.id, room.id, true);
     const round = activeRound(room);
 
     const seats = [0, 1, 2, 3] as const;
