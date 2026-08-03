@@ -109,11 +109,21 @@ type MatchmakingEntryRowRaw = Omit<MatchmakingEntryRow, "allowBots"> & { allowBo
 
 export type CompetitiveMatchStatus = "ACTIVE" | "SETTLED";
 
+/**
+ * RANKED rows are matchmaking matches with rank consequences; FRIEND rows are
+ * friend-room score tables that only feed the shared achievement counters.
+ * Every ranked-only query (history, current-match, queue guards, opponent
+ * avoidance) must filter on kind = 'RANKED' so friend rows never leak into
+ * the ranked flow.
+ */
+export type CompetitiveMatchKind = "RANKED" | "FRIEND";
+
 export type CompetitiveMatchRow = {
   id: string;
   roomId: string;
   roundId: string;
   ruleVersion: number;
+  kind: CompetitiveMatchKind;
   status: CompetitiveMatchStatus;
   resultJson: string | null;
   createdAt: string;
@@ -199,6 +209,20 @@ export type CreateCompetitiveMatchWithBotsInput = {
   stateJson: string;
   humanPlayers: readonly CreateCompetitiveMatchInput["players"][number][];
   botPlayers: readonly { sessionId: string; seat: number }[];
+};
+
+/**
+ * Input for {@link GameDatabase.createFriendMatch}: the achievement row a
+ * friend room writes at its first round start. Settlement/rank fields are
+ * intentionally absent — friend matches never touch rank points.
+ */
+export type CreateFriendMatchInput = {
+  id: string;
+  roomId: string;
+  roundId: string;
+  ruleVersion: number;
+  createdAt?: string;
+  players: readonly { sessionId: string; seat: number }[];
 };
 
 export type CompetitiveActionEventInput = {
@@ -362,6 +386,7 @@ export class GameDatabase {
         room_id TEXT NOT NULL UNIQUE,
         round_id TEXT NOT NULL,
         rule_version INTEGER NOT NULL CHECK (rule_version >= 1),
+        kind TEXT NOT NULL DEFAULT 'RANKED' CHECK (kind IN ('RANKED','FRIEND')),
         status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'SETTLED')),
         result_json TEXT,
         created_at TEXT NOT NULL,
@@ -479,6 +504,9 @@ export class GameDatabase {
       // with their own original party, not everyone who happened to share the
       // table.
       "ALTER TABLE competitive_match_players ADD COLUMN party_id TEXT",
+      // Friend rooms record achievements through the same competitive match
+      // tables; `kind` keeps those rows out of every ranked-only query.
+      "ALTER TABLE competitive_matches ADD COLUMN kind TEXT NOT NULL DEFAULT 'RANKED' CHECK (kind IN ('RANKED','FRIEND'))",
     ]) {
       try {
         this.connection.exec(statement);
@@ -654,6 +682,7 @@ export class GameDatabase {
     room_id AS roomId,
     round_id AS roundId,
     rule_version AS ruleVersion,
+    kind,
     status,
     result_json AS resultJson,
     created_at AS createdAt,
@@ -1208,6 +1237,7 @@ export class GameDatabase {
            ON competitive_match_players.match_id = competitive_matches.id
          WHERE competitive_match_players.session_id = ?
            AND competitive_matches.status = 'ACTIVE'
+           AND competitive_matches.kind = 'RANKED'
          LIMIT 1`,
       )
       .get(sessionId);
@@ -1222,6 +1252,7 @@ export class GameDatabase {
          JOIN competitive_matches
            ON competitive_matches.id = competitive_match_players.match_id
          WHERE competitive_match_players.session_id = ?
+           AND competitive_matches.kind = 'RANKED'
          ORDER BY competitive_matches.created_at DESC
          LIMIT 1`,
       )
@@ -1278,6 +1309,7 @@ export class GameDatabase {
            JOIN competitive_matches
              ON competitive_matches.id = competitive_match_players.match_id
            WHERE competitive_match_players.session_id = ?
+             AND competitive_matches.kind = 'RANKED'
              AND (
                competitive_matches.status = 'ACTIVE'
                OR competitive_match_players.acknowledged_at IS NULL
@@ -1501,6 +1533,7 @@ export class GameDatabase {
            JOIN competitive_matches
              ON competitive_matches.id = competitive_match_players.match_id
            WHERE competitive_matches.status = 'ACTIVE'
+             AND competitive_matches.kind = 'RANKED'
              AND competitive_match_players.session_id IN (${placeholders})
            LIMIT 1`,
         )
@@ -1605,6 +1638,7 @@ export class GameDatabase {
            JOIN competitive_matches
              ON competitive_matches.id = competitive_match_players.match_id
            WHERE competitive_matches.status = 'ACTIVE'
+             AND competitive_matches.kind = 'RANKED'
              AND competitive_match_players.session_id IN (${placeholders})
            LIMIT 1`,
         )
@@ -1671,6 +1705,58 @@ export class GameDatabase {
     })();
   }
 
+  /**
+   * Create the achievement-bookkeeping row for a friend room's session. It
+   * reuses the competitive match tables so `recordCompetitiveAchievement`
+   * works unchanged, but the row is tagged `kind = 'FRIEND'` so every
+   * ranked-only query (history, continue-match, matchmaking guards, opponent
+   * avoidance) ignores it. No rank delta ever happens: settlement columns
+   * stay NULL and the player rows are pre-acknowledged so they can never
+   * surface as a pending ranked result.
+   */
+  createFriendMatch(input: CreateFriendMatchInput): CompetitiveMatchSettlement {
+    assertFourUniquePlayers(input.players);
+    return this.connection.transaction(() => {
+      const createdAt = input.createdAt ?? new Date().toISOString();
+      const insertPlayer = this.connection.prepare(
+        `INSERT INTO competitive_match_players
+         (match_id, session_id, seat, pre_rank_level, acknowledged_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      );
+      this.connection
+        .prepare(
+          `INSERT INTO competitive_matches
+           (id, room_id, round_id, rule_version, kind, status, result_json, created_at, settled_at)
+           VALUES (?, ?, ?, ?, 'FRIEND', 'ACTIVE', NULL, ?, NULL)`,
+        )
+        .run(input.id, input.roomId, input.roundId, input.ruleVersion, createdAt);
+      for (const player of input.players) {
+        const profile = this.ensureCompetitiveProfile(player.sessionId);
+        insertPlayer.run(input.id, player.sessionId, player.seat, profile.rankLevel, createdAt);
+      }
+      const settlement = this.getCompetitiveMatchSettlement(input.id);
+      if (settlement === null) throw new Error("Friend match was not persisted");
+      return settlement;
+    })();
+  }
+
+  /**
+   * Close a friend-room match row without any rank settlement — used when
+   * the room is closed, disbanded, or cleaned up. Returns false when no
+   * active friend match with that id exists (already settled or never one).
+   */
+  settleFriendMatch(matchId: string, settledAt = new Date().toISOString()): boolean {
+    return (
+      this.connection
+        .prepare(
+          `UPDATE competitive_matches
+           SET status = 'SETTLED', settled_at = ?
+           WHERE id = ? AND kind = 'FRIEND' AND status = 'ACTIVE'`,
+        )
+        .run(settledAt, matchId).changes === 1
+    );
+  }
+
   getActiveCompetitiveMatch(sessionId: string): CompetitiveMatchSettlement | null {
     const row = this.connection
       .prepare(
@@ -1680,6 +1766,7 @@ export class GameDatabase {
            ON competitive_match_players.match_id = competitive_matches.id
          WHERE competitive_match_players.session_id = ?
            AND competitive_matches.status = 'ACTIVE'
+           AND competitive_matches.kind = 'RANKED'
          ORDER BY competitive_matches.created_at DESC, competitive_matches.id DESC
          LIMIT 1`,
       )
@@ -1695,6 +1782,7 @@ export class GameDatabase {
          JOIN competitive_match_players
            ON competitive_match_players.match_id = competitive_matches.id
          WHERE competitive_match_players.session_id = ?
+           AND competitive_matches.kind = 'RANKED'
            AND (
              competitive_matches.status = 'ACTIVE'
              OR (
@@ -1721,6 +1809,7 @@ export class GameDatabase {
            JOIN competitive_match_players
              ON competitive_match_players.match_id = competitive_matches.id
            WHERE competitive_match_players.session_id = ?
+             AND competitive_matches.kind = 'RANKED'
            ORDER BY competitive_matches.created_at DESC, competitive_matches.id DESC
            LIMIT ?
          )
@@ -1766,6 +1855,7 @@ export class GameDatabase {
          JOIN competitive_matches m ON m.id = p.match_id
          WHERE p.session_id = ?
            AND m.status = 'SETTLED'
+           AND m.kind = 'RANKED'
            AND (
              ? IS NULL
              OR m.settled_at < (SELECT settled_at FROM competitive_matches WHERE id = ?)

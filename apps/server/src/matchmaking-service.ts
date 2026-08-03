@@ -373,7 +373,7 @@ export class MatchmakingService {
                   : { partyId: entry.partyId, partySize: entry.partySize }),
               }));
             const selected =
-              selectMatchmakingGroup(allHumanCandidates, now) === null
+              selectMatchmakingGroup(allHumanCandidates) === null
                 ? selectBotFillGroup(humanCandidates, idleBots, now, MATCHMAKING_BOT_FILL_WAIT_MS)
                 : null;
             if (selected !== null) {
@@ -421,7 +421,7 @@ export class MatchmakingService {
             ? {}
             : { partyId: entry.partyId, partySize: entry.partySize }),
         }));
-        const group = selectMatchmakingGroup(candidates, now);
+        const group = selectMatchmakingGroup(candidates);
         if (group === null) break;
 
         const sessionIds = group.map((candidate) => candidate.sessionId);

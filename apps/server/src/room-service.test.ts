@@ -12,6 +12,7 @@ import { RANKED_BOTS, rankedBotSession } from "./competitive-bots.js";
 import { GameDatabase, type AnonymousSession } from "./database.js";
 import {
   CLOSED_ROOM_EVICTION_MS,
+  FRIEND_ROUND_START_MS,
   MATCH_SETTLEMENT_RETENTION_MS,
   RoomService,
   WAITING_ROOM_TIMEOUT_MS,
@@ -243,64 +244,126 @@ describe("RoomService", () => {
     });
   });
 
-  it("lets the friend-room owner manage bots and starts when all humans are ready", () => {
+  it("arms a start countdown when all four friends are ready and launches once it elapses", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "FRIEND", 20, "LOW");
-    const guest = { id: "guest", nickname: "玩家" };
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) service.joinRoom(guest, room.code);
 
-    expect(service.addBot(guest.id, room.code)).toBe("FORBIDDEN");
-    expect(service.addBot(owner.id, room.code)).toBe(room);
-    expect(service.addBot(owner.id, room.code)).toBe(room);
-    expect(service.addBot(owner.id, room.code)).toBe(room);
-    expect(service.addBot(owner.id, room.code)).toBe("ACTION_NOT_AVAILABLE");
+    // Three seated players are not enough: no countdown, no start.
+    for (const session of [owner, ...guests.slice(0, 2)]) {
+      service.setReady(session.id, room.code, true);
+    }
+    expect(room.roundStartsAt).toBeNull();
+    expect(room.stage).toBe("WAITING");
 
-    let projection = service.project(room, owner.id);
-    expect(projection.botDifficulty).toBe("LOW");
-    expect(projection.lobbySeats.filter((seat) => seat.controller === "BOT")).toHaveLength(3);
-    expect(projection.lobbySeats.filter((seat) => seat.ready)).toHaveLength(3);
+    service.setReady(guests[2]?.id ?? "", room.code, true);
+    expect(room.stage).toBe("WAITING");
+    expect(room.round).toBeNull();
+    const startsAt = Date.parse(room.roundStartsAt ?? "");
+    expect(startsAt - Date.now()).toBeGreaterThan(FRIEND_ROUND_START_MS - 1_500);
+    expect(startsAt - Date.now()).toBeLessThanOrEqual(FRIEND_ROUND_START_MS);
+    expect(service.project(room, owner.id).roundStartsAt).toBe(room.roundStartsAt);
 
-    expect(service.removeBot(owner.id, room.code, 2)).toBe(room);
-    projection = service.project(room, owner.id);
-    expect(projection.lobbySeats[2]).toMatchObject({
-      controller: null,
-      occupied: false,
-      ready: false,
-    });
-    expect(service.addBot(owner.id, room.code)).toBe(room);
-    expect(service.setReady(owner.id, room.code, true)).toBe(room);
+    service.tick(startsAt - 1);
+    expect(room.stage).toBe("WAITING");
+    expect(room.round).toBeNull();
+
+    service.tick(startsAt);
     expect(room.stage).toBe("PLAYING");
+    expect(room.round).not.toBeNull();
+    expect(room.roundStartsAt).toBeNull();
+    expect(room.readySessionIds).toEqual([]);
+    expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
   });
 
-  it("gives a waiting human priority over an existing bot seat", () => {
+  it("cancels the friend start countdown when a player un-readies or leaves", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "FRIEND");
-    service.addBot(owner.id, room.code);
-    service.addBot(owner.id, room.code);
-    service.addBot(owner.id, room.code);
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) service.joinRoom(guest, room.code);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    const firstStartsAt = Date.parse(room.roundStartsAt ?? "");
 
-    const guest = { id: "guest", nickname: "真人玩家" };
-    expect(service.joinRoom(guest, room.code)).toBe(room);
-    expect(service.project(room, guest.id)).toMatchObject({
-      selfRole: "PLAYER",
-      selfReady: false,
-    });
-    expect(service.project(room, owner.id).lobbySeats).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ nickname: "真人玩家", controller: "HUMAN" }),
-      ]),
+    service.setReady(guests[0]?.id ?? "", room.code, false);
+    expect(room.roundStartsAt).toBeNull();
+    service.tick(firstStartsAt + FRIEND_ROUND_START_MS);
+    expect(room.stage).toBe("WAITING");
+    expect(room.round).toBeNull();
+
+    for (const session of [guests[0], guests[1], guests[2]]) {
+      service.setReady(session?.id ?? "", room.code, true);
+    }
+    const rearmedStartsAt = Date.parse(room.roundStartsAt ?? "");
+    expect(rearmedStartsAt).toBeGreaterThan(0);
+
+    service.leaveRoom(guests[1]?.id ?? "", room.code);
+    expect(room.roundStartsAt).toBeNull();
+    service.tick(rearmedStartsAt + FRIEND_ROUND_START_MS);
+    expect(room.stage).toBe("WAITING");
+    expect(room.round).toBeNull();
+  });
+
+  it("keeps a disconnected friend's seat reserved and rejoins them into it", () => {
+    const service = createService();
+    const room = service.createRoom(owner, 2, "FRIEND");
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) service.joinRoom(guest, room.code);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
+    expect(room.stage).toBe("PLAYING");
+
+    const leaver = guests[2];
+    if (leaver === undefined) throw new Error("Missing guest fixture");
+    const leaverSeat = ([0, 1, 2, 3] as const).find(
+      (seat) => room.seats[seat].sessionId === leaver.id,
     );
-    expect(
-      service.project(room, owner.id).lobbySeats.filter((seat) => seat.controller === "BOT"),
-    ).toHaveLength(2);
+    if (leaverSeat === undefined) throw new Error("Expected the leaver to hold a seat");
+
+    // Leaving mid-round keeps the seat reserved (wait-for-reconnect) instead
+    // of substituting a bot.
+    service.leaveRoom(leaver.id, room.code);
+    expect(room.seats[leaverSeat]).toMatchObject({
+      sessionId: leaver.id,
+      controller: "HUMAN",
+      connected: false,
+    });
+    expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
+    expect(service.hasMember(leaver.id, room.code)).toBe(true);
+
+    // Rejoining goes straight back into the reserved seat, never spectator.
+    expect(service.joinRoom(leaver, room.code)).toBe(room);
+    expect(service.project(room, leaver.id)).toMatchObject({
+      selfRole: "PLAYER",
+      selfSeat: leaverSeat,
+    });
+    expect(room.spectators).toEqual([]);
   });
 
-  it("queues in-round humans as private-hand-safe spectators then seats them after the round", () => {
+  it("keeps mid-round joiners as spectators and never promotes them after the round", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "FRIEND");
-    service.addBot(owner.id, room.code);
-    service.addBot(owner.id, room.code);
-    service.addBot(owner.id, room.code);
-    service.setReady(owner.id, room.code, true);
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) service.joinRoom(guest, room.code);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
+    expect(room.stage).toBe("PLAYING");
 
     const spectator = { id: "spectator", nickname: "候补玩家" };
     expect(service.joinRoom(spectator, room.code)).toBe(room);
@@ -318,48 +381,54 @@ describe("RoomService", () => {
     room.nextRoundAt = new Date(0).toISOString();
     service.tick(Date.now());
 
+    // Spectators stay spectators once the room returns to waiting.
     const waitingProjection = service.project(room, spectator.id);
     expect(waitingProjection.stage).toBe("WAITING");
-    expect(waitingProjection.selfRole).toBe("PLAYER");
-    expect(waitingProjection.selfReady).toBe(false);
-    expect(waitingProjection.spectators).toEqual([]);
-    expect(waitingProjection.lobbySeats.filter((seat) => seat.controller === "BOT")).toHaveLength(
-      2,
-    );
+    expect(waitingProjection.selfRole).toBe("SPECTATOR");
+    expect(waitingProjection.selfSeat).toBeNull();
+    expect(waitingProjection.spectators).toEqual([
+      expect.objectContaining({ nickname: "候补玩家", isSelf: true }),
+    ]);
+    expect(waitingProjection.lobbySeats.filter((seat) => seat.occupied)).toHaveLength(4);
   });
 
-  it("caps active-round membership at four humans and seats spectators in join order", () => {
+  it("caps spectators at four and keeps every seat reserved after the round", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "FRIEND");
-    service.addBot(owner.id, room.code);
-    service.addBot(owner.id, room.code);
-    service.addBot(owner.id, room.code);
-    service.setReady(owner.id, room.code, true);
+    const guests: AnonymousSession[] = [
+      { id: "guest-1", nickname: "甲" },
+      { id: "guest-2", nickname: "乙" },
+      { id: "guest-3", nickname: "丙" },
+    ];
+    for (const guest of guests) service.joinRoom(guest, room.code);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
 
     const spectators: AnonymousSession[] = [
       { id: "spectator-1", nickname: "候补甲" },
       { id: "spectator-2", nickname: "候补乙" },
       { id: "spectator-3", nickname: "候补丙" },
+      { id: "spectator-4", nickname: "候补丁" },
     ];
     for (const spectator of spectators) {
       expect(service.joinRoom(spectator, room.code)).toBe(room);
     }
-    expect(service.joinRoom({ id: "spectator-4", nickname: "候补丁" }, room.code)).toBe(
+    expect(service.joinRoom({ id: "spectator-5", nickname: "候补戊" }, room.code)).toBe(
       "ROOM_FULL",
     );
     expect(
       service.project(room, owner.id).spectators.map((spectator) => spectator.nickname),
-    ).toEqual(["候补甲", "候补乙", "候补丙"]);
+    ).toEqual(["候补甲", "候补乙", "候补丙", "候补丁"]);
 
     room.stage = "ROUND_RESULT";
     room.nextRoundAt = new Date(0).toISOString();
     service.tick(Date.now());
 
+    // Seats stay with their original members; spectators are not promoted.
     const lobby = service.project(room, owner.id).lobbySeats;
-    expect(lobby.map((seat) => seat.nickname)).toEqual(["房主", "候补甲", "候补乙", "候补丙"]);
+    expect(lobby.map((seat) => seat.nickname)).toEqual(["房主", "甲", "乙", "丙"]);
     expect(lobby.every((seat) => seat.controller === "HUMAN")).toBe(true);
-    expect(lobby.every((seat) => !seat.ready)).toBe(true);
-    expect(room.spectators).toEqual([]);
+    expect(room.spectators).toHaveLength(4);
   });
 
   it("creates an isolated bot match with three bots and a private projection", () => {
@@ -419,8 +488,13 @@ describe("RoomService", () => {
     expect(room.stage).toBe("WAITING");
     expect(room.round).toBeNull();
 
-    const beforeRoundStart = Date.now();
     service.setReady(guests[2]?.id ?? "", room.code, true);
+    // All ready only arms the countdown; the tick fires the actual start.
+    expect(room.stage).toBe("WAITING");
+    expect(room.round).toBeNull();
+    expect(room.roundStartsAt).not.toBeNull();
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
+
     expect(room.stage).toBe("PLAYING");
     expect(room.round).not.toBeNull();
     expect(room.readySessionIds).toEqual([]);
@@ -431,10 +505,9 @@ describe("RoomService", () => {
     );
     expect(room.turnTimeoutSeconds).toBe(30);
     expect(service.project(room, owner.id).turnTimeoutSeconds).toBe(30);
-    expect(Date.parse(room.actionDeadlineAt ?? "") - beforeRoundStart).toBeGreaterThanOrEqual(
-      29_000,
+    expect(Date.parse(room.actionDeadlineAt ?? "") - Date.parse(room.roundStartedAt ?? "")).toBe(
+      30_000,
     );
-    expect(Date.parse(room.actionDeadlineAt ?? "") - beforeRoundStart).toBeLessThanOrEqual(31_000);
   });
 
   it("returns a completed friend round to waiting and keeps seats and scores", () => {
@@ -450,6 +523,7 @@ describe("RoomService", () => {
       service.setReady(guest.id, room.code, true);
     }
     service.setReady(owner.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
 
     const round = activeRound(room);
     round.players[0].score = 12;
@@ -754,6 +828,8 @@ describe("RoomService", () => {
     ];
     for (const guest of guests) service.joinRoom(guest, room.code);
     for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
+    expect(room.stage).toBe("PLAYING");
 
     service.requestDissolve(owner.id, room.code);
 
@@ -832,6 +908,8 @@ describe("RoomService", () => {
     expect(service.createChatMessage(owner.id, room.code, "还没开局")).toBe("ACTION_NOT_AVAILABLE");
     for (const guest of guests) service.joinRoom(guest, room.code);
     for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
+    expect(room.stage).toBe("PLAYING");
     const versionBeforeChat = room.version;
 
     expect(service.createChatMessage("outsider", room.code, "偷听")).toBe("NOT_A_MEMBER");
@@ -1581,14 +1659,12 @@ describe("RoomService", () => {
     });
   });
 
-  it("resets cumulative scores once four humans replace every bot and get ready", () => {
+  it("resets a carried-over ledger once the first all-human friend round starts", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "FRIEND");
-    for (let index = 0; index < 3; index += 1) service.addBot(owner.id, room.code);
-    service.setReady(owner.id, room.code, true);
-
-    expect(room.stage).toBe("PLAYING");
-    expect(room.fullTableScoreResetDone).toBe(false);
+    // Simulate a ledger carried over before the one-shot reset was spent.
+    room.scores = { 0: 12, 1: -4, 2: -4, 3: -4 };
+    room.fullTableScoreResetDone = false;
 
     const guests: AnonymousSession[] = [
       { id: "guest-1", nickname: "甲" },
@@ -1596,26 +1672,10 @@ describe("RoomService", () => {
       { id: "guest-3", nickname: "丙" },
     ];
     for (const guest of guests) service.joinRoom(guest, room.code);
-    expect(room.spectators).toHaveLength(3);
-
-    const botRound = activeRound(room);
-    botRound.players[0].score = 12;
-    botRound.players[1].score = -4;
-    botRound.players[2].score = -4;
-    botRound.players[3].score = -4;
-    botRound.phase = "ROUND_OVER";
-    botRound.outcome = { kind: "DRAW", nextDealerSeat: 0 };
-    room.stage = "ROUND_RESULT";
-    room.nextRoundAt = new Date(0).toISOString();
-    service.tick(Date.now());
-
-    expect(room.stage).toBe("WAITING");
-    expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
-    expect(room.scores).toEqual({ 0: 12, 1: -4, 2: -4, 3: -4 });
     expect(service.project(room, owner.id).scoreResetPending).toBe(true);
 
-    for (const guest of guests) service.setReady(guest.id, room.code, true);
-    service.setReady(owner.id, room.code, true);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
 
     expect(room.stage).toBe("PLAYING");
     expect(room.scores).toEqual({ 0: 0, 1: 0, 2: 0, 3: 0 });
@@ -1624,7 +1684,7 @@ describe("RoomService", () => {
     expect(service.project(room, owner.id).scoreResetPending).toBe(false);
   });
 
-  it("never resets again after a disconnect, bot substitution and reconnect", () => {
+  it("never resets again after a mid-round disconnect and rejoin", () => {
     const service = createService();
     const room = service.createRoom(owner, 2, "FRIEND");
     const guests: AnonymousSession[] = [
@@ -1637,32 +1697,35 @@ describe("RoomService", () => {
       service.setReady(guest.id, room.code, true);
     }
     service.setReady(owner.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
     expect(room.fullTableScoreResetDone).toBe(true);
 
-    // A seated human leaves mid-round, so a bot takes the seat for the next round.
+    // A seated human leaves mid-round: the seat stays reserved (no bot).
     const leaver = guests[2] ?? { id: "", nickname: "" };
     service.leaveRoom(leaver.id, room.code);
-    expect(room.seats[3].controller).toBe("BOT");
+    expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
+    expect(
+      Object.values(room.seats).some((seat) => seat.sessionId === leaver.id && !seat.connected),
+    ).toBe(true);
 
-    const botRound = activeRound(room);
-    botRound.players[0].score = 20;
-    botRound.players[1].score = -6;
-    botRound.players[2].score = -7;
-    botRound.players[3].score = -7;
-    botRound.phase = "ROUND_OVER";
-    botRound.outcome = { kind: "DRAW", nextDealerSeat: 0 };
+    const interruptedRound = activeRound(room);
+    interruptedRound.players[0].score = 20;
+    interruptedRound.players[1].score = -6;
+    interruptedRound.players[2].score = -7;
+    interruptedRound.players[3].score = -7;
+    interruptedRound.phase = "ROUND_OVER";
+    interruptedRound.outcome = { kind: "DRAW", nextDealerSeat: 0 };
     room.stage = "ROUND_RESULT";
     room.nextRoundAt = new Date(0).toISOString();
     service.tick(Date.now());
     expect(room.stage).toBe("WAITING");
 
-    // The player reconnects into the bot seat and the table is all-human again.
+    // The player rejoins straight into the reserved seat.
     expect(service.joinRoom(leaver, room.code)).toBe(room);
-    expect(Object.values(room.seats).every((seat) => seat.controller === "HUMAN")).toBe(true);
     expect(service.project(room, owner.id).scoreResetPending).toBe(false);
 
-    for (const guest of guests) service.setReady(guest.id, room.code, true);
-    service.setReady(owner.id, room.code, true);
+    for (const session of [owner, ...guests]) service.setReady(session.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
 
     expect(room.stage).toBe("PLAYING");
     expect(activeRound(room).startingScores).toEqual({ 0: 20, 1: -6, 2: -7, 3: -7 });
@@ -1681,6 +1744,7 @@ describe("RoomService", () => {
       service.setReady(guest.id, room.code, true);
     }
     service.setReady(owner.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
     // The one-shot reset is spent on this first all-human round, where the
     // ledger is already zero.
     expect(room.fullTableScoreResetDone).toBe(true);
@@ -1700,8 +1764,82 @@ describe("RoomService", () => {
 
     for (const guest of guests) service.setReady(guest.id, room.code, true);
     service.setReady(owner.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
 
     expect(activeRound(room).startingScores).toEqual({ 0: 9, 1: -3, 2: -3, 3: -3 });
+  });
+
+  it("records friend-room achievements without rank points or ranked match traces", () => {
+    const database = new GameDatabase(":memory:");
+    databases.push(database);
+    const sessions: AnonymousSession[] = [0, 1, 2, 3].map((index) => ({
+      id: `friend-player-${index}`,
+      nickname: `好友玩家${index}`,
+      wechatOpenId: `openid-friend-player-${index}`,
+    }));
+    for (const [index, session] of sessions.entries()) {
+      database.createSession(session, `friend-token-${index}`);
+      database.ensureCompetitiveProfile(session.id);
+    }
+    const service = new RoomService(database);
+    const friendOwner = sessions[0];
+    if (friendOwner === undefined) throw new Error("Missing friend fixture");
+    const room = service.createRoom(friendOwner, 2, "FRIEND");
+    for (const guest of sessions.slice(1)) service.joinRoom(guest, room.code);
+    for (const session of sessions) service.setReady(session.id, room.code, true);
+    service.tick(Date.parse(room.roundStartsAt ?? ""));
+    expect(room.stage).toBe("PLAYING");
+
+    // The friend match row exists but is invisible to every ranked query.
+    const matchId = room.competitiveMatch?.matchId;
+    if (matchId === undefined) throw new Error("Expected a friend match row");
+    expect(database.getCompetitiveMatchSettlement(matchId)?.match.kind).toBe("FRIEND");
+    expect(database.getCurrentCompetitiveMatch(friendOwner.id)).toBeNull();
+    expect(database.listCompetitiveMatchHistory(friendOwner.id, { limit: 10 })).toEqual([]);
+
+    // Force an added kong for seat 0 through the normal command path.
+    const actorSessionId = room.seats[0].sessionId;
+    if (actorSessionId === null) throw new Error("Expected the friend actor to be seated");
+    const round = activeRound(room);
+    const kind = { suit: "TONG" as const, rank: 7 as const };
+    round.players[0].melds = [
+      {
+        id: "friend-added-pong",
+        kind: "PONG",
+        tileIds: ["friend-added-a", "friend-added-b", "friend-added-c"],
+        tileKind: kind,
+        sourcePlayerId: "seat-1",
+        sourceDiscardId: "friend-added-discard",
+        createdAtVersion: 1,
+      },
+    ];
+    round.players[0].hand[0] = { id: "friend-added-tile", ...kind };
+    round.phase = "TURN_DECISION";
+    round.currentSeat = 0;
+    round.lastDrawSeat = 0;
+    round.lastDrawnTileId = "friend-added-tile";
+    const result = service.execute(actorSessionId, {
+      type: "DECLARE_ADDED_KONG",
+      requestId: randomUUID(),
+      roomId: room.id,
+      roundId: round.id,
+      expectedVersion: room.version,
+      payload: { meldId: "friend-added-pong", tileId: "friend-added-tile" },
+    });
+    expect(result.accepted).toBe(true);
+    finishPendingEffect(service, room);
+
+    // Achievement counters move exactly like ranked, rank points never do.
+    const profile = database.getCompetitiveProfile(actorSessionId);
+    expect(profile?.addedKongCount).toBe(1);
+    expect(profile?.rankLevel).toBe(0);
+
+    // Dissolving settles the friend row without any rank settlement.
+    service.requestDissolve(friendOwner.id, room.code);
+    expect(room.status).toBe("CLOSED");
+    expect(database.getCompetitiveMatchSettlement(matchId)?.match.status).toBe("SETTLED");
+    expect(database.getCompetitiveProfile(actorSessionId)?.rankLevel).toBe(0);
+    expect(database.getCurrentCompetitiveMatch(actorSessionId)).toBeNull();
   });
 
   it("infers whether legacy snapshots still owe their full-table reset", () => {
@@ -1710,9 +1848,17 @@ describe("RoomService", () => {
     const service = new RoomService(database);
 
     const botRoom = service.createRoom(owner, 2, "FRIEND");
-    service.addBot(owner.id, botRoom.code);
-    const botSnapshot = JSON.parse(JSON.stringify(botRoom)) as Record<string, unknown>;
+    const botSnapshot = JSON.parse(JSON.stringify(botRoom)) as {
+      code: string;
+      seats: Record<string, { controller: string }>;
+      scores: Record<number, number>;
+      fullTableScoreResetDone?: boolean;
+    };
     botSnapshot.code = "100001";
+    // Emulate a legacy snapshot that still carried a bot seat.
+    const legacyBotSeat = botSnapshot.seats[1];
+    if (legacyBotSeat === undefined) throw new Error("Missing legacy seat");
+    legacyBotSeat.controller = "BOT";
     botSnapshot.scores = { 0: 7, 1: -7, 2: 0, 3: 0 };
     delete botSnapshot.fullTableScoreResetDone;
     database.saveRoom(
@@ -2060,9 +2206,11 @@ describe("RoomService", () => {
     expect(service.updateSettings(self.id, room.code, { baseScore: 5 })).toBe(
       "ACTION_NOT_AVAILABLE",
     );
-    expect(service.addBot(self.id, room.code)).toBe("ACTION_NOT_AVAILABLE");
-    expect(service.removeBot(self.id, room.code, 1)).toBe("ACTION_NOT_AVAILABLE");
-    expect(service.createChatMessage(self.id, room.code, "竞技聊天")).toBe("ACTION_NOT_AVAILABLE");
+    // Quick messages are shared between friend and ranked rooms while playing.
+    expect(service.createChatMessage(self.id, room.code, "竞技聊天")).toMatchObject({
+      message: "竞技聊天",
+      senderSeat: 0,
+    });
     expect(service.requestDissolve(self.id, room.code)).toBe("FORBIDDEN");
     expect(service.continueBotRound(self.id, room.code)).toBe("ACTION_NOT_AVAILABLE");
 

@@ -53,6 +53,7 @@ function room(overrides?: Partial<RoomProjection>): RoomProjection {
     stage: "PLAYING",
     roundId: "round-1",
     roundStartedAt: null,
+    roundStartsAt: null,
     waitingExpiresAt: null,
     isOwner: false,
     selfRole: "PLAYER",

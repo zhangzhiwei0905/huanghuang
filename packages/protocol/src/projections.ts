@@ -143,6 +143,11 @@ export type RoomProjection = {
   stage: RoomStage;
   roundId: string | null;
   roundStartedAt: string | null;
+  /**
+   * Friend-room start countdown: set the moment every seated player is ready,
+   * and the round starts once it elapses. Null outside that window.
+   */
+  roundStartsAt: string | null;
   waitingExpiresAt: string | null;
   isOwner: boolean;
   selfRole: "PLAYER" | "SPECTATOR";

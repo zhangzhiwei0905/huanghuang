@@ -11,7 +11,6 @@ import {
   kickMemberInputSchema,
   matchmakingQueueInputSchema,
   readyRoomSchema,
-  removeRoomBotSchema,
   teamMatchmakingInputSchema,
   updateProfileInputSchema,
   updateRoomSettingsSchema,
@@ -833,37 +832,6 @@ app.patch<{ Params: { code: string } }>("/api/rooms/:code/settings", (request, r
   sockets.to(room.id).emit("room:update", { version: room.version });
   return rooms.project(room, session.id);
 });
-
-app.post<{ Params: { code: string } }>("/api/rooms/:code/bots", (request, reply) => {
-  const session = sessions.resolve(request);
-  if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
-  const room = rooms.addBot(session.id, request.params.code);
-  if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
-  if (room === "FORBIDDEN") return reply.code(403).send({ error: "OWNER_ONLY" });
-  if (room === "ACTION_NOT_AVAILABLE") {
-    return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
-  }
-  sockets.to(room.id).emit("room:update", { version: room.version });
-  return rooms.project(room, session.id);
-});
-
-app.delete<{ Params: { code: string; seat: string } }>(
-  "/api/rooms/:code/bots/:seat",
-  (request, reply) => {
-    const session = sessions.resolve(request);
-    if (session === null) return reply.code(401).send({ error: "UNAUTHENTICATED" });
-    const parsed = removeRoomBotSchema.safeParse({ seat: Number(request.params.seat) });
-    if (!parsed.success) return reply.code(400).send({ error: "INVALID_INPUT" });
-    const room = rooms.removeBot(session.id, request.params.code, parsed.data.seat);
-    if (room === null) return reply.code(404).send({ error: "ROOM_NOT_FOUND" });
-    if (room === "FORBIDDEN") return reply.code(403).send({ error: "OWNER_ONLY" });
-    if (room === "ACTION_NOT_AVAILABLE") {
-      return reply.code(409).send({ error: "ACTION_NOT_AVAILABLE" });
-    }
-    sockets.to(room.id).emit("room:update", { version: room.version });
-    return rooms.project(room, session.id);
-  },
-);
 
 app.post<{ Params: { code: string } }>("/api/rooms/:code/continue", (request, reply) => {
   const session = sessions.resolve(request);

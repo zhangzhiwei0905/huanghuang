@@ -4,7 +4,6 @@ import {
   createRoomSchema,
   joinRoomSchema,
   readyRoomSchema,
-  removeRoomBotSchema,
   roomCodeSchema,
   roomModeSchema,
   updateRoomSettingsSchema,
@@ -14,14 +13,8 @@ describe("room interaction schemas", () => {
   it("accepts explicit readiness and supported base scores", () => {
     expect(readyRoomSchema.parse({ ready: false })).toEqual({ ready: false });
     expect(updateRoomSettingsSchema.parse({ baseScore: 10 })).toEqual({ baseScore: 10 });
-    expect(updateRoomSettingsSchema.parse({ botDifficulty: "LOW" })).toEqual({
-      botDifficulty: "LOW",
-    });
     expect(updateRoomSettingsSchema.safeParse({}).success).toBe(false);
     expect(updateRoomSettingsSchema.safeParse({ baseScore: 3 }).success).toBe(false);
-    expect(updateRoomSettingsSchema.safeParse({ botDifficulty: "MEDIUM" }).success).toBe(false);
-    expect(removeRoomBotSchema.parse({ seat: 3 })).toEqual({ seat: 3 });
-    expect(removeRoomBotSchema.safeParse({ seat: 4 }).success).toBe(false);
   });
 
   it("accepts only supported create settings and supplies compatibility defaults", () => {

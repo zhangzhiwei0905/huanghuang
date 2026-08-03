@@ -1088,6 +1088,33 @@
   min-width: 0;
 }
 
+// Friend rooms play for points only: the running total sits in a loud pill
+// right next to the avatar so it reads at a glance from any seat position.
+.player-station__score-badge {
+  flex: none;
+  padding: 0.3vmin 1vmin;
+  border-radius: 999px;
+  font-size: clamp(9px, 1.9vmin, 13px);
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: #f4f0df;
+  background: rgba(15, 30, 22, 0.72);
+  border: 1px solid rgba(244, 240, 223, 0.28);
+}
+
+.player-station__score-badge.is-positive {
+  color: #2f2410;
+  background: #ffcf94;
+  border-color: rgba(255, 207, 148, 0.9);
+}
+
+.player-station__score-badge.is-negative {
+  color: #fff;
+  background: var(--danger, #7a4b45);
+  border-color: rgba(122, 75, 69, 0.9);
+}
+
 .player-station__copy {
   flex: 1;
   min-width: 0;

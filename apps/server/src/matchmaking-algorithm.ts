@@ -110,7 +110,6 @@ function compareGroups(left: MatchmakingGroup, right: MatchmakingGroup): number 
  */
 export function selectMatchmakingGroup(
   candidates: readonly MatchmakingCandidate[],
-  now = Date.now(),
 ): MatchmakingGroup | null {
   if (candidates.length < MATCH_SIZE) return null;
   const ordered = [...candidates].sort(

@@ -45,6 +45,8 @@ export const createRoomSchema = z.object({
   baseScore: baseScoreSchema.default(2),
   mode: creatableRoomModeSchema,
   turnTimeoutSeconds: turnTimeoutSecondsSchema.default(DEFAULT_TURN_TIMEOUT_SECONDS),
+  // Only meaningful for BOT (人机) rooms; friend rooms carry no bots at all,
+  // so the server ignores it when mode is FRIEND.
   botDifficulty: botDifficultySchema.default(DEFAULT_BOT_DIFFICULTY),
 });
 
@@ -61,15 +63,8 @@ export const teamMatchmakingInputSchema = z.object({
   allowBots: z.boolean().optional(),
 });
 
-export const updateRoomSettingsSchema = z
-  .object({
-    baseScore: baseScoreSchema.optional(),
-    botDifficulty: botDifficultySchema.optional(),
-  })
-  .refine((settings) => settings.baseScore !== undefined || settings.botDifficulty !== undefined);
-
-export const removeRoomBotSchema = z.object({
-  seat: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+export const updateRoomSettingsSchema = z.object({
+  baseScore: baseScoreSchema,
 });
 
 /**
@@ -94,7 +89,6 @@ export type RoomMode = z.infer<typeof roomModeSchema>;
 export type ReadyRoomInput = z.infer<typeof readyRoomSchema>;
 export type TeamMatchmakingInput = z.infer<typeof teamMatchmakingInputSchema>;
 export type UpdateRoomSettingsInput = z.infer<typeof updateRoomSettingsSchema>;
-export type RemoveRoomBotInput = z.infer<typeof removeRoomBotSchema>;
 export type KickMemberInput = z.infer<typeof kickMemberInputSchema>;
 export type ChatMessageInput = z.infer<typeof chatMessageInputSchema>;
 

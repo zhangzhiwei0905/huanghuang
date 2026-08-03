@@ -143,9 +143,7 @@ function LobbySeat({
   positionClass,
   busy,
   onToggleReady,
-  canManageBots,
   showReadyAction,
-  onRemoveBot,
   onShowProfile,
   onInviteEmpty,
   onKick,
@@ -154,9 +152,7 @@ function LobbySeat({
   positionClass: (typeof POSITION_CLASS)[number];
   busy: boolean;
   onToggleReady: () => void;
-  canManageBots: boolean;
   showReadyAction: boolean;
-  onRemoveBot: () => void;
   onShowProfile: () => void;
   onInviteEmpty?: () => void;
   onKick?: () => void;
@@ -232,18 +228,6 @@ function LobbySeat({
             onClick={onToggleReady}
           >
             {busy ? "处理中" : seat.ready ? "取消准备" : "准备"}
-          </Button>
-        </View>
-      ) : null}
-      {canManageBots && seat.controller === "BOT" ? (
-        <View className="lobby-seat__state-row">
-          <Button
-            className="lobby-bot-remove-button"
-            hoverClass="is-pressed"
-            disabled={busy}
-            onClick={onRemoveBot}
-          >
-            移除
           </Button>
         </View>
       ) : null}
@@ -403,6 +387,10 @@ export default function RoomPage() {
   const [allowBots, setAllowBots] = useState(getStoredMatchmakingAllowBots);
   const previousStageRef = useRef<RoomStage | null>(null);
   const previousRoomIdRef = useRef<string | null>(null);
+  // Set while the server-armed friend-room countdown (room.roundStartsAt)
+  // is visible; suppresses the legacy stage-change countdown so a single
+  // start is never counted down twice in a row.
+  const serverCountdownSeenRef = useRef(false);
   const room = roomCtrl.room;
 
   useDidShow(() => {
@@ -497,7 +485,8 @@ export default function RoomPage() {
       : 0;
   const recentDiscardId = useRecentDiscardId(room);
   useGameAudio(room, roomCtrl.connectionStatus, gameAudioEnabled, roomCtrl.lastChatMessage);
-  const quickMessageAvailable = room !== null && room.mode === "FRIEND" && room.stage === "PLAYING";
+  const quickMessageAvailable =
+    room !== null && (room.mode === "FRIEND" || room.mode === "MATCH") && room.stage === "PLAYING";
   useEffect(() => {
     if (!quickMessageAvailable) setQuickMessageOpen(false);
   }, [quickMessageAvailable]);
@@ -605,6 +594,7 @@ export default function RoomPage() {
     if (room === null) {
       previousRoomIdRef.current = null;
       previousStageRef.current = null;
+      serverCountdownSeenRef.current = false;
       setRoundStartCountdown(null);
       return;
     }
@@ -612,15 +602,44 @@ export default function RoomPage() {
     if (previousRoomIdRef.current !== room.roomId) {
       previousRoomIdRef.current = room.roomId;
       previousStageRef.current = room.stage;
+      serverCountdownSeenRef.current = false;
       setRoundStartCountdown(null);
       return;
     }
 
     if (shouldShowRoundStart(previousStageRef.current, room.stage)) {
-      setRoundStartCountdown(ROUND_START_COUNTDOWN_SECONDS);
+      if (serverCountdownSeenRef.current) {
+        // The server-driven roundStartsAt countdown already covered this
+        // start — don't replay a second stage-change countdown.
+        serverCountdownSeenRef.current = false;
+      } else {
+        setRoundStartCountdown(ROUND_START_COUNTDOWN_SECONDS);
+      }
     }
     previousStageRef.current = room.stage;
   }, [room?.roomId, room?.stage]);
+
+  // Server-driven friend-room start countdown: room.roundStartsAt is the
+  // single source of truth, so the display stays correct after the app is
+  // backgrounded mid-countdown. The stage-change fallback above still covers
+  // modes that never arm roundStartsAt.
+  const friendRoundStartsAt = room?.roundStartsAt ?? null;
+  const [roundStartNow, setRoundStartNow] = useState(Date.now());
+  useEffect(() => {
+    if (friendRoundStartsAt === null) return;
+    serverCountdownSeenRef.current = true;
+    setRoundStartNow(Date.now());
+    const timer = setInterval(() => setRoundStartNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [friendRoundStartsAt]);
+  const friendStartSecondsRemaining =
+    friendRoundStartsAt === null
+      ? null
+      : remainingRoundStartSeconds(
+          Date.parse(friendRoundStartsAt),
+          roundStartNow,
+          ROUND_START_COUNTDOWN_SECONDS,
+        );
 
   useEffect(() => {
     if (roundStartCountdown === null) return;
@@ -902,13 +921,9 @@ export default function RoomPage() {
               {room.mode === "FRIEND" ? (
                 <>
                   <Text className="lobby-toolbar__divider">·</Text>
-                  <Text className="lobby-toolbar__meta">底分 {room.baseScore}</Text>
+                  <Text className="lobby-toolbar__meta">积分底分 {room.baseScore}</Text>
                   <Text className="lobby-toolbar__divider">·</Text>
                   <Text className="lobby-toolbar__meta">出牌 {room.turnTimeoutSeconds}秒</Text>
-                  <Text className="lobby-toolbar__divider">·</Text>
-                  <Text className="lobby-toolbar__meta">
-                    机器人{room.botDifficulty === "LOW" ? "低难度" : "高难度"}
-                  </Text>
                 </>
               ) : (
                 <>
@@ -1073,9 +1088,7 @@ export default function RoomPage() {
                   positionClass={pos}
                   busy={roomCtrl.busy || teamMatchActive}
                   onToggleReady={() => void roomCtrl.ready()}
-                  canManageBots={room.isOwner}
                   showReadyAction={room.mode !== "TEAM_MATCH" || !seat.isOwner}
-                  onRemoveBot={() => void roomCtrl.removeBot(seat.seat)}
                   onShowProfile={() => {
                     if (!seat.occupied) return;
                     setProfileTarget({
@@ -1133,7 +1146,7 @@ export default function RoomPage() {
                           : "好友准备后，由你开始匹配"
                         : "准备后，等待房主开始匹配"
                   : lobbyOccupiedCount < 4
-                    ? "邀请好友，或由房主添加机器人"
+                    ? "邀请好友加入，4 人满员准备后开局"
                     : "所有真人准备后自动开始"}
               </Text>
               {room.scoreResetPending ? (
@@ -1170,7 +1183,7 @@ export default function RoomPage() {
               ) : room.isOwner ? (
                 <View className="lobby-settings">
                   <View className="lobby-score-picker">
-                    <Text className="lobby-score-picker__label">底分</Text>
+                    <Text className="lobby-score-picker__label">积分底分</Text>
                     {BASE_SCORES.map((score) => (
                       <Button
                         key={score}
@@ -1185,35 +1198,9 @@ export default function RoomPage() {
                       </Button>
                     ))}
                   </View>
-                  <View className="lobby-score-picker">
-                    <Text className="lobby-score-picker__label">难度</Text>
-                    {(["LOW", "HIGH"] as const).map((difficulty) => (
-                      <Button
-                        key={difficulty}
-                        className={`lobby-score-picker__button lobby-difficulty-button${
-                          room.botDifficulty === difficulty ? " is-active" : ""
-                        }`}
-                        hoverClass="is-pressed"
-                        disabled={roomCtrl.busy || room.botDifficulty === difficulty}
-                        onClick={() => void roomCtrl.updateBotDifficulty(difficulty)}
-                      >
-                        {difficulty === "LOW" ? "低" : "高"}
-                      </Button>
-                    ))}
-                    {room.lobbySeats.some((seat) => !seat.occupied) ? (
-                      <Button
-                        className="lobby-score-picker__button lobby-add-bot-button"
-                        hoverClass="is-pressed"
-                        disabled={roomCtrl.busy}
-                        onClick={() => void roomCtrl.addBot()}
-                      >
-                        +机器人
-                      </Button>
-                    ) : null}
-                  </View>
                 </View>
               ) : (
-                <Text className="lobby-center__base-score">本房底分 {room.baseScore}</Text>
+                <Text className="lobby-center__base-score">本房积分底分 {room.baseScore}</Text>
               )}
             </View>
             <View className="lobby-invite-tip">
@@ -1267,6 +1254,19 @@ export default function RoomPage() {
                             })
                           }
                         />
+                        {room.mode === "FRIEND" ? (
+                          <Text
+                            className={`player-station__score-badge${
+                              player.score > 0
+                                ? " is-positive"
+                                : player.score < 0
+                                  ? " is-negative"
+                                  : ""
+                            }`}
+                          >
+                            {player.score > 0 ? `+${player.score}` : player.score}
+                          </Text>
+                        ) : null}
                         <View className="player-station__copy">
                           <Text
                             className="player-station__name is-clickable"
@@ -1406,7 +1406,7 @@ export default function RoomPage() {
               {room.selfRole === "SPECTATOR" ? (
                 <View className="spectator-banner">
                   <Text className="spectator-banner__title">观战中</Text>
-                  <Text className="spectator-banner__copy">本局结束后自动替换机器人入座</Text>
+                  <Text className="spectator-banner__copy">只看不占座，座位属于房间成员</Text>
                 </View>
               ) : null}
 
@@ -1584,6 +1584,12 @@ export default function RoomPage() {
             teamMatchFoundNow,
             ROUND_START_COUNTDOWN_SECONDS,
           )}
+        />
+      ) : friendStartSecondsRemaining !== null && friendStartSecondsRemaining > 0 ? (
+        <RoundStartOverlay
+          eyebrow="全员已准备"
+          title="游戏开始"
+          countdown={friendStartSecondsRemaining}
         />
       ) : roundStartCountdown !== null ? (
         <RoundStartOverlay eyebrow="全员已准备" title="游戏开始" countdown={roundStartCountdown} />

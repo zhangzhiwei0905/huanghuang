@@ -944,22 +944,26 @@ export default function IndexPage() {
                     </View>
                   </Picker>
                 </View>
-                <View className="mp-field">
-                  <Text className="mp-field__label">机器人难度</Text>
-                  <View className="mp-score-row">
-                    {BOT_DIFFICULTY_OPTIONS.map((difficulty) => (
-                      <Button
-                        hoverClass="is-pressed"
-                        key={difficulty}
-                        className={`mp-score${botDifficulty === difficulty ? " is-on" : ""}`}
-                        disabled={busy}
-                        onClick={() => setBotDifficulty(difficulty)}
-                      >
-                        {difficulty === "LOW" ? "低 · 只硬胡" : "高 · 可软胡"}
-                      </Button>
-                    ))}
+                {/* Bot difficulty only applies to 人机 (BOT) games; friend
+                    rooms carry no bots at all. */}
+                {mode === "BOT" ? (
+                  <View className="mp-field">
+                    <Text className="mp-field__label">机器人难度</Text>
+                    <View className="mp-score-row">
+                      {BOT_DIFFICULTY_OPTIONS.map((difficulty) => (
+                        <Button
+                          hoverClass="is-pressed"
+                          key={difficulty}
+                          className={`mp-score${botDifficulty === difficulty ? " is-on" : ""}`}
+                          disabled={busy}
+                          onClick={() => setBotDifficulty(difficulty)}
+                        >
+                          {difficulty === "LOW" ? "低 · 只硬胡" : "高 · 可软胡"}
+                        </Button>
+                      ))}
+                    </View>
                   </View>
-                </View>
+                ) : null}
               </>
             )}
 

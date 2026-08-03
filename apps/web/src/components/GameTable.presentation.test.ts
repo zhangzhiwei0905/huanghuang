@@ -73,6 +73,7 @@ function resultRoom(): RoomProjection {
     stage: "ROUND_RESULT",
     roundId: "round-1",
     roundStartedAt: "2026-07-17T00:00:00.000Z",
+    roundStartsAt: null,
     waitingExpiresAt: null,
     isOwner: true,
     selfRole: "PLAYER",

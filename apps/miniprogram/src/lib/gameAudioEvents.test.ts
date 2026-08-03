@@ -75,6 +75,7 @@ function room(overrides: Partial<RoomProjection> = {}): RoomProjection {
     stage: "PLAYING",
     roundId: "round-1",
     roundStartedAt: "2026-07-26T00:00:00.000Z",
+    roundStartsAt: null,
     waitingExpiresAt: null,
     isOwner: true,
     selfRole: "PLAYER",

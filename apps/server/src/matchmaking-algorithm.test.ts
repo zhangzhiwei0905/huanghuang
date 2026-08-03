@@ -97,7 +97,6 @@ describe("selectMatchmakingGroup", () => {
     expect(
       selectMatchmakingGroup(
         [candidate("a", 0, 0), candidate("b", 0, 0), candidate("c", 0, 0)],
-        NOW,
       ),
     ).toBeNull();
   });
@@ -107,7 +106,6 @@ describe("selectMatchmakingGroup", () => {
     // (and zero wait time) must still form a table.
     const group = selectMatchmakingGroup(
       [candidate("a", 0, 0), candidate("b", 50, 0), candidate("c", 500, 0), candidate("d", 9_999, 0)],
-      NOW,
     );
     expect(group?.map((item) => item.sessionId)).toEqual(["a", "b", "c", "d"]);
   });
@@ -124,7 +122,6 @@ describe("selectMatchmakingGroup", () => {
         candidate("c", 11, 700),
         candidate("d", 12, 600),
       ],
-      NOW,
     );
 
     expect(group?.map((item) => item.sessionId)).toEqual(["oldest-valid", "b", "c", "d"]);
@@ -139,7 +136,6 @@ describe("selectMatchmakingGroup", () => {
         candidate("early-3", 12, 2_000),
         candidate("late", 8, 1_000),
       ],
-      NOW,
     );
 
     expect(group?.map((item) => item.sessionId)).toEqual([
@@ -159,7 +155,6 @@ describe("selectMatchmakingGroup", () => {
         candidate("fresh-2", 11, 2_000),
         candidate("fresh-3", 12, 1_000),
       ],
-      NOW,
     );
 
     expect(group?.map((item) => item.sessionId)).toEqual([
@@ -178,7 +173,6 @@ describe("selectMatchmakingGroup", () => {
         candidate("b", 11, 3_000),
         candidate("c", 12, 2_000),
       ],
-      NOW,
     );
 
     expect(group).not.toBeNull();
@@ -222,7 +216,7 @@ describe("selectMatchmakingGroup", () => {
       ],
     ],
   ])("keeps a valid %s party composition together", (_label, candidates) => {
-    expect(selectMatchmakingGroup(candidates, NOW)?.map((item) => item.sessionId)).toEqual([
+    expect(selectMatchmakingGroup(candidates)?.map((item) => item.sessionId)).toEqual([
       "a",
       "b",
       "c",
@@ -240,7 +234,6 @@ describe("selectMatchmakingGroup", () => {
           candidate("solo-c", 10, 2_000),
           candidate("solo-d", 10, 1_000),
         ],
-        NOW,
       )?.map((item) => item.sessionId),
     ).toEqual(["solo-a", "solo-b", "solo-c", "solo-d"]);
   });

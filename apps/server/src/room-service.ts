@@ -119,6 +119,7 @@ type PersistedRoomState = {
   nextDealerSeat?: Seat;
   round: RoundState | null;
   roundStartedAt?: string | null;
+  roundStartsAt?: string | null;
   waitingExpiresAt?: string | null;
   actionDeadlineAt?: string | null;
   nextRoundAt?: string | null;
@@ -154,6 +155,11 @@ export type RoomState = {
   nextDealerSeat: Seat;
   round: RoundState | null;
   roundStartedAt: string | null;
+  /**
+   * Friend-room countdown target: set when every seated player is ready,
+   * the tick starts the round once it elapses. Null outside that window.
+   */
+  roundStartsAt: string | null;
   waitingExpiresAt: string | null;
   actionDeadlineAt: string | null;
   nextRoundAt: string | null;
@@ -186,6 +192,12 @@ const randomIntFromCrypto = (max: number): number => randomInt(max);
 const BOT_DELAY_MS = 650;
 const RESPONSE_TIMEOUT_MS = 5_000;
 const ROUND_RESULT_MS = 4_000;
+/**
+ * Friend-room start countdown: once every seated player is ready the round
+ * starts this many milliseconds later. Matches the client-side
+ * `ROUND_START_COUNTDOWN_SECONDS`.
+ */
+export const FRIEND_ROUND_START_MS = 3_000;
 const EFFECT_DURATION_MS = {
   PONG: 450,
   EXPOSED_KONG: 700,
@@ -588,6 +600,7 @@ export class RoomService {
           (randomInt(4) as Seat),
         round: stage === "WAITING" ? null : round,
         roundStartedAt: persisted.roundStartedAt ?? null,
+        roundStartsAt: stage === "WAITING" ? (persisted.roundStartsAt ?? null) : null,
         waitingExpiresAt:
           (mode === "FRIEND" || mode === "TEAM_MATCH") && stage === "WAITING"
             ? (persisted.waitingExpiresAt ??
@@ -664,6 +677,7 @@ export class RoomService {
         nextDealerSeat: randomInt(4) as Seat,
         round: null,
         roundStartedAt: null,
+        roundStartsAt: null,
         waitingExpiresAt: new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString(),
         actionDeadlineAt: null,
         nextRoundAt: null,
@@ -696,6 +710,7 @@ export class RoomService {
       nextDealerSeat: round?.outcome?.nextDealerSeat ?? round?.dealerSeat ?? (randomInt(4) as Seat),
       round,
       roundStartedAt: null,
+      roundStartsAt: null,
       waitingExpiresAt: null,
       actionDeadlineAt: persisted.actionDeadlineAt ?? null,
       nextRoundAt: persisted.nextRoundAt ?? null,
@@ -773,16 +788,46 @@ export class RoomService {
       room.fullTableScoreResetDone = true;
     }
     room.pendingEffectTransition = null;
-    room.round = createRound({
+    const round = createRound({
       id: randomUUID(),
       dealerSeat: room.nextDealerSeat,
       baseScore: room.baseScore,
       startingScores: room.scores,
       randomInt: randomIntFromCrypto,
     });
+    room.round = round;
+    if (room.mode === "FRIEND" && room.competitiveMatch === null) {
+      // Achievement bookkeeping for friend rooms: one kind='FRIEND' match
+      // row per room, reused across its rounds. Never touches rank points
+      // and is filtered out of every ranked-only query by the database.
+      const players = SEATS.flatMap((seat) => {
+        const sessionId = room.seats[seat].sessionId;
+        return sessionId === null ? [] : [{ sessionId, seat }];
+      });
+      if (players.length === 4) {
+        // Achievement bookkeeping needs persisted sessions (competitive
+        // profiles FK onto them); legacy or anonymous rooms simply play
+        // without a friend match row.
+        const knownSessions = this.database.findSessionsByIds(
+          players.map((player) => player.sessionId),
+        );
+        if (knownSessions.length === 4) {
+          const matchId = randomUUID();
+          this.database.createFriendMatch({
+            id: matchId,
+            roomId: room.id,
+            roundId: round.id,
+            ruleVersion: COMPETITIVE_RULE_VERSION,
+            players,
+          });
+          room.competitiveMatch = { matchId, ruleVersion: COMPETITIVE_RULE_VERSION };
+        }
+      }
+    }
     room.stage = "PLAYING";
     room.readySessionIds = [];
     room.roundStartedAt = new Date(now).toISOString();
+    room.roundStartsAt = null;
     room.waitingExpiresAt = null;
     room.nextRoundAt = null;
     this.refreshDeadline(room, now);
@@ -790,25 +835,14 @@ export class RoomService {
 
   private enterWaiting(room: RoomState, now = Date.now()): void {
     this.syncRoundResult(room);
-    for (const spectator of room.spectators) {
-      const botSeatIndex = SEATS.find((seat) => room.seats[seat].controller === "BOT");
-      if (botSeatIndex === undefined) break;
-      room.seats[botSeatIndex] = humanSeat(
-        botSeatIndex,
-        {
-          id: spectator.sessionId,
-          nickname: spectator.nickname,
-          avatarUrl: spectator.avatarUrl,
-        },
-        spectator.connected,
-      );
-    }
-    room.spectators = [];
+    // Spectators stay spectators: friend rooms no longer carry bots, so
+    // nobody is promoted into a seat after a round settles.
     room.stage = "WAITING";
     room.pendingEffectTransition = null;
     room.round = null;
     room.readySessionIds = [];
     room.roundStartedAt = null;
+    room.roundStartsAt = null;
     room.waitingExpiresAt = new Date(now + WAITING_ROOM_TIMEOUT_MS).toISOString();
     room.actionDeadlineAt = null;
     room.nextRoundAt = null;
@@ -828,6 +862,12 @@ export class RoomService {
     room.actionDeadlineAt = null;
     room.nextRoundAt = null;
     room.waitingExpiresAt = null;
+    room.roundStartsAt = null;
+    if (room.mode === "FRIEND" && room.competitiveMatch !== null) {
+      // Friend matches never rank-settle: just flip the bookkeeping row to
+      // SETTLED so it stops occupying the session's match queries.
+      this.database.settleFriendMatch(room.competitiveMatch.matchId);
+    }
     this.closedRoomEvictionAt.set(room.code, now + CLOSED_ROOM_EVICTION_MS);
   }
 
@@ -851,7 +891,11 @@ export class RoomService {
     room: RoomState,
     result: Extract<RuleResult, { ok: true }>,
   ): CompetitiveActionEventInput | undefined {
-    if (room.mode !== "MATCH" || room.round === null || room.competitiveMatch === null) {
+    if (
+      (room.mode !== "MATCH" && room.mode !== "FRIEND") ||
+      room.round === null ||
+      room.competitiveMatch === null
+    ) {
       return undefined;
     }
     const descriptor = detectEffectDescriptor(room.round, result.state);
@@ -1104,6 +1148,17 @@ export class RoomService {
       }
       if (room.stage === "WAITING") {
         if (
+          room.mode === "FRIEND" &&
+          room.roundStartsAt !== null &&
+          Date.parse(room.roundStartsAt) <= now
+        ) {
+          this.startRound(room, now);
+          room.version += 1;
+          this.save(room);
+          updates.push({ roomId: room.id, version: room.version });
+          continue;
+        }
+        if (
           (room.mode === "FRIEND" ||
             (room.mode === "TEAM_MATCH" && room.teamQueueStartedAt === null)) &&
           room.waitingExpiresAt !== null &&
@@ -1237,6 +1292,7 @@ export class RoomService {
       nextDealerSeat: randomInt(4) as Seat,
       round: null,
       roundStartedAt: null,
+      roundStartsAt: null,
       waitingExpiresAt:
         mode === "BOT" ? null : new Date(Date.now() + WAITING_ROOM_TIMEOUT_MS).toISOString(),
       actionDeadlineAt: null,
@@ -1295,6 +1351,7 @@ export class RoomService {
       nextDealerSeat: randomInt(4) as Seat,
       round: null,
       roundStartedAt: null,
+      roundStartsAt: null,
       waitingExpiresAt: null,
       actionDeadlineAt: null,
       nextRoundAt: null,
@@ -1437,6 +1494,7 @@ export class RoomService {
       nextDealerSeat: randomInt(4) as Seat,
       round: null,
       roundStartedAt: null,
+      roundStartsAt: null,
       waitingExpiresAt: null,
       actionDeadlineAt: null,
       nextRoundAt: null,
@@ -1487,9 +1545,9 @@ export class RoomService {
       if (seat === undefined) return "ROOM_FULL";
       room.seats[seat] = humanSeat(seat, session);
     } else {
-      const currentHumans = humanSessionIds(room).length + room.spectators.length;
-      const hasReplaceableBot = SEATS.some((seat) => room.seats[seat].controller === "BOT");
-      if (currentHumans >= 4 || !hasReplaceableBot) return "ROOM_FULL";
+      // Mid-round joiners only get to watch: seats stay reserved for their
+      // (possibly disconnected) members, and spectators are never promoted.
+      if (room.spectators.length >= 4) return "ROOM_FULL";
       room.spectators.push({
         sessionId: session.id,
         nickname: session.nickname,
@@ -1533,7 +1591,12 @@ export class RoomService {
       ready &&
       occupiedSessions.every((candidate) => room.readySessionIds.includes(candidate))
     ) {
-      this.startRound(room);
+      // Everyone is ready: arm the short start countdown instead of starting
+      // immediately; the tick fires `startRound` once it elapses.
+      room.roundStartsAt = new Date(Date.now() + FRIEND_ROUND_START_MS).toISOString();
+    } else if (room.roundStartsAt !== null) {
+      // Un-readying (or any other state change) cancels the countdown.
+      room.roundStartsAt = null;
     }
     room.version += 1;
     this.save(room);
@@ -1679,7 +1742,6 @@ export class RoomService {
     code: string,
     settings: {
       baseScore?: BaseScore | undefined;
-      botDifficulty?: BotDifficulty | undefined;
     },
   ): RoomSettingsResult {
     const room = this.roomsByCode.get(code);
@@ -1687,12 +1749,11 @@ export class RoomService {
     if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
     if (room.mode !== "FRIEND" || room.stage !== "WAITING") return "ACTION_NOT_AVAILABLE";
     const nextBaseScore = settings.baseScore ?? room.baseScore;
-    const nextBotDifficulty = settings.botDifficulty ?? room.botDifficulty;
-    if (room.baseScore === nextBaseScore && room.botDifficulty === nextBotDifficulty) return room;
+    if (room.baseScore === nextBaseScore) return room;
 
     room.baseScore = nextBaseScore;
-    room.botDifficulty = nextBotDifficulty;
     room.readySessionIds = [];
+    room.roundStartsAt = null;
     room.version += 1;
     this.save(room);
     return room;
@@ -1702,46 +1763,15 @@ export class RoomService {
     return this.updateSettings(sessionId, code, { baseScore });
   }
 
-  addBot(sessionId: string, code: string): RoomSettingsResult {
-    const room = this.roomsByCode.get(code);
-    if (room?.status !== "ACTIVE") return null;
-    if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
-    if (room.mode !== "FRIEND" || room.stage !== "WAITING") return "ACTION_NOT_AVAILABLE";
-    const seat = SEATS.find((candidate) => room.seats[candidate].controller === "EMPTY");
-    if (seat === undefined) return "ACTION_NOT_AVAILABLE";
-
-    room.seats[seat] = botSeat(seat);
-    room.readySessionIds = [];
-    room.version += 1;
-    this.save(room);
-    return room;
-  }
-
-  removeBot(sessionId: string, code: string, seat: Seat): RoomSettingsResult {
-    const room = this.roomsByCode.get(code);
-    if (room?.status !== "ACTIVE") return null;
-    if (room.ownerSessionId !== sessionId) return "FORBIDDEN";
-    if (
-      room.mode !== "FRIEND" ||
-      room.stage !== "WAITING" ||
-      room.seats[seat].controller !== "BOT"
-    ) {
-      return "ACTION_NOT_AVAILABLE";
-    }
-
-    room.seats[seat] = emptySeat(seat);
-    room.readySessionIds = [];
-    room.version += 1;
-    this.save(room);
-    return room;
-  }
-
   createChatMessage(sessionId: string, code: string, message: string): ChatMessageResult {
     const room = this.roomsByCode.get(code);
     if (room?.status !== "ACTIVE") return null;
     const seat = sessionSeat(room, sessionId);
     if (seat === null) return "NOT_A_MEMBER";
-    if (room.mode !== "FRIEND" || room.stage !== "PLAYING") {
+    if (
+      (room.mode !== "FRIEND" && room.mode !== "MATCH") ||
+      room.stage !== "PLAYING"
+    ) {
       return "ACTION_NOT_AVAILABLE";
     }
     return {
@@ -1774,6 +1804,8 @@ export class RoomService {
     if (seat === null && waitingIndex < 0) return room;
 
     room.readySessionIds = room.readySessionIds.filter((id) => id !== sessionId);
+    // Cancels any armed friend-room start countdown; null everywhere else.
+    room.roundStartsAt = null;
     if (room.mode === "MATCH") {
       if (seat === null) return room;
       const controller = room.seats[seat];
@@ -1793,12 +1825,19 @@ export class RoomService {
     }
 
     if (seat !== null) {
-      room.seats[seat] = room.stage === "WAITING" ? emptySeat(seat) : botSeat(seat);
+      if (room.stage === "WAITING") {
+        room.seats[seat] = emptySeat(seat);
+      } else {
+        // Friend rooms keep the leaver's seat mid-round instead of bot-
+        // substituting: the seat plays on via turn timeouts until they
+        // rejoin (wait-for-reconnect).
+        room.seats[seat] = { ...room.seats[seat], connected: false };
+      }
     } else {
       room.spectators.splice(waitingIndex, 1);
     }
     if (room.ownerSessionId === sessionId) {
-      const candidates = memberHumanSessionIds(room);
+      const candidates = memberHumanSessionIds(room).filter((id) => id !== sessionId);
       const nextOwner = candidates[randomInt(Math.max(candidates.length, 1))];
       if (nextOwner === undefined) {
         this.closeRoom(room, "EMPTY_ROOM");
@@ -2114,6 +2153,7 @@ export class RoomService {
       stage: room.stage,
       roundId: round?.id ?? null,
       roundStartedAt: room.roundStartedAt,
+      roundStartsAt: room.roundStartsAt,
       waitingExpiresAt: room.waitingExpiresAt,
       isOwner: room.ownerSessionId === sessionId,
       selfRole: selfSeat === null ? "SPECTATOR" : "PLAYER",
