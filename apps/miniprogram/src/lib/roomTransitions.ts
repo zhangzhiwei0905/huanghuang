@@ -20,14 +20,19 @@ export function shouldShowRoundStart(
  * time it started. Deriving this from a timestamp (rather than a
  * decrementing counter) is what lets a countdown recover correctly after the
  * app is backgrounded and resumed mid-countdown: the next read always
- * reflects true elapsed time instead of restarting or drifting.
+ * reflects true elapsed time instead of restarting or drifting. Elapsed
+ * time is clamped at zero too: the driving "now" state can lag behind
+ * startedAt for a render (stale interval tick, a suspended timer), and an
+ * unclamped negative elapsed inflated the display past the total — players
+ * saw 11s on a 5s countdown.
  */
 export function remainingRoundStartSeconds(
   startedAt: number,
   now: number,
   totalSeconds: number,
 ): number {
-  return Math.max(0, totalSeconds - Math.floor((now - startedAt) / 1_000));
+  const elapsedSeconds = Math.floor(Math.max(0, now - startedAt) / 1_000);
+  return Math.max(0, totalSeconds - elapsedSeconds);
 }
 
 /**

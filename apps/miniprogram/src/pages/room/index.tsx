@@ -393,6 +393,11 @@ export default function RoomPage() {
   // is visible; suppresses the legacy stage-change countdown so a single
   // start is never counted down twice in a row.
   const serverCountdownSeenRef = useRef(false);
+  // True until the first stage change after entering a room. Matchmaking
+  // rooms already played their "匹配成功" countdown before the player
+  // entered, so their first WAITING→PLAYING transition must not replay a
+  // second start overlay.
+  const firstStageTransitionRef = useRef(false);
   const room = roomCtrl.room;
 
   useDidShow(() => {
@@ -597,6 +602,7 @@ export default function RoomPage() {
       previousRoomIdRef.current = null;
       previousStageRef.current = null;
       serverCountdownSeenRef.current = false;
+      firstStageTransitionRef.current = false;
       setRoundStartCountdown(null);
       return;
     }
@@ -605,11 +611,18 @@ export default function RoomPage() {
       previousRoomIdRef.current = room.roomId;
       previousStageRef.current = room.stage;
       serverCountdownSeenRef.current = false;
+      firstStageTransitionRef.current = true;
       setRoundStartCountdown(null);
       return;
     }
 
-    if (shouldShowRoundStart(previousStageRef.current, room.stage)) {
+    const isFirstStageTransition = firstStageTransitionRef.current;
+    firstStageTransitionRef.current = false;
+    // The pre-entry "匹配成功" countdown already covered a matchmaking
+    // room's first start — entering the table goes straight into the round.
+    const matchmakingStartAlreadyCounted =
+      isFirstStageTransition && (room.mode === "MATCH" || room.mode === "TEAM_MATCH");
+    if (shouldShowRoundStart(previousStageRef.current, room.stage) && !matchmakingStartAlreadyCounted) {
       if (serverCountdownSeenRef.current) {
         // The server-driven roundStartsAt countdown already covered this
         // start — don't replay a second stage-change countdown.
@@ -619,7 +632,7 @@ export default function RoomPage() {
       }
     }
     previousStageRef.current = room.stage;
-  }, [room?.roomId, room?.stage]);
+  }, [room?.roomId, room?.stage, room?.mode]);
 
   // Server-driven friend-room start countdown: room.roundStartsAt is the
   // single source of truth, so the display stays correct after the app is

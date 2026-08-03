@@ -47,6 +47,17 @@ describe("remainingRoundStartSeconds", () => {
     // report "done", not a stale mid-countdown or negative value.
     expect(remainingRoundStartSeconds(startedAt, startedAt + 60_000, 3)).toBe(0);
   });
+
+  it("never displays more than the total, even if the driving clock lags behind the start", () => {
+    // The "匹配成功" overlay renders against a ticking "now" state that can
+    // still hold a stale interval tick when the countdown is armed, so
+    // now - startedAt can be negative for a render. An unclamped negative
+    // elapsed inflated a 5s countdown to 11s.
+    const startedAt = 100_000;
+    expect(remainingRoundStartSeconds(startedAt, startedAt - 500, 5)).toBe(5);
+    expect(remainingRoundStartSeconds(startedAt, startedAt - 6_000, 5)).toBe(5);
+    expect(remainingRoundStartSeconds(startedAt, startedAt - 60_000, 3)).toBe(3);
+  });
 });
 
 describe("remainingSecondsUntilTarget", () => {
