@@ -23,6 +23,8 @@ export type GameAudioFileName =
   | "action-added-kong.mp3"
   | "yinghu.mp3"
   | "ruanhu.mp3"
+  | "yinglaiyou.mp3"
+  | "ruanlaiyou.mp3"
   | "chaotiangang.mp3"
   | "gkd-xmz.mp3";
 
@@ -68,14 +70,13 @@ const WIN_AUDIO_FILE: Record<WinType, GameAudioFileName> = {
   SOFT: "ruanhu.mp3",
 };
 
-// 来由 is its own semantic audio event, currently mapped onto the plain hard/soft
-// win clips. When dedicated 来由 audio lands, only this table changes — remember
-// to also add the new file name(s) to AUDIO_FILE_NAMES in gameAudioPlayer.ts
-// (so they get warmed up/cached) and to AUDIO_WINDOWS in
-// scripts/trim-audio.mjs (so a trimmed clip actually exists to play).
+// 来由 wins (winning on the tile drawn right after releasing a wildcard)
+// get their own dedicated clips; plain wins keep yinghu/ruanhu. New files
+// must also be added to AUDIO_FILE_NAMES in gameAudioPlayer.ts (so they get
+// warmed up/cached) and uploaded to the mp3-trimmed/ cloud folder.
 const LAIYOU_AUDIO_FILE: Record<WinType, GameAudioFileName> = {
-  HARD: "yinghu.mp3",
-  SOFT: "ruanhu.mp3",
+  HARD: "yinglaiyou.mp3",
+  SOFT: "ruanlaiyou.mp3",
 };
 
 export function winAudioFileName(winType: WinType | null, laiyou: boolean): GameAudioFileName {

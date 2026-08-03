@@ -47,6 +47,8 @@ const AUDIO_FILE_NAMES: GameAudioFileName[] = [
   "chaotiangang.mp3",
   "yinghu.mp3",
   "ruanhu.mp3",
+  "yinglaiyou.mp3",
+  "ruanlaiyou.mp3",
   "gkd-xmz.mp3",
 ];
 

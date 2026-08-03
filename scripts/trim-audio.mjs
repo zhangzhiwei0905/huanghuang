@@ -37,7 +37,8 @@ const OUTPUT_DIR = path.join(repoRoot, "huanghuang-audio", "mp3-trimmed");
  *
  * `gkd-xmz.mp3` (the 搞快点 quick-message voice) was converted straight
  * from the author's m4a recording and must NOT be trimmed — it is kept
- * out of AUDIO_WINDOWS and uploaded to mp3-trimmed/ as-is.
+ * out of AUDIO_WINDOWS and uploaded to mp3-trimmed/ as-is. The same goes
+ * for `yinglaiyou.mp3` / `ruanlaiyou.mp3` (硬来由/软来由 win voices).
  */
 const AUDIO_WINDOWS = {
   "action-added-kong.mp3": { startTime: 0.62, duration: 0.72 },

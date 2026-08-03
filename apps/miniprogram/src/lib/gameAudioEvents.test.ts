@@ -209,10 +209,10 @@ describe("game audio projection events", () => {
       effectCue: cue("WIN", { winType: "SOFT", laiyou: true }),
     });
 
-    // 来由 currently reuses the plain hard/soft clips; the assertion pins the
-    // mapping table, so swapping in dedicated audio updates exactly one place.
-    expect(winAudioFileName("HARD", true)).toBe("yinghu.mp3");
-    expect(winAudioFileName("SOFT", true)).toBe("ruanhu.mp3");
+    // 来由 wins play their dedicated clips; the assertion pins the
+    // mapping table, so swapping audio updates exactly one place.
+    expect(winAudioFileName("HARD", true)).toBe("yinglaiyou.mp3");
+    expect(winAudioFileName("SOFT", true)).toBe("ruanlaiyou.mp3");
     expect(detectGameAudioFiles(createGameAudioSnapshot(before), hardLaiyou)).toEqual([
       winAudioFileName("HARD", true),
     ]);
