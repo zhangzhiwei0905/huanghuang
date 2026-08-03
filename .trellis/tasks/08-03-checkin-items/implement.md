@@ -37,8 +37,8 @@
 
 - [x] 5.1 `npx vitest run`（全量，500 通过）、`pnpm typecheck`、`pnpm lint`。
 - [x] 5.2 `pnpm --filter @huanghuang/miniprogram build:weapp`（dist 2012KB < 2MB 主包上限）。
-- [ ] 5.3 后端部署线上（本次含 apps/server + packages 改动）：scp 增量文件 → docker build（APP_REVISION）→ sqlite 备份 + 回滚容器改名 → 新容器 → 验证 /api/version 与 /health/ready。
-- [ ] 5.4 提交并推送；提醒用户上传小程序体验版。
+- [x] 5.3 后端部署线上（本次含 apps/server + packages 改动）：scp 增量文件 → docker build（APP_REVISION）→ sqlite 备份 +  回滚容器改名 → 新容器 → 验证 /api/version 与 /health/ready。（已完成：备份 huanghuang-pre-8ed95cf-20260803-223046.sqlite；镜像 huanghuang-app:8ed95cf；旧容器保留为 huanghuang-app-rollback-54bdda7-20260803-223209；/api/version → 1.0.11/8ed95cf；/health/ready 200；/cards/*.png 三张均 200 image/png）
+- [x] 5.4 提交并推送；提醒用户上传小程序体验版。（8ed95cf 已推送 origin/miniprogram；卡牌原图未提交，加入 .gitignore，后续补提交文档更新）
 
 ## 风险点
 
