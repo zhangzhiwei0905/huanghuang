@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 33
-- **Last Active**: 2026-08-03
+- **Total Sessions**: 34
+- **Last Active**: 2026-08-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1272 | Active |
+| `journal-1.md` | ~1306 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 34 | 2026-08-04 | 签到活动与道具体系全量落地（签到页/背包/加倍卡/排位保护卡） | `8ed95cf`, `1aba44c` | `miniprogram` |
 | 33 | 2026-08-03 | 排位赛结算续局流程统一与踢人功能 | `73a7688`, `841fd38`, `877b8d0` | `miniprogram` |
 | 32 | 2026-07-31 | 组队排位与个人信息页体验优化 | `e121987`, `922cf72`, `68f1c5c` | `miniprogram` |
 | 31 | 2026-07-30 | 排位匹配体验优化：大段位阶梯、匹配成功倒计时、socket 推送根治卡死 | `7c9192a`, `295f778`, `7f95802` | `miniprogram` |

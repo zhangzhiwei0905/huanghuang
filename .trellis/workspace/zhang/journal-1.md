@@ -1270,3 +1270,37 @@ Split win audio by HARD/SOFT type (yinghu/ruanhu), added a chaotiangang cue for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: 签到活动与道具体系全量落地（签到页/背包/加倍卡/排位保护卡）
+
+**Date**: 2026-08-04
+**Task**: 签到活动与道具体系全量落地（签到页/背包/加倍卡/排位保护卡）
+**Branch**: `miniprogram`
+
+### Summary
+
+完成 08-03-checkin-items 全部阶段：服务端签到/道具结算逻辑、协议扩展、小程序签到页与背包页、赢家加倍选择弹窗、结算明细更名与新增行；卡牌图片改为服务端 /cards/ 静态托管以规避小程序主包 2MB 限制（dist 2012KB）；500 测试全通过、typecheck/lint 干净；部署 8ed95cf 上线并验证 /api/version、/health/ready 与 /cards/ 图片。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8ed95cf` | (see git log) |
+| `1aba44c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
